@@ -59,3 +59,8 @@ signalling readiness. Do not silently introduce destructive migrations.
 For an incompatible protocol, publish a new installer and a higher
 `min_launcher_protocol`. Old launchers must refuse it with an explanation.
 QEMU/Python are pinned dependencies, not automatically updated with the GUI.
+
+The application package may include QemuM.Update.exe: a refreshed update UI
+using the same protocol/core. It accepts --check-updates --install-root <root>.
+The permanent launcher remains independent; no replacement of the running
+launcher is needed for UI changes.

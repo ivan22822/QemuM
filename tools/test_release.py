@@ -26,7 +26,7 @@ def main():
     with zipfile.ZipFile(future_zip, 'w') as archive:
         archive.write(future, 'Future.exe')
         archive.writestr('package.json', json.dumps(dict(schema=1, min_launcher_protocol=1,
-            channel='alpha', version='0.1.0-alpha.2', entrypoint='Future.exe', requires_python=False,
+            channel='alpha', version=VERSION.rsplit('.',1)[0]+'.'+str(int(VERSION.rsplit('.',1)[1])+1), entrypoint='Future.exe', requires_python=False,
             files={'Future.exe': hash_file(future)})))
     subprocess.run([str(exe), str(output), str(OUT / f'QemuM-{VERSION}-app.zip'),
                     str(OUT / 'QemuM.exe'), str(args.python_archive.resolve()), '', str(future_zip)],

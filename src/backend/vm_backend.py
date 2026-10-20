@@ -24,6 +24,7 @@ if settings_path.is_file():
 import vm
 from vm_network import import_legacy, network_args, validate as validate_network
 from vm_editor import save_parameters
+from vm_disk import disk_format, new_disk_format
 from vm_library import process_state
 from vm_profiles import choose, profile, validate as validate_profile
 from vm_runtime import vm_lock
@@ -71,6 +72,7 @@ def normalized(data):
     validate_profile(data)
     validate_network(data)
     vm.validate_extra_args(data)
+    disk_format(data)
     return data
 
 
@@ -124,7 +126,7 @@ class Service:
     def list(self, args):
         return dict(rows=[dict(name=name, data=data, network_view=network_display(data))
                           for name, data in vm.menu_rows(vm.entries())],
-                    mode=vm.manager_settings()['launch_mode'], version='0.1.0-alpha.1')
+                    mode=vm.manager_settings()['launch_mode'], version='0.1.0-alpha.2')
 
     def states(self, args):
         if not self.inventory_running and time.monotonic() - self.inventory_time > 10:
@@ -224,6 +226,8 @@ class Service:
             old_media = {key: saved.get(key, saved.get('path', '') if saved.get('kind') == key.split('_')[0] else '')
                          for key in ('disk_path', 'iso_path')}
             saved.update(args.get('data', {}))
+            if saved.get('disk_path') != old_media['disk_path'] and 'disk_format' not in args.get('data', {}):
+                saved.pop('disk_format', None)
             if 'network_managed' in args:
                 if type(args['network_managed']) is not bool:
                     raise ValueError('Режим управления сетью должен быть логическим значением.')
@@ -253,8 +257,10 @@ class Service:
             try:
                 if new:
                     size = args.get('size_gb')
-                    if disk is None or not disk.is_absolute() or disk.suffix.lower() != '.qcow2':
-                        raise ValueError('Укажи полный путь нового диска .qcow2.')
+                    if disk is None or not disk.is_absolute():
+                        raise ValueError('Укажи полный путь нового диска .qcow2 или .vdi.')
+                    kind = new_disk_format(disk)
+                    colored['disk_format'] = kind
                     if type(size) is not int or not 1 <= size <= 65536:
                         raise ValueError('Размер диска: 1–65536 ГБ.')
                     safe_file(disk)
@@ -262,7 +268,7 @@ class Service:
                     with disk.open('xb'):
                         pass
                     created = signature(disk)
-                    image_command(image_tool(vm.qemu_executable), ['create', '-f', 'qcow2', str(disk), str(size) + 'G'])
+                    image_command(image_tool(vm.qemu_executable), ['create', '-f', kind, str(disk), str(size) + 'G'])
                     created = signature(disk)
                 vm.build_args(name, colored)
                 with vm.config_path(name).open('x', encoding='utf-8') as stream:

@@ -31,7 +31,7 @@ def compile_launcher(output, main, sources, resources=()):
     if icon.is_file():
         args.append('/win32icon:' + str(icon))
     args.extend('/resource:' + str(path) + ',' + name for path, name in resources)
-    subprocess.run(args + [str(LAUNCHER / 'UpdateCore.cs')] + [str(path) for path in sources], check=True)
+    subprocess.run(args + [str(LAUNCHER / 'UpdateCore.cs'), str(LAUNCHER / 'BootstrapUI.cs')] + [str(path) for path in sources], check=True)
 
 
 def release():
@@ -45,6 +45,7 @@ def release():
     with tempfile.TemporaryDirectory(prefix='release-source-', dir=ROOT / 'build') as temporary:
         stage = Path(temporary)
         copy_runtime(stage)
+        shutil.copy2(launcher, stage / 'QemuM.Update.exe')
         compile_program(stage / 'VMManager.exe', icon=ROOT / 'build' / 'tools' / 'app.ico',
                         manifest=GUI / 'app.manifest')
         shutil.copy2(ROOT / 'docs' / 'ALPHA-GUIDE.md', stage / 'ALPHA-GUIDE.md')

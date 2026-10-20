@@ -8,7 +8,7 @@ using System.Threading.Tasks;
 using System.Windows.Forms;
 
 static class AlphaIntegration {
-    public const string Version="0.1.0-alpha.1";
+    public const string Version="0.1.0-alpha.2";
     public const string Issues="https://github.com/ivan22822/QemuM/issues/new/choose";
     public static string AppRoot(string fallback) { return Environment.GetEnvironmentVariable("QEMUM_APP_DIR") ?? fallback; }
     public static void OpenIssues() { Process.Start(new ProcessStartInfo(Issues){UseShellExecute=true}); }
@@ -18,7 +18,9 @@ static class AlphaIntegration {
         if(launcher==null||!File.Exists(launcher)){
             MessageBox.Show(owner,"Это сборка из исходников. Обновления доступны в установленной альфа-версии.\nВерсия: "+Version,"Обновления");return;
         }
-        Process.Start(new ProcessStartInfo(launcher,"--check-updates"){UseShellExecute=false,CreateNoWindow=true});
+        string bundled=Path.Combine(AppRoot(AppDomain.CurrentDomain.BaseDirectory),"QemuM.Update.exe");
+        Process.Start(new ProcessStartInfo(File.Exists(bundled)?bundled:launcher,
+            File.Exists(bundled)?"--check-updates --install-root "+J.Quote(root):"--check-updates"){UseShellExecute=false,CreateNoWindow=true});
     }
     public static void Ready() {
         string path=Environment.GetEnvironmentVariable("QEMUM_READY_FILE");

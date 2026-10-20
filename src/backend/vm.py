@@ -12,6 +12,7 @@ import sys
 import time
 import tempfile
 from vm_runtime import vm_lock
+from vm_disk import disk_format, new_disk_format
 from vm_network import network_args, validate as validate_network
 from vm_ui import ask, choose_machine, notice, options, present
 from vm_profiles import accelerator_args, choose, profile, validate as validate_profile
@@ -324,7 +325,7 @@ def build_args(name, data, boot=None, accelerator=None):
     if data['disk_path']:
         # QEMU uses commas as option separators; double literal commas.
         disk = data['disk_path'].replace(',', ',,')
-        args += ['-drive', 'file=' + disk + ',format=qcow2,if=virtio']
+        args += ['-drive', 'file=' + disk + ',format=' + disk_format(data) + ',if=virtio']
     args += network_args(data)
     if boot == 'iso':
         args += ['-cdrom', data['iso_path'], '-boot', 'order=c,once=d' if data['disk_path'] else 'order=d']
@@ -403,21 +404,22 @@ def expand_path(value):
     return Path(os.path.expandvars(value.strip().strip('"'))).expanduser().resolve()
 
 def ask_file(suffix):
+    suffixes = (suffix,) if isinstance(suffix, str) else suffix
     while True:
-        path = expand_path(ask('Путь к существующему файлу ' + suffix + ':'))
-        if path.is_file() and path.suffix.lower() == suffix:
+        path = expand_path(ask('Путь к существующему файлу ' + '/'.join(suffixes) + ':'))
+        if path.is_file() and path.suffix.lower() in suffixes:
             return str(path)
-        notice('Укажи существующий файл ' + suffix + '.', 'warning')
+        notice('Укажи существующий файл ' + '/'.join(suffixes) + '.', 'warning')
 
 
 def new_disk():
-    present('Создание виртуального диска', 'Укажи новый файл qcow2 и размер диска.')
+    present('Создание виртуального диска', 'Укажи новый файл qcow2 или VDI и размер диска.')
     while True:
-        path = expand_path(ask('Полный путь нового диска qcow2:'))
+        path = expand_path(ask('Полный путь нового диска .qcow2 или .vdi:'))
         if path.exists():
             notice('Файл уже существует. Укажи путь нового диска.', 'warning')
-        elif path.suffix.lower() != '.qcow2':
-            notice('Имя файла должно заканчиваться на .qcow2.', 'warning')
+        elif path.suffix.lower() not in ('.qcow2', '.vdi'):
+            notice('Имя файла должно заканчиваться на .qcow2 или .vdi.', 'warning')
         else:
             break
     size = ask_number('Размер нового диска в ГБ', 60, 65536)
@@ -432,7 +434,7 @@ def new_disk():
     with path.open('xb'):
         pass
     try:
-        subprocess.run([exe, 'create', '-f', 'qcow2', str(path), str(size) + 'G'], check=True, shell=False,
+        subprocess.run([exe, 'create', '-f', new_disk_format(path), str(path), str(size) + 'G'], check=True, shell=False,
                        stdout=subprocess.PIPE, stderr=subprocess.PIPE)
     except BaseException as error:
         path.unlink()
@@ -467,7 +469,8 @@ def attach(name, kind):
             raise ValueError('A disk is already configured. Use vm edit ' + name + ' to change it.')
         choice = int(options('Выбор диска', [('1', 'Подключить существующий диск'), ('2', 'Создать новый диск')],
                              default='2', cancel=False, name=name, data=data))
-        data['disk_path'] = ask_file('.qcow2') if choice == 1 else new_disk()
+        data['disk_path'] = ask_file(('.qcow2', '.vdi')) if choice == 1 else new_disk()
+        data['disk_format'] = disk_format({'disk_path': data['disk_path']})
     update_config(name, data)
     notice('Параметры сохранены. Запуск: vm ' + name, 'success')
     return 0
@@ -540,9 +543,9 @@ def add(template=None, offer_template=True):
         raise ValueError('В копии неизвестный видеоадаптер.')
     label_default = saved.get('label', name)
     label = ask('Название [{}]:'.format(label_default)).strip() or label_default
-    mode = int(options('Добавление VM · источник', [('1', 'Существующий диск qcow2'), ('2', 'Только Live ISO'),
+    mode = int(options('Добавление VM · источник', [('1', 'Существующий диск qcow2 / VDI'), ('2', 'Только Live ISO'),
                        ('3', 'Установка ISO на новый диск')], default='3', cancel=False, name=name, data={'label': label}))
-    disk_path = ask_file('.qcow2') if mode == 1 else ''
+    disk_path = ask_file(('.qcow2', '.vdi')) if mode == 1 else ''
     iso_path = ask_file('.iso') if mode in (2, 3) else ''
     if template:
         ram_mb, cores = saved.get('ram_mb'), saved.get('cores')
@@ -574,7 +577,7 @@ def add(template=None, offer_template=True):
                 extras = [arg.replace(str(extra_path).replace(',', ',,'), replacement.replace(',', ',,')) for arg in extras]
     for key in ('kind', 'path'):
         data.pop(key, None)
-    data.update(label=label, disk_path=disk_path, iso_path=iso_path, ram_mb=ram_mb,
+    data.update(label=label, disk_path=disk_path, disk_format=disk_format({'disk_path': disk_path}), iso_path=iso_path, ram_mb=ram_mb,
                 cores=cores, vga=saved.get('vga', 'std'), screen_width=width, screen_height=height, extra_args=extras)
     save_new(name, data)
     present('Виртуальная машина добавлена', name=name, data=data,

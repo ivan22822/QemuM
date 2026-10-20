@@ -72,7 +72,7 @@ def media(data):
     return list(unique.values())
 
 def backing_chain(path, image_exe):
-    if not path.is_file() or path.suffix.lower() not in ('.qcow2', '.qcow', '.vmdk', '.vhdx', '.vhd'):
+    if not path.is_file() or path.suffix.lower() not in ('.qcow2', '.qcow', '.vdi', '.vmdk', '.vhdx', '.vhd'):
         return []
     result = subprocess.run([image_exe, 'info', '--backing-chain', '--output=json', str(path)],
                             capture_output=True, text=True, encoding='utf-8', errors='replace', timeout=20, shell=False,

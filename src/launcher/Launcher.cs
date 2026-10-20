@@ -11,6 +11,11 @@ static class Launcher {
         Application.EnableVisualStyles();Application.SetCompatibleTextRenderingDefault(false);
         string root=AppDomain.CurrentDomain.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar);
         try{
+            if(args.Length==3&&args[0]=="--check-updates"&&args[1]=="--install-root"){
+                root=Path.GetFullPath(args[2]);Core.NoLinks(root);
+                if(!File.Exists(Path.Combine(root,"active.json")))throw new IOException("Не найдена установка QemuM.");
+                Application.Run(new UpdateWindow(root));return;
+            }
             if(args.Length==1&&args[0]=="--check-updates"){Application.Run(new UpdateWindow(root));return;}
             if(args.Length!=0)throw new IOException("Неизвестные параметры запуска.");
             Run(root);
@@ -64,18 +69,19 @@ static class Launcher {
 
 sealed class UpdateWindow : Form {
     readonly string root;
-    readonly Label status=new Label{Dock=DockStyle.Fill,AutoSize=false,Padding=new Padding(24),ForeColor=Color.White};
-    readonly Button check=new Button{Text="Проверить",AutoSize=true};
-    readonly Button install=new Button{Text="Установить обновление",AutoSize=true,Enabled=false};
+    readonly Label status=new Label{Dock=DockStyle.Fill,AutoSize=false,ForeColor=BootstrapUI.Muted};
+    readonly Button check=BootstrapUI.Button("Проверить");
+    readonly Button install=BootstrapUI.Button("Установить обновление",true);
+    readonly ComponentProgress progress=new ComponentProgress("Пакет приложения"){Dock=DockStyle.Bottom,Visible=false};
     Feed feed;string work;bool busy;
-    public UpdateWindow(string root){
-        this.root=root;Text="Обновления QemuM · alpha";ClientSize=new Size(600,250);MinimumSize=Size;StartPosition=FormStartPosition.CenterScreen;
-        BackColor=Color.FromArgb(5,14,37);Font=new Font("Segoe UI",11);
-        var buttons=new FlowLayoutPanel{Dock=DockStyle.Bottom,Height=64,Padding=new Padding(20,8,0,0)};
-        foreach(var button in new[]{check,install}){button.BackColor=Color.FromArgb(101,199,255);button.ForeColor=Color.Black;button.FlatStyle=FlatStyle.Flat;button.Margin=new Padding(0,0,12,0);buttons.Controls.Add(button);}
-        Controls.Add(status);Controls.Add(buttons);
+    public UpdateWindow(string root,bool autoCheck=true){
+        this.root=root;BootstrapUI.Style(this,"Обновления QemuM · Alpha",390);install.Enabled=false;
+        var body=new Panel{Dock=DockStyle.Fill,Padding=new Padding(28,24,28,12)};
+        var header=BootstrapUI.Header("Обновления приложения");
+        body.Controls.Add(status);body.Controls.Add(progress);body.Controls.Add(header);
+        Controls.Add(body);Controls.Add(BootstrapUI.Buttons(check,install));
         check.Click+=(sender,args)=>Check();install.Click+=(sender,args)=>Install();
-        Shown+=(sender,args)=>Check();FormClosing+=(sender,args)=>{if(busy)args.Cancel=true;};
+        if(autoCheck)Shown+=(sender,args)=>Check();FormClosing+=(sender,args)=>{if(busy)args.Cancel=true;};
     }
     async void Check(){
         if(busy)return;busy=true;check.Enabled=install.Enabled=false;status.Text="Проверяю выпуски GitHub…";
@@ -97,15 +103,19 @@ sealed class UpdateWindow : Form {
         busy=true;check.Enabled=install.Enabled=false;
         try{
             using(Core.Lock(root,"running.lock"))using(Core.Lock(root,"update.lock")){
-                status.Text="Скачиваю и проверяю пакет…";
+                status.Text="Скачиваю и проверяю пакет…";progress.Visible=true;
+                var updates=new Progress<InstallProgress>(item=>progress.Report(item.Phase,item.Done,item.Total));
+                IProgress<InstallProgress> reporter=updates;
                 await Task.Run(()=>{
-                    string zip=Path.Combine(work,Guid.NewGuid().ToString("N")+".zip");Core.Download(feed.url,zip,128*1024*1024);
-                    var package=Core.Stage(zip,feed.sha256,root);
+                    string zip=Path.Combine(work,Guid.NewGuid().ToString("N")+".zip");Core.Download(feed.url,zip,128*1024*1024,false,(done,total)=>reporter.Report(new InstallProgress("QemuM","Загрузка",done,total)));
+                    reporter.Report(new InstallProgress("QemuM","Проверка SHA-256"));
+                    var package=Core.Stage(zip,feed.sha256,root,(done,total)=>reporter.Report(new InstallProgress("QemuM","Распаковка",done,total)));
                     if(package.version!=feed.version||package.min_launcher_protocol!=feed.min_launcher_protocol)
                         throw new IOException("Версия пакета не соответствует обновлению.");
                     Core.Activate(root,package);
                 });
             }
+            progress.Report("Готово",1,1);
             status.Text="Установлена версия "+feed.version+". Открой QemuM через прежний ярлык.";
         }catch(IOException error){status.Text="Обновление не установлено. Проверь, что менеджер закрыт.\n"+error.Message;}
         catch(Exception error){status.Text="Обновление не установлено: "+error.Message;}

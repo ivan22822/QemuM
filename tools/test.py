@@ -39,6 +39,10 @@ def gui_tests(include_qemu=False):
     compile_launcher(update_tests, 'UpdateTests', [ROOT / 'tests' / 'gui' / 'UpdateTests.cs'])
     subprocess.run([str(update_tests), str(output)], timeout=60, creationflags=HIDDEN, check=True)
     print('UpdateTests: passed')
+    bootstrap = ROOT / 'build' / 'tests' / 'BootstrapTests.exe'
+    compile_launcher(bootstrap, 'BootstrapTests', [ROOT / 'tests/gui/BootstrapTests.cs', ROOT / 'src/launcher/Setup.cs', ROOT / 'src/launcher/Launcher.cs'])
+    subprocess.run([str(bootstrap), str(output), str(output)], timeout=60, creationflags=HIDDEN, check=True)
+    print('BootstrapTests: passed')
     names = ['EditorTests', 'MenuTests', 'SelectorTests', 'InputStyleTests', 'AppearanceTests', 'SupportTests']
     if include_qemu:
         names.append('GuiTests')
@@ -77,6 +81,8 @@ def main():
         return 1
     if args.gui or args.qemu:
         gui_tests(args.qemu)
+    if args.qemu:
+        subprocess.run([sys.executable, str(ROOT / 'tools' / 'test_vdi.py')], check=True)
     return 0
 
 
