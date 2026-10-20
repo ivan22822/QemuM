@@ -189,6 +189,9 @@ static class GuiTests {
             var deadline=DateTime.UtcNow.AddSeconds(20);bool ready=false;
             while(DateTime.UtcNow<deadline){try{backend.Call("control",J.O("name",guestName,"action","snapshot"));ready=true;break;}catch(InvalidOperationException){Thread.Sleep(200);}}
             Check(ready,"real QMP disk snapshot works");
+            string supportPath=Path.Combine(root,"support-guest.zip");
+            object supportReport=backend.Call("support_export",J.O("name",guestName,"path",supportPath,"sections",new[]{"logs","parameters","state","diagnostics","screenshot"},"redact",true,"description","Disposable paused guest report"));
+            Check(File.Exists(supportPath)&&J.D(J.V(supportReport,"errors")).Count==0,"selected diagnostics and PNG screenshot export through real QMP");
             object snapshotsResult=backend.Call("snapshots",J.O("name",guestName));Check(J.B(snapshotsResult,"online")&&J.A(J.V(snapshotsResult,"rows")).Length>0,"live snapshot list works");
             backend.Call("control",J.O("name",guestName,"action","toggle"));backend.Call("control",J.O("name",guestName,"action","toggle"));Check(true,"pause and resume work through headless service");
             object liveLog=backend.Call("logs",J.O("name",guestName));Check(J.A(J.V(liveLog,"events")).Length>=3,"live manager events are available");

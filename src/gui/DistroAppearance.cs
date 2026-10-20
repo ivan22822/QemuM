@@ -24,9 +24,10 @@ sealed class AppearanceStore : IDisposable {
     public string Error {get;private set;}
     public AppearanceStore(string root){
         assets=Path.Combine(root,"visual-assets");path=Path.Combine(root,"appearance.json");
-        try{foreach(var item in J.A(J.Json().DeserializeObject(System.IO.File.ReadAllText(Path.Combine(assets,"catalog.json"),Encoding.UTF8)))){
+        string builtinAssets=Path.Combine(AlphaIntegration.AppRoot(root),"visual-assets");
+        try{foreach(var item in J.A(J.Json().DeserializeObject(System.IO.File.ReadAllText(Path.Combine(builtinAssets,"catalog.json"),Encoding.UTF8)))){
             string file=J.S(item,"file");if(Path.GetFileName(file)!=file)continue;
-            builtins.Add(new Distro{Id=J.S(item,"id"),Name=J.S(item,"name"),File=Path.Combine(assets,file),Pattern=J.S(item,"pattern")});
+            builtins.Add(new Distro{Id=J.S(item,"id"),Name=J.S(item,"name"),File=Path.Combine(builtinAssets,file),Pattern=J.S(item,"pattern")});
         }}catch(IOException){Error="Каталог логотипов недоступен.";}catch(ArgumentException){Error="Не удалось прочитать каталог логотипов.";}
     }
     Dictionary<string,object> Read(){

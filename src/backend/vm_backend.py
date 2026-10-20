@@ -14,6 +14,7 @@ import time
 import uuid
 
 BASE = Path(__file__).resolve().parent
+sys.path.insert(0, str(BASE))  # Embeddable Python keeps its stdlib isolated.
 settings_path = BASE / 'installation.json'
 if settings_path.is_file():
     settings = json.loads(settings_path.read_text(encoding='utf-8-sig'))
@@ -123,7 +124,7 @@ class Service:
     def list(self, args):
         return dict(rows=[dict(name=name, data=data, network_view=network_display(data))
                           for name, data in vm.menu_rows(vm.entries())],
-                    mode=vm.manager_settings()['launch_mode'], version='2.1.0')
+                    mode=vm.manager_settings()['launch_mode'], version='0.1.0-alpha.1')
 
     def states(self, args):
         if not self.inventory_running and time.monotonic() - self.inventory_time > 10:
@@ -449,6 +450,10 @@ class Service:
             raise ValueError('Выполни диагностику заново.')
         return dict(path=str(report.save()))
 
+    def support_export(self, args):
+        from vm_support import export
+        return export(self, args)
+
     def logs(self, args):
         name = self.name(args)
         record = self.sessions.get(name)
@@ -485,7 +490,7 @@ class Service:
 
 
 COMMANDS = {'ping', 'list', 'states', 'get', 'save', 'template_list', 'network_import', 'network_validate', 'create', 'start', 'control',
-            'snapshots', 'delete_plan', 'delete', 'mode', 'doctor', 'report_save', 'logs'}
+            'snapshots', 'delete_plan', 'delete', 'mode', 'doctor', 'report_save', 'logs', 'support_export'}
 
 
 def serve(root=None):
