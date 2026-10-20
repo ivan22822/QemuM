@@ -62,7 +62,7 @@ sealed class Backend : IDisposable {
         var errors=new List<string>();
         foreach(var candidate in Candidates()) {
             try {
-                string script=Path.Combine(root,"vm_backend.py");
+                string script=Path.Combine(AlphaIntegration.AppRoot(root),"vm_backend.py");
                 var args=candidate.Skip(1).Concat(new[]{"-B","-X","utf8",script,"--root",root});
                 var start=new ProcessStartInfo(candidate[0],String.Join(" ",args.Select(J.Quote))) {
                     UseShellExecute=false,CreateNoWindow=true,WindowStyle=ProcessWindowStyle.Hidden,
@@ -138,8 +138,10 @@ sealed class MainWindow : Form {
         Text="QEMU VM Manager";Theme.Form(this,1040,760);MinimumSize=new Size(920,680);
         var top=new BufferedPanel { Dock=DockStyle.Top,Height=43,Padding=new Padding(20,9,20,7) };
         var brand=Theme.Label("QEMU   /   VM Manager",11,null,true);brand.Dock=DockStyle.Left;
-        var themeName=Theme.Label("Полярная ночь",9,Theme.Muted);themeName.Dock=DockStyle.Right;
-        top.Controls.Add(brand);top.Controls.Add(themeName);
+        var support=Theme.Flow();support.Dock=DockStyle.Right;support.AutoSize=false;support.Width=310;support.WrapContents=false;
+        support.Controls.Add(Theme.Button("Помощь / отчёт",()=>{using(var window=new SupportWindow(this,selected))window.ShowDialog(this);}));
+        support.Controls.Add(Theme.Button("Обновления",()=>AlphaIntegration.Updates(this)));
+        top.Height=64;top.Controls.Add(brand);top.Controls.Add(support);
         var bottom=new Panel { Dock=DockStyle.Bottom,Height=32,Padding=new Padding(20,7,16,0) };
         footer.Dock=DockStyle.Fill;bottom.Controls.Add(footer);bottom.Controls.Add(progress);
         var content=new TableLayoutPanel { Dock=DockStyle.Fill,ColumnCount=2,Margin=Padding.Empty };
@@ -214,7 +216,7 @@ sealed class MainWindow : Form {
         detail.Resize+=(sender,args)=>arrange();
         Shown+=(sender,args)=>arrange();
         timer.Tick+=(sender,args)=>Poll();FormClosing+=OnClosing;
-        Shown+=(sender,args)=>{if(!demo&&autoStart)Run("Открываю библиотеку…",()=>{Backend=new Backend(root,python);Backend.Open();return Backend.Call("list");},result=>{Fill(result);timer.Start();Poll();});};
+        Shown+=(sender,args)=>{if(!demo&&autoStart)Run("Открываю библиотеку…",()=>{Backend=new Backend(root,python);Backend.Open();return Backend.Call("list");},result=>{Fill(result);timer.Start();Poll();AlphaIntegration.Ready();});};
         SelectVm(null);
     }
     Panel PreviewPage(TextBox preview,string buttonTitle,Action action) {
@@ -651,7 +653,8 @@ static class Program {
     [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr window);
     [STAThread] static void Main(string[] args) {
         Application.EnableVisualStyles();Application.SetCompatibleTextRenderingDefault(false);
-        string root=AppDomain.CurrentDomain.BaseDirectory.TrimEnd('\\'),python=null,preview=null;
+        string root=Environment.GetEnvironmentVariable("QEMUM_DATA_DIR")??AppDomain.CurrentDomain.BaseDirectory.TrimEnd('\\'),python=Environment.GetEnvironmentVariable("QEMUM_PYTHON"),preview=null;
+        Directory.CreateDirectory(root);
         for(int i=0;i<args.Length;i++){if(args[i]=="--root"&&i+1<args.Length)root=Path.GetFullPath(args[++i]);else if(args[i]=="--python"&&i+1<args.Length)python=args[++i];else if(args[i]=="--preview"&&i+1<args.Length)preview=args[++i];}
         Application.ThreadException+=(sender,eventArgs)=>MessageBox.Show(eventArgs.Exception.Message,"VM Manager",MessageBoxButtons.OK,MessageBoxIcon.Warning);
         System.Threading.Mutex mutex=null;bool acquired=false;

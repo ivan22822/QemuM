@@ -33,7 +33,13 @@ def gui_tests(include_qemu=False):
             raise RuntimeError('QEMU tools missing from PATH: ' + ', '.join(missing))
     output = ROOT / 'build' / 'test-results'
     output.mkdir(parents=True, exist_ok=True)
-    names = ['EditorTests', 'MenuTests', 'SelectorTests', 'InputStyleTests', 'AppearanceTests']
+    from release import compile_launcher
+    update_tests = ROOT / 'build' / 'tests' / 'UpdateTests.exe'
+    update_tests.parent.mkdir(parents=True, exist_ok=True)
+    compile_launcher(update_tests, 'UpdateTests', [ROOT / 'tests' / 'gui' / 'UpdateTests.cs'])
+    subprocess.run([str(update_tests), str(output)], timeout=60, creationflags=HIDDEN, check=True)
+    print('UpdateTests: passed')
+    names = ['EditorTests', 'MenuTests', 'SelectorTests', 'InputStyleTests', 'AppearanceTests', 'SupportTests']
     if include_qemu:
         names.append('GuiTests')
     for name in names:
@@ -42,7 +48,9 @@ def gui_tests(include_qemu=False):
         with tempfile.TemporaryDirectory(prefix=name + '-', dir=ROOT / 'build') as temporary:
             root = Path(temporary)
             iso, sentinel = fixture(root)
-            if name == 'AppearanceTests':
+            if name == 'SupportTests':
+                args = [str(output), str(root)]
+            elif name == 'AppearanceTests':
                 args = [str(root), str(output)]
             elif name == 'GuiTests':
                 args = [str(output), str(root), sys.executable]

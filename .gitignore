@@ -8,6 +8,13 @@
 **/appearance.json*
 **/installation.json
 **/manager-settings.json
+**/runtime.json
+**/active.json
+**/data/
+**/downloads/
+**/staging/
+**/health/
+**/versions/
 *.qcow
 *.qcow2
 *.vdi
