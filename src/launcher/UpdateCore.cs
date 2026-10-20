@@ -122,7 +122,7 @@ namespace QemuM.Update {
             foreach(string path in Directory.EnumerateFiles(directory)){NoLinks(path);files.Add(path.Substring(root.Length+1).Replace('\\','/'));}
             foreach(string path in Directory.EnumerateDirectories(directory))Inventory(root,path,files);
         }
-        public static Package Stage(string zip,string expectedHash,string root){
+        public static Package Stage(string zip,string expectedHash,string root,Action<int,int> progress=null){
             NoLinks(root);CheckHash(Hash(zip),expectedHash);
             string stage=Path.Combine(root,"staging",Guid.NewGuid().ToString("N"));
             NoLinks(stage);Directory.CreateDirectory(stage);
@@ -146,9 +146,11 @@ namespace QemuM.Update {
                 Validate(package);
                 if(seen.Count!=package.files.Count+1||!seen.SetEquals(package.files.Keys.Concat(new[]{"package.json"})))
                     throw new IOException("Состав ZIP не соответствует manifest.");
+                int completed=0;
                 foreach(var entry in archive.Entries){
                     string path=Path.Combine(stage,Relative(entry.FullName));Directory.CreateDirectory(Path.GetDirectoryName(path));
                     using(var source=entry.Open())using(var target=new FileStream(path,FileMode.CreateNew,FileAccess.Write,FileShare.None))CopyBounded(source,target,entry.Length);
+                    if(progress!=null)progress(++completed,archive.Entries.Count);
                 }
                 VerifyDirectory(stage);
                 string destination=Path.Combine(root,"versions",package.version);NoLinks(destination);
@@ -188,7 +190,7 @@ namespace QemuM.Update {
             if(uri.Host=="release-assets.githubusercontent.com"||uri.Host=="objects.githubusercontent.com")return true;
             return dependencies&&(uri.Host=="www.python.org"||uri.Host=="qemu.weilnetz.de");
         }
-        public static void Download(string url,string path,long limit,bool dependencies=false){
+        public static void Download(string url,string path,long limit,bool dependencies=false,Action<long,long?> progress=null){
             Uri uri=new Uri(url);
             ServicePointManager.SecurityProtocol=SecurityProtocolType.Tls12;
             for(int redirect=0;redirect<6;redirect++){
@@ -200,7 +202,11 @@ namespace QemuM.Update {
                     if(response.StatusCode!=HttpStatusCode.OK||response.ContentLength>limit)throw new IOException("Невозможно загрузить пакет.");
                     using(var source=response.GetResponseStream())using(var target=new FileStream(path,FileMode.CreateNew,FileAccess.Write,FileShare.None)){
                         byte[] buffer=new byte[65536];long total=0;int count;
-                        while((count=source.Read(buffer,0,buffer.Length))>0){total+=count;if(total>limit)throw new IOException("Файл превышает лимит.");target.Write(buffer,0,count);}
+                        var clock=System.Diagnostics.Stopwatch.StartNew();
+                        while((count=source.Read(buffer,0,buffer.Length))>0){total+=count;if(total>limit)throw new IOException("Файл превышает лимит.");target.Write(buffer,0,count);
+                            if(progress!=null&&clock.ElapsedMilliseconds>=100){progress(total,response.ContentLength>0?(long?)response.ContentLength:null);clock.Restart();}
+                        }
+                        if(progress!=null)progress(total,response.ContentLength>0?(long?)response.ContentLength:null);
                         target.Flush(true);
                     }
                     return;

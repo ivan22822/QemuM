@@ -18,10 +18,10 @@ def main():
     findings = []
     with zipfile.ZipFile(package) as archive:
         names = archive.namelist()
-        if len(names) != len(set(names)) or set(names) != set(expected) | {'VMManager.exe', 'package.json'}:
+        if len(names) != len(set(names)) or set(names) != set(expected) | {'VMManager.exe', 'QemuM.Update.exe', 'package.json'}:
             findings.append('Unexpected package file list')
         manifest = json.loads(archive.read('package.json'))
-        if manifest['version'] != VERSION or set(manifest['files']) != set(expected) | {'VMManager.exe'}:
+        if manifest['version'] != VERSION or set(manifest['files']) != set(expected) | {'VMManager.exe', 'QemuM.Update.exe'}:
             findings.append('Unexpected manifest')
         for name in names:
             content = archive.read(name)

@@ -12,7 +12,7 @@ from vm_storage import safe_file
 
 SECTIONS = frozenset(('logs', 'parameters', 'state', 'diagnostics', 'screenshot'))
 MAX_LOG = 2 * 1024 * 1024
-VERSION = '0.1.0-alpha.1'
+VERSION = '0.1.0-alpha.2'
 
 
 def redact(value, paths=()):
