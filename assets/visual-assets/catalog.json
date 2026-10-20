@@ -1,0 +1,203 @@
+[
+  {
+    "id": "tails",
+    "name": "Tails",
+    "pattern": "tails",
+    "file": "tails.png",
+    "source": "https://upload.wikimedia.org/wikipedia/commons/archive/b/b0/20140430065611%21Tails_icon.png",
+    "sha256": "f27d032f5deec2b69143d780c3f3e937c2178e362b38777866d6ceb1d5976eb9",
+    "credit": "Tails / Tor Project, CC BY 4.0, unmodified PNG. https://commons.wikimedia.org/wiki/File:Tails_icon.png https://creativecommons.org/licenses/by/4.0/"
+  },
+  {
+    "id": "ubuntu",
+    "name": "Ubuntu",
+    "pattern": "ubuntu",
+    "file": "ubuntu.png",
+    "source": "https://raw.githubusercontent.com/homarr-labs/dashboard-icons/b409eb0d1fa960277f8510d3ae3a19093b910ca4/png/ubuntu-linux.png",
+    "sha256": "a85b49c913853e0b06074e62d5bfd44388116cf234f52bf8bbbe583d35a5d256"
+  },
+  {
+    "id": "kali",
+    "name": "Kali Linux",
+    "pattern": "kali",
+    "file": "kali.png",
+    "source": "https://raw.githubusercontent.com/homarr-labs/dashboard-icons/b409eb0d1fa960277f8510d3ae3a19093b910ca4/png/kali-linux.png",
+    "sha256": "1cca198b6ba87d94310556d4b729295654ffb5ed2a032e422d4a240e25cb75e5"
+  },
+  {
+    "id": "debian",
+    "name": "Debian",
+    "pattern": "debian",
+    "file": "debian.png",
+    "source": "https://raw.githubusercontent.com/homarr-labs/dashboard-icons/b409eb0d1fa960277f8510d3ae3a19093b910ca4/png/debian-linux.png",
+    "sha256": "6d19ccc474a0fe870214d9396ca123ef0241c2bb491ad641d705daac3eae2986"
+  },
+  {
+    "id": "fedora",
+    "name": "Fedora",
+    "pattern": "fedora",
+    "file": "fedora.png",
+    "source": "https://raw.githubusercontent.com/homarr-labs/dashboard-icons/b409eb0d1fa960277f8510d3ae3a19093b910ca4/png/fedora.png",
+    "sha256": "92652651412d17ebb1fb37dd7c208133cbe4ffae62a163c86ee46c1941f00e57"
+  },
+  {
+    "id": "mint",
+    "name": "Linux Mint",
+    "pattern": "linuxmint|linux-mint",
+    "file": "mint.png",
+    "source": "https://raw.githubusercontent.com/homarr-labs/dashboard-icons/b409eb0d1fa960277f8510d3ae3a19093b910ca4/png/linux-mint.png",
+    "sha256": "df70f81a693876824674bdea1e6070148b329c1fef8e1fd954b75562187f1b73"
+  },
+  {
+    "id": "arch",
+    "name": "Arch Linux",
+    "pattern": "archlinux|arch-linux|arch",
+    "file": "arch.png",
+    "source": "https://raw.githubusercontent.com/homarr-labs/dashboard-icons/b409eb0d1fa960277f8510d3ae3a19093b910ca4/png/arch-linux.png",
+    "sha256": "c9fd058b6f8ef45dd7fc451d2a5a3508659a150a150cdfe50347f5879c6e0bb6"
+  },
+  {
+    "id": "manjaro",
+    "name": "Manjaro",
+    "pattern": "manjaro",
+    "file": "manjaro.png",
+    "source": "https://raw.githubusercontent.com/homarr-labs/dashboard-icons/b409eb0d1fa960277f8510d3ae3a19093b910ca4/png/manjaro-linux.png",
+    "sha256": "88f56877dbc88005a6b3769e67dddf8c09f86b8bd9f7ae69e08806e8a194edbb"
+  },
+  {
+    "id": "opensuse",
+    "name": "openSUSE",
+    "pattern": "opensuse",
+    "file": "opensuse.png",
+    "source": "https://raw.githubusercontent.com/homarr-labs/dashboard-icons/b409eb0d1fa960277f8510d3ae3a19093b910ca4/png/opensuse.png",
+    "sha256": "b397f9015a07758d4d8aceb8b34307077cafcfe86beee4215762f59e8ff468a9"
+  },
+  {
+    "id": "alpine",
+    "name": "Alpine Linux",
+    "pattern": "alpine",
+    "file": "alpine.png",
+    "source": "https://raw.githubusercontent.com/homarr-labs/dashboard-icons/b409eb0d1fa960277f8510d3ae3a19093b910ca4/png/alpine-linux.png",
+    "sha256": "b679bc87845755482da189183a6971efea3e63f19e06dce47bf562f346db66b3"
+  },
+  {
+    "id": "rocky",
+    "name": "Rocky Linux",
+    "pattern": "rocky",
+    "file": "rocky.png",
+    "source": "https://raw.githubusercontent.com/homarr-labs/dashboard-icons/b409eb0d1fa960277f8510d3ae3a19093b910ca4/png/rocky-linux.png",
+    "sha256": "f66d6cb38114cf4cb3965f9253d458bf0ffca2b148d08309a4b0e97b1eb91dfa"
+  },
+  {
+    "id": "alma",
+    "name": "AlmaLinux",
+    "pattern": "almalinux|alma-linux",
+    "file": "alma.png",
+    "source": "https://raw.githubusercontent.com/homarr-labs/dashboard-icons/b409eb0d1fa960277f8510d3ae3a19093b910ca4/png/alma-linux.png",
+    "sha256": "d19389c71e39e6644aba2f9ca0e3dfb4f1d90e2162ec9fecdc2602dd4102c73d"
+  },
+  {
+    "id": "centos",
+    "name": "CentOS",
+    "pattern": "centos",
+    "file": "centos.png",
+    "source": "https://raw.githubusercontent.com/homarr-labs/dashboard-icons/b409eb0d1fa960277f8510d3ae3a19093b910ca4/png/centos.png",
+    "sha256": "4ee704b727f583c7df46f30c54c274d89711d7d246f007105a0889447c4a32e6"
+  },
+  {
+    "id": "gentoo",
+    "name": "Gentoo",
+    "pattern": "gentoo",
+    "file": "gentoo.png",
+    "source": "https://raw.githubusercontent.com/homarr-labs/dashboard-icons/b409eb0d1fa960277f8510d3ae3a19093b910ca4/png/gentoo-linux.png",
+    "sha256": "b258b4ae4db57416eeb002b4743ab109a5fe2c7c21cdb44e939a9aec6bf76d24"
+  },
+  {
+    "id": "nixos",
+    "name": "NixOS",
+    "pattern": "nixos",
+    "file": "nixos.png",
+    "source": "https://raw.githubusercontent.com/homarr-labs/dashboard-icons/b409eb0d1fa960277f8510d3ae3a19093b910ca4/png/nixos.png",
+    "sha256": "20cf953237a3c2fd0227930c8b10165cf1cbf5a34cc31f8ae0d7f2d68a573876"
+  },
+  {
+    "id": "zorin",
+    "name": "Zorin OS",
+    "pattern": "zorin",
+    "file": "zorin.png",
+    "source": "https://raw.githubusercontent.com/homarr-labs/dashboard-icons/b409eb0d1fa960277f8510d3ae3a19093b910ca4/png/zorin-linux.png",
+    "sha256": "090900fda93300c3fa12b3d9cf84706f1d5e526da3679fb8334a75d964d4c576"
+  },
+  {
+    "id": "kubuntu",
+    "name": "Kubuntu",
+    "pattern": "kubuntu",
+    "file": "kubuntu.png",
+    "source": "https://raw.githubusercontent.com/homarr-labs/dashboard-icons/b409eb0d1fa960277f8510d3ae3a19093b910ca4/png/kubuntu-linux.png",
+    "sha256": "8315ab7ab3265f8d06a777ed4cb88969c12eb2e34e32bc23c56759980c9aa879"
+  },
+  {
+    "id": "lubuntu",
+    "name": "Lubuntu",
+    "pattern": "lubuntu",
+    "file": "lubuntu.png",
+    "source": "https://raw.githubusercontent.com/homarr-labs/dashboard-icons/b409eb0d1fa960277f8510d3ae3a19093b910ca4/png/lubuntu-linux.png",
+    "sha256": "46c1ead778da9db8fdcfdb4929aac48a4a4b5a3100a8bc68caf451e7c7bb3a80"
+  },
+  {
+    "id": "xubuntu",
+    "name": "Xubuntu",
+    "pattern": "xubuntu",
+    "file": "xubuntu.png",
+    "source": "https://raw.githubusercontent.com/homarr-labs/dashboard-icons/b409eb0d1fa960277f8510d3ae3a19093b910ca4/png/xubuntu-linux.png",
+    "sha256": "87903148144af92dc25a49174306ca5f5bec5626c45228c11dd163795fe4258e"
+  },
+  {
+    "id": "endeavour",
+    "name": "EndeavourOS",
+    "pattern": "endeavouros",
+    "file": "endeavour.png",
+    "source": "https://raw.githubusercontent.com/homarr-labs/dashboard-icons/b409eb0d1fa960277f8510d3ae3a19093b910ca4/png/endeavouros-linux.png",
+    "sha256": "e30f4ae196c41ea69ceb2430f9726e5f76f95eedcca8dae11840de9caeace343"
+  },
+  {
+    "id": "garuda",
+    "name": "Garuda Linux",
+    "pattern": "garuda",
+    "file": "garuda.png",
+    "source": "https://raw.githubusercontent.com/homarr-labs/dashboard-icons/b409eb0d1fa960277f8510d3ae3a19093b910ca4/png/garuda-linux.png",
+    "sha256": "19f0bbeff6ca3acb6ae3710338cd68ccf6b746cc2a52413e9ad8b9960dc7ead3"
+  },
+  {
+    "id": "windows11",
+    "name": "Windows 11",
+    "pattern": "windows[ _-]*11|win11",
+    "file": "windows11.png",
+    "source": "https://raw.githubusercontent.com/homarr-labs/dashboard-icons/b409eb0d1fa960277f8510d3ae3a19093b910ca4/png/windows-11.png",
+    "sha256": "ee3d8b851aad11fc504e259b769e9cdb02865859689300385b8c78f4df0fee42"
+  },
+  {
+    "id": "windows10",
+    "name": "Windows 10",
+    "pattern": "windows[ _-]*10|win10",
+    "file": "windows10.png",
+    "source": "https://raw.githubusercontent.com/homarr-labs/dashboard-icons/b409eb0d1fa960277f8510d3ae3a19093b910ca4/png/windows-10.png",
+    "sha256": "b3d4ac70febf465132846d7419c2e8430e3643e9bb0ed6c00a5b69c0ac176d2b"
+  },
+  {
+    "id": "windows",
+    "name": "Windows",
+    "pattern": "windows|win7|winxp",
+    "file": "windows.png",
+    "source": "https://raw.githubusercontent.com/homarr-labs/dashboard-icons/b409eb0d1fa960277f8510d3ae3a19093b910ca4/png/microsoft-windows.png",
+    "sha256": "759c31eda1501f7a8b873f82f50a7b83eff2e84fcf48ff599ca2b6e19451a0ce"
+  },
+  {
+    "id": "linux",
+    "name": "Linux",
+    "pattern": "linux",
+    "file": "linux.png",
+    "source": "https://raw.githubusercontent.com/homarr-labs/dashboard-icons/b409eb0d1fa960277f8510d3ae3a19093b910ca4/png/linux.png",
+    "sha256": "f843400c7daaeca123c288708c92ab54b20142679c3052d0c1e94d9bf4a98004"
+  }
+]
