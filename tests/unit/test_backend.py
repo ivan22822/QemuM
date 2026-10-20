@@ -35,6 +35,11 @@ class BackendTests(unittest.TestCase):
         available = patch.object(vm, 'qmp_bind_error', return_value=None)
         available.start()
         self.addCleanup(available.stop)
+        # Unit tests mock process creation; discovery must not depend on host QEMU.
+        self.qemu_path = str(self.root / 'tools' / 'qemu-system-x86_64.exe')
+        executable = patch.object(vm, 'qemu_executable', return_value=self.qemu_path)
+        executable.start()
+        self.addCleanup(executable.stop)
 
     def tearDown(self):
         self.service.close()
@@ -98,7 +103,7 @@ class BackendTests(unittest.TestCase):
     def test_port_selection_skips_other_vm_ports(self):
         seed = int.from_bytes(hashlib.sha256(b'test').digest()[:2], 'big')
         used = 20000 + seed % 25000
-        (vm.ROOT / 'other.json').write_text(json.dumps(dict(self.data, qmp_port=used)))
+        (vm.ROOT / 'other.json').write_text(json.dumps(dict(self.data, qmp_port=used)), encoding='utf-8')
         replies = iter([OSError(errno.EADDRINUSE, 'busy'), None])
         with patch.object(vm, 'qmp_bind_error', side_effect=lambda port: next(replies)) as probe:
             data, saved, port, backup = vm.prepare_qmp_port('test', self.data, self.raw, Mock())
@@ -134,7 +139,7 @@ class BackendTests(unittest.TestCase):
         self.assertEqual(self.path.read_bytes(), self.raw)
 
     def test_bad_json_does_not_hide_other_machines(self):
-        (vm.ROOT / 'broken.json').write_text('[]')
+        (vm.ROOT / 'broken.json').write_text('[]', encoding='utf-8')
         rows = self.service.list({})['rows']
         self.assertEqual(len(rows), 2)
         self.assertTrue(rows[0]['data']['_invalid'])
@@ -160,7 +165,7 @@ class BackendTests(unittest.TestCase):
         self.assertEqual(self.path.read_bytes(), self.raw)
 
     def test_advanced_editor_can_repair_broken_config(self):
-        self.path.write_text('{bad')
+        self.path.write_text('{bad', encoding='utf-8')
         saved = self.service.get(dict(name='test'))
         self.assertTrue(saved['error'])
         self.service.save(dict(name='test', hash=saved['hash'], raw=json.dumps(self.data)))
@@ -189,9 +194,9 @@ class BackendTests(unittest.TestCase):
         folder.mkdir()
         old = str(self.root / 'old.iso')
         parameters = dict(self.data, iso_path=old, extra_args=['-cdrom', old, '-netdev', 'user,id=lab'])
-        (folder / 'saved.json').write_text(json.dumps(dict(schema_version=1, backup_name='Копия', parameters=parameters)))
+        (folder / 'saved.json').write_text(json.dumps(dict(schema_version=1, backup_name='Копия', parameters=parameters)), encoding='utf-8')
         self.service.create(dict(name='restored', template='saved.json', data={'iso_path': str(self.iso)}))
-        data = json.loads((vm.ROOT / 'restored.json').read_text())
+        data = json.loads((vm.ROOT / 'restored.json').read_text(encoding='utf-8'))
         self.assertNotIn(old, data['extra_args'])
         self.assertIn(str(self.iso), data['extra_args'])
         self.assertIn('user,id=lab', data['extra_args'])
@@ -232,6 +237,7 @@ class BackendTests(unittest.TestCase):
             value = self.service.start(dict(name='test'))
         self.assertEqual(value['pid'], 1234)
         self.assertTrue(start.call_args.kwargs['creationflags'] & subprocess.CREATE_NO_WINDOW)
+        self.assertEqual(start.call_args.args[0][0], self.qemu_path)
         self.assertIs(start.call_args.kwargs['shell'], False)
         self.service.close()
         process.kill.assert_not_called()
@@ -240,7 +246,7 @@ class BackendTests(unittest.TestCase):
     def test_disk_boot_does_not_require_an_unused_installer_iso(self):
         disk = self.root / 'placeholder.qcow2'
         disk.write_bytes(b'never boot: mock Popen')
-        self.path.write_text(json.dumps(dict(self.data, disk_path=str(disk), iso_path=str(self.root / 'removed.iso'))))
+        self.path.write_text(json.dumps(dict(self.data, disk_path=str(disk), iso_path=str(self.root / 'removed.iso'))), encoding='utf-8')
         process = Mock(pid=1234)
         process.poll.return_value = None
         with patch.object(self.service, 'query', side_effect=TimeoutError()), patch.object(self.service, 'stopped'), \
@@ -333,5 +339,5 @@ class BackendTests(unittest.TestCase):
 if __name__ == '__main__':
     result = unittest.TextTestRunner(verbosity=2).run(unittest.defaultTestLoader.loadTestsFromModule(sys.modules[__name__]))
     (HERE / 'unit-results.json').write_text(json.dumps(dict(tests=result.testsRun,
-        errors=[str(test) for test, _ in result.errors], failures=[str(test) for test, _ in result.failures]), indent=2))
+        errors=[str(test) for test, _ in result.errors], failures=[str(test) for test, _ in result.failures]), indent=2), encoding='utf-8')
     raise SystemExit(0 if result.wasSuccessful() else 1)

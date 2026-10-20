@@ -4,6 +4,7 @@ from pathlib import Path
 import sys
 import tempfile
 import unittest
+from unittest.mock import patch
 
 ROOT = Path(__file__).resolve().parents[2]
 sys.path.insert(0, str(ROOT / 'src' / 'backend'))
@@ -15,6 +16,12 @@ spec.loader.exec_module(audit)
 
 
 class RepositoryTests(unittest.TestCase):
+    def test_runtime_still_rejects_a_missing_qemu_installation(self):
+        with patch.object(vm.shutil, 'which', return_value=None), \
+                patch.object(Path, 'is_file', return_value=False), \
+                self.assertRaisesRegex(ValueError, 'QEMU not found'):
+            vm.qemu_executable()
+
     def test_first_cli_run_creates_no_personal_or_example_vms(self):
         original = vm.ROOT
         try:

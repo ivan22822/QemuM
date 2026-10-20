@@ -121,6 +121,7 @@ class PickerTests(unittest.TestCase):
     def test_delete_preview_cannot_bypass_exact_name_confirmation(self):
         plan = dict(files=[Path('private.qcow2')], missing=[], kept=[(Path('shared.iso'), 'общий ISO')])
         with patch.object(vm, 'load', return_value=self.rows[0][1]), \
+                patch.object(vm, 'qemu_executable', return_value='qemu-system-x86_64.exe'), \
                 patch.object(vm_storage, 'deletion_plan', return_value=plan), \
                 patch.object(vm_storage, 'delete_with_template') as remove, \
                 patch('builtins.input', side_effect=['Моя копия', 'wrong-name']), \

@@ -137,7 +137,7 @@ class NetworkTests(unittest.TestCase):
                 iso = root / 'live.iso';iso.write_bytes(b'never boot')
                 folder = root / 'parameter-backups';folder.mkdir()
                 parameters = dict(iso_path=str(iso), disk_path='', ram_mb=128, cores=1, network_adapters=[self.nic()], extra_args=['-device', 'usb-tablet'])
-                (folder / 'saved.json').write_text(json.dumps(dict(schema_version=1, parameters=parameters, backup_name='Сеть')))
+                (folder / 'saved.json').write_text(json.dumps(dict(schema_version=1, parameters=parameters, backup_name='Сеть')), encoding='utf-8')
                 service.create(dict(name='inherited', template='saved.json', data={}))
                 self.assertEqual(vm.load('inherited')['network_adapters'], parameters['network_adapters'])
                 service.create(dict(name='legacy', template='saved.json', data={}, network_managed=False))
@@ -150,5 +150,5 @@ class NetworkTests(unittest.TestCase):
 if __name__ == '__main__':
     result = unittest.TextTestRunner(verbosity=2).run(unittest.defaultTestLoader.loadTestsFromModule(sys.modules[__name__]))
     (HERE / 'network-unit-results.json').write_text(json.dumps(dict(tests=result.testsRun,
-        failures=[str(test) for test, _ in result.failures], errors=[str(test) for test, _ in result.errors]), indent=2))
+        failures=[str(test) for test, _ in result.failures], errors=[str(test) for test, _ in result.errors]), indent=2), encoding='utf-8')
     raise SystemExit(0 if result.wasSuccessful() else 1)
