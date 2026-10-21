@@ -36,7 +36,7 @@ def main():
         path = Path(name)
         parts = {part.lower() for part in path.parts}
         if path.suffix.lower() in FORBIDDEN_SUFFIXES or parts & FORBIDDEN_PARTS or path.name.lower() in {
-            'appearance.json', 'installation.json', 'manager-settings.json', 'runtime.json', 'active.json', '.env'}:
+            'appearance.json', 'installation.json', 'manager-settings.json', 'launch-profiles.json', 'runtime.json', 'active.json', '.env'}:
             findings.append(dict(path=name, category='runtime/private/generated file'))
         if path.suffix.lower() == '.png' and not name.startswith('assets/visual-assets/'):
             findings.append(dict(path=name, category='unexpected image'))

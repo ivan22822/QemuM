@@ -3,6 +3,7 @@ import json
 from contextlib import suppress
 import os
 import queue
+import re
 import subprocess
 import tempfile
 import threading
@@ -16,9 +17,34 @@ LABELS = {'whpx': 'WHPX · аппаратное ускорение', 'auto': 'А
 
 def profile(data):
     value = data.get('launch_profile', 'whpx')
-    if value not in PROFILES:
+    if value not in PROFILES and not (isinstance(value, str) and re.fullmatch(r'custom-[0-9a-f]{32}', value)
+                                     and data.get('launch_profile_settings')):
         raise ValueError('Неизвестный профиль запуска. Выбери профиль в параметрах VM.')
     return value
+
+
+def label(data):
+    return data.get('launch_profile_label') or LABELS.get(profile(data), 'Пользовательский профиль')
+
+
+def validate_settings(settings):
+    if not isinstance(settings, dict) or set(settings) != {'accelerator', 'options', 'cpu'}:
+        raise ValueError('Профиль должен содержать ускоритель, его опции и CPU.')
+    if settings['accelerator'] not in ('whpx', 'tcg'):
+        raise ValueError('Выбери ускоритель WHPX или TCG.')
+    cpu, options = settings['cpu'], settings['options']
+    if not isinstance(cpu, str) or not re.fullmatch(r'[A-Za-z0-9_.,=+:-]{1,512}', cpu):
+        raise ValueError('Укажи модель CPU и, при необходимости, её опции без пробелов.')
+    if not isinstance(options, str) or len(options) > 1024:
+        raise ValueError('Слишком длинные опции ускорителя.')
+    keys = set()
+    for item in options.split(',') if options else []:
+        if not re.fullmatch(r'[A-Za-z][A-Za-z0-9_-]*=[A-Za-z0-9_.:+/-]+', item):
+            raise ValueError('Опции ускорителя: имя=значение через запятую, без -accel и пробелов.')
+        key = item.split('=', 1)[0]
+        if key in keys:
+            raise ValueError('Повторная опция ускорителя: ' + key)
+        keys.add(key)
 
 
 def conflicts(extras):
@@ -35,7 +61,11 @@ def conflicts(extras):
 
 
 def validate(data):
-    profile(data)
+    requested = profile(data)
+    if data.get('launch_profile_settings') is not None:
+        if requested == 'auto':
+            raise ValueError('Авто использует встроенный алгоритм выбора ускорителя.')
+        validate_settings(data['launch_profile_settings'])
     extra = data.get('extra_args', [])
     if not isinstance(extra, list) or any(not isinstance(item, str) for item in extra):
         raise ValueError('extra_args должен быть списком строк.')
@@ -47,10 +77,18 @@ def validate(data):
 
 def initial_accelerator(data):
     requested = profile(data)
+    if data.get('launch_profile_settings'):
+        return data['launch_profile_settings']['accelerator']
     return 'whpx' if requested == 'auto' else requested
 
 
-def accelerator_args(accelerator):
+def accelerator_args(accelerator, settings=None):
+    if settings is not None:
+        validate_settings(settings)
+        if accelerator != settings['accelerator']:
+            raise ValueError('Ускоритель не соответствует сохранённому профилю.')
+        return ['-accel', accelerator + (',' + settings['options'] if settings['options'] else ''),
+                '-cpu', settings['cpu']]
     if accelerator not in ('whpx', 'whpx-compatible', 'tcg'):
         raise ValueError('Сначала выбери фактическое ускорение WHPX или TCG.')
     value = {'whpx': 'whpx', 'whpx-compatible': 'whpx,kernel-irqchip=off',
@@ -71,14 +109,14 @@ def failure_hint(message):
     return ('qemu-error', 'QEMU завершил проверку с ошибкой. Подробности ниже; автоматического исправления нет.')
 
 
-def probe(exe, accelerator, timeout=10, popen=subprocess.Popen):
+def probe(exe, accelerator, timeout=10, popen=subprocess.Popen, settings=None):
     """No disks, firmware overrides, network backends or inherited guest arguments.
 
     QMP query-status after machine initialization proves creation, not guest boot.
     QMP requests are sequential; EOF must not abort initialization prematurely.
     kill/wait targets only the Popen child handle.
     """
-    args = [str(exe), '-name', 'vm-doctor-probe', '-machine', 'q35'] + accelerator_args(accelerator)
+    args = [str(exe), '-name', 'vm-doctor-probe', '-machine', 'q35'] + accelerator_args(accelerator, settings)
     args += ['-m', '128', '-smp', '1', '-S', '-nodefaults', '-nic', 'none',
              '-display', 'none', '-serial', 'none', '-monitor', 'none', '-qmp', 'stdio']
     child = None
@@ -165,7 +203,8 @@ def choose(exe, data, check=None):
     requested = profile(data)
     check = check or probe
     first = initial_accelerator(data)
-    result = check(exe, first)
+    settings = data.get('launch_profile_settings')
+    result = check(exe, first, settings=settings) if settings is not None else check(exe, first)
     if result['state'] == 'ok':
         return first, result
     if requested == 'auto' and result['state'] == 'failed':

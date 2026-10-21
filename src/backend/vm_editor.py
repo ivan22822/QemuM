@@ -11,7 +11,7 @@ import uuid
 
 from vm_style import clean, color_for, enable_vt, fit, paint
 
-from vm_profiles import LABELS, PROFILES, profile
+from vm_profiles import LABELS, PROFILES, profile, label as profile_label
 from vm_ui import ask, notice, options, present, screen_frame
 
 VGA = ('std', 'virtio', 'qxl', 'cirrus', 'none')
@@ -84,7 +84,7 @@ def frame(name, data, changed, width=88, ansi=True):
                        '[5] Видеоадаптер: ' + data.get('vga', 'std')]),
             ('Носители и запуск', ['[6] Диск: ' + (data.get('disk_path') or 'не подключён'),
                           '[7] ISO: ' + (data.get('iso_path') or 'не подключён'),
-                          '[8] Профиль: ' + LABELS[profile(data)],
+                          '[8] Профиль: ' + profile_label(data),
                         'Есть несохранённые изменения.' if changed else 'Выбери параметр для изменения.'])],
         options=[('S', 'Сохранить с резервной копией'), ('0', 'Назад / отменить изменения')])
 
@@ -144,9 +144,10 @@ def edit(name, data, save):
         elif choice == '7':
             data['iso_path'] = media_path('ISO', data.get('iso_path', ''), '.iso')
         elif choice == '8':
-            present('Профиль запуска', name=name, data=data, options=[('1', 'WHPX · аппаратное ускорение'),
-                    ('2', 'Авто · проверить WHPX, иначе TCG'), ('3', 'TCG · программная эмуляция, медленнее')])
-            selected = number('Профиль', PROFILES.index(profile(data)) + 1, len(PROFILES))
+            present('Профиль запуска', name=name, data=data, options=[(str(index + 1), LABELS[key]) for index, key in enumerate(PROFILES)])
+            selected = number('Профиль', PROFILES.index(profile(data)) + 1 if profile(data) in PROFILES else 1, len(PROFILES))
             data['launch_profile'] = PROFILES[selected - 1]
+            data.pop('launch_profile_settings', None)
+            data.pop('launch_profile_label', None)
         else:
             notice('Выбери 1–8, S или 0.', 'warning')

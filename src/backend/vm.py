@@ -317,7 +317,7 @@ def build_args(name, data, boot=None, accelerator=None):
     if not data.get(boot + '_path'):
         raise ValueError('No ' + boot + ' configured.')
     port = checked_qmp_port(name, data)
-    args = ['-name', name] + accelerator_args(accelerator) + ['-machine', 'q35',
+    args = ['-name', name] + accelerator_args(accelerator, data.get('launch_profile_settings')) + ['-machine', 'q35',
             '-smp', str(data['cores']), '-m', str(data['ram_mb']),
             '-display', 'sdl,gl=off',
             '-qmp', 'tcp:127.0.0.1:{},server=on,wait=off'.format(port)]

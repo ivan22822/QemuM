@@ -128,7 +128,7 @@ sealed class ResourceSummary : UserControl {
         for(int index=0;index<3;index++)table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,33.333F));
         table.Controls.Add(Theme.Label("Оперативная память",9,Theme.Muted),0,0);table.Controls.Add(Theme.Label("Процессор",9,Theme.Muted),1,0);table.Controls.Add(Theme.Label("Ускорение",9,Theme.Muted),2,0);table.Controls.Add(memory,0,1);table.Controls.Add(cores,1,1);table.Controls.Add(profile,2,1);Controls.Add(table);
     }
-    public void ShowData(object data,bool present){int ram=J.N(data,"ram_mb");memory.Text=present?(ram>0&&ram%1024==0?ram/1024+" ГБ":ram+" МБ"):"—";cores.Text=present?J.N(data,"cores")+" CPU":"—";profile.Text=present?J.S(data,"launch_profile","whpx").ToUpperInvariant():"—";}
+    public void ShowData(object data,bool present){int ram=J.N(data,"ram_mb");memory.Text=present?(ram>0&&ram%1024==0?ram/1024+" ГБ":ram+" МБ"):"—";cores.Text=present?J.N(data,"cores")+" CPU":"—";profile.Text=present?J.S(data,"launch_profile_label",J.S(data,"launch_profile","whpx").ToUpperInvariant()):"—";}
     protected override void OnPaint(PaintEventArgs e){base.OnPaint(e);using(var pen=new Pen(Theme.Line)){e.Graphics.DrawLine(pen,0,0,Width,0);e.Graphics.DrawLine(pen,0,Height-1,Width,Height-1);}}
 }
 

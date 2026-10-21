@@ -77,6 +77,20 @@ def normalized(data):
 
 
 class Service:
+    def profile_list(self, args):
+        from vm_profile_store import read
+        return read(self.root)
+
+    def profile_save(self, args):
+        from vm_profile_store import change
+        return change(self.root, args.get('hash'), row=args.get('profile'))
+
+    def profile_delete(self, args):
+        from vm_profile_store import change
+        if not isinstance(args.get('id'), str) or not args['id']:
+            raise ValueError('Выбери пользовательский профиль.')
+        return change(self.root, args.get('hash'), remove=args['id'])
+
     def __init__(self, root=None):
         self.root = Path(root or BASE).resolve()
         vm.ROOT = self.root / 'machines'
@@ -126,7 +140,7 @@ class Service:
     def list(self, args):
         return dict(rows=[dict(name=name, data=data, network_view=network_display(data))
                           for name, data in vm.menu_rows(vm.entries())],
-                    mode=vm.manager_settings()['launch_mode'], version='0.1.0-alpha.2')
+                    mode=vm.manager_settings()['launch_mode'], version='0.1.0-alpha.3')
 
     def states(self, args):
         if not self.inventory_running and time.monotonic() - self.inventory_time > 10:
@@ -495,7 +509,7 @@ class Service:
         return dict(protocol=1, python=sys.version.split()[0], pid=os.getpid(), root=str(self.root))
 
 
-COMMANDS = {'ping', 'list', 'states', 'get', 'save', 'template_list', 'network_import', 'network_validate', 'create', 'start', 'control',
+COMMANDS = {'profile_list', 'profile_save', 'profile_delete', 'ping', 'list', 'states', 'get', 'save', 'template_list', 'network_import', 'network_validate', 'create', 'start', 'control',
             'snapshots', 'delete_plan', 'delete', 'mode', 'doctor', 'report_save', 'logs', 'support_export'}
 
 

@@ -7,6 +7,7 @@
 **/visual-assets/custom/
 **/appearance.json*
 **/installation.json
+**/launch-profiles.json
 **/manager-settings.json
 **/runtime.json
 **/active.json

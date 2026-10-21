@@ -12,7 +12,7 @@ import subprocess
 import sys
 import textwrap
 
-from vm_profiles import LABELS, failure_hint, probe, profile, validate
+from vm_profiles import LABELS, failure_hint, probe, profile, validate, label, initial_accelerator
 from vm_style import clean, paint, enable_vt
 from vm_ui import ask, choose_machine, notice, present, screen_frame
 
@@ -161,16 +161,23 @@ class Doctor:
             self.manager.qmp_port(name, data)
             if any(arg.split('=', 1)[0] == '-qmp' for arg in data.get('extra_args', [])):
                 raise ValueError('QMP управляется менеджером; убери отдельный -qmp из extra_args.')
-            self.add(name, 'config', 'ok', 'Параметры VM', 'Профиль: ' + LABELS[profile(data)])
+            self.add(name, 'config', 'ok', 'Параметры VM', 'Профиль: ' + label(data))
         except (OSError, ValueError, TypeError, KeyError) as error:
             self.add(name, 'config', 'error', 'Чтение конфигурации', error, 'Проверь JSON и параметры VM; файл не изменялся.')
             return
         requested = profile(data)
         results = self.probes
         candidates = ('whpx', 'tcg') if requested == 'auto' else (requested,)
-        ready = any(results.get(key, {}).get('state') == 'ok' for key in candidates)
+        if data.get('launch_profile_settings'):
+            result = self.check(self.manager.qemu_executable(), initial_accelerator(data),
+                                settings=data['launch_profile_settings'])
+            ready = result['state'] == 'ok'
+            self.add(name, 'custom-profile-probe', 'ok' if ready else 'warning',
+                     'Проверка сохранённых параметров профиля', result['detail'])
+        else:
+            ready = any(results.get(key, {}).get('state') == 'ok' for key in candidates)
         self.add(name, 'profile', 'ok' if ready else 'unknown', 'Доступность профиля',
-                 LABELS[requested], 'Проба проверяет создание VM с минимальными ресурсами, а не загрузку этой ОС.')
+                 label(data), 'Проба проверяет создание VM с минимальными ресурсами, а не загрузку этой ОС.')
         free = (host.get('os') or {}).get('FreePhysicalMemory')
         if free is not None and str(free).isdecimal():
             self.add(name, 'ram', 'warning' if data['ram_mb'] * 1024 > int(free) else 'ok',
