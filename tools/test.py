@@ -43,7 +43,7 @@ def gui_tests(include_qemu=False):
     compile_launcher(bootstrap, 'BootstrapTests', [ROOT / 'tests/gui/BootstrapTests.cs', ROOT / 'src/launcher/Setup.cs', ROOT / 'src/launcher/Launcher.cs'])
     subprocess.run([str(bootstrap), str(output), str(output)], timeout=60, creationflags=HIDDEN, check=True)
     print('BootstrapTests: passed')
-    names = ['EditorTests', 'MenuTests', 'SelectorTests', 'InputStyleTests', 'AppearanceTests', 'SupportTests']
+    names = ['EditorTests', 'MenuTests', 'SelectorTests', 'InputStyleTests', 'AppearanceTests', 'SupportTests', 'ProfileTests']
     if include_qemu:
         names.append('GuiTests')
     for name in names:
@@ -54,7 +54,7 @@ def gui_tests(include_qemu=False):
             iso, sentinel = fixture(root)
             if name == 'SupportTests':
                 args = [str(output), str(root)]
-            elif name == 'AppearanceTests':
+            elif name in ('AppearanceTests', 'ProfileTests'):
                 args = [str(root), str(output)]
             elif name == 'GuiTests':
                 args = [str(output), str(root), sys.executable]

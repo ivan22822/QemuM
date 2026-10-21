@@ -8,6 +8,84 @@ using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
+static class LaunchProfiles {
+    sealed class State {
+        public List<object> Rows;public object Current;public bool Loading;
+    }
+    static object[] Defaults(){return new[]{
+        J.O("id","whpx","label","WHPX","settings",J.O("accelerator","whpx","cpu","host","options","")),
+        J.O("id","auto","label","Авто","settings",null),
+        J.O("id","tcg","label","TCG","settings",J.O("accelerator","tcg","cpu","max","options","thread=multi")),
+        J.O("id","whpx-compatible","label","WHPX · совместимый","settings",J.O("accelerator","whpx","cpu","host","options","kernel-irqchip=off"))};}
+    public static ThemedSelector Selector(){
+        var selector=Theme.Combo();var state=new State{Rows=Defaults().ToList()};selector.Tag=state;
+        Fill(selector,state.Rows);selector.SelectedIndexChanged+=(sender,args)=>{if(!state.Loading&&selector.SelectedIndex>=0)state.Current=state.Rows[selector.SelectedIndex];};return selector;
+    }
+    static void Fill(ThemedSelector selector,IEnumerable<object> rows){
+        var state=(State)selector.Tag;state.Loading=true;state.Rows=rows.ToList();selector.Items.Clear();
+        foreach(var row in state.Rows)selector.Items.Add(J.S(row,"label"));selector.SelectedIndex=0;state.Loading=false;
+    }
+    public static void Load(ThemedSelector selector,object data){
+        var state=(State)selector.Tag;string id=J.S(data,"launch_profile","whpx");
+        var current=J.O("id",id,"label",J.S(data,"launch_profile_label",state.Rows.Where(row=>J.S(row,"id")==id).Select(row=>J.S(row,"label")).FirstOrDefault()??id),"settings",J.V(data,"launch_profile_settings"));
+        int index=state.Rows.FindIndex(row=>J.S(row,"id")==id);
+        if(index<0){var rows=state.Rows.ToList();rows.Add(current);Fill(selector,rows);index=rows.Count-1;}
+        state.Loading=true;selector.SelectedIndex=index;state.Current=current;state.Loading=false;
+    }
+    public static string Value(ThemedSelector selector){return J.S(((State)selector.Tag).Current??((State)selector.Tag).Rows[selector.SelectedIndex],"id");}
+    public static void Apply(ThemedSelector selector,Dictionary<string,object> data){
+        var state=(State)selector.Tag;object row=state.Current??state.Rows[selector.SelectedIndex];
+        data["launch_profile"]=J.S(row,"id");data["launch_profile_settings"]=J.V(row,"settings");data["launch_profile_label"]=J.S(row,"label");
+    }
+    public static Control Field(ThemedSelector selector,Backend backend,Form owner){
+        if(backend!=null)Fill(selector,J.A(J.V(backend.Call("profile_list",J.O()),"profiles")));
+        var panel=new TableLayoutPanel{Dock=DockStyle.Top,Height=44,ColumnCount=2,Margin=new Padding(0)};
+        panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));panel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,116));
+        selector.Dock=DockStyle.Fill;panel.Controls.Add(selector,0,0);
+        var manage=Theme.Button("Настроить…",()=>{
+            try{using(var dialog=new LaunchProfileDialog(backend,Value(selector))){
+                if(dialog.ShowDialog(owner)==DialogResult.OK){
+                    Fill(selector,J.A(J.V(backend.Call("profile_list",J.O()),"profiles")));
+                    var row=dialog.Selected;Load(selector,J.O("launch_profile",J.S(row,"id"),"launch_profile_label",J.S(row,"label"),"launch_profile_settings",J.V(row,"settings")));
+                }
+            }}catch(Exception error){MessageBox.Show(owner,error.Message,"Профили запуска",MessageBoxButtons.OK,MessageBoxIcon.Warning);}
+        });manage.Enabled=backend!=null;manage.Dock=DockStyle.Fill;manage.Margin=new Padding(8,0,0,0);panel.Controls.Add(manage,1,0);return panel;
+    }
+}
+
+sealed class LaunchProfileDialog : Form {
+    readonly Backend backend;readonly ThemedSelector presets=Theme.Combo(),accelerator=Theme.Combo("WHPX","TCG");
+    readonly FieldInput title=Theme.Input(),cpu=Theme.Input(),options=Theme.Input();
+    readonly Label hint=Theme.Label("",10,Theme.Muted);object catalog;object[] rows;string editing;
+    public object Selected {get;private set;}
+    public LaunchProfileDialog(Backend backend,string selected){
+        this.backend=backend;Text="Профили запуска";Theme.Form(this,780,760);
+        var fields=Theme.Fields();Theme.Row(fields,"Сохранённый профиль",presets,true);Theme.Row(fields,"Название",title,true);
+        Theme.Row(fields,"Ускоритель",accelerator);Theme.Row(fields,"Модель и опции CPU",cpu);
+        Theme.Row(fields,"Опции ускорителя",options,true);
+        Theme.Row(fields,"",Theme.Label("WHPX: kernel-irqchip=off или nested=off,kernel-irqchip=off\r\nTCG: thread=multi. CPU: host, max или модель с опциями.\r\nБез -accel и -cpu. Доступные опции зависят от сборки QEMU.",10,Theme.Muted),true);
+        var actions=Theme.Flow();actions.Controls.Add(Theme.Button("Создать свой",()=>{editing=null;title.Text="Мой профиль";EnableFields(true);hint.Text="Заполни параметры и нажми «Сохранить профиль».";}));
+        actions.Controls.Add(Theme.Button("Сохранить профиль",()=>Safe(()=>{
+            var result=backend.Call("profile_save",J.O("hash",J.S(catalog,"hash"),"profile",J.O("id",editing,"label",title.Text.Trim(),"settings",J.O("accelerator",accelerator.SelectedIndex==0?"whpx":"tcg","cpu",cpu.Text.Trim(),"options",options.Text.Trim()))));
+            Reload(J.S(result,"selected_id"));
+        }),true));
+        actions.Controls.Add(Theme.Button("Удалить свой",()=>Safe(()=>{
+            if(editing==null||!editing.StartsWith("custom-"))throw new InvalidOperationException("Удалять можно только свои сохранённые профили.");
+            if(MessageBox.Show(this,"Удалить профиль из каталога? Настроенные VM сохранят свои параметры.","Профили",MessageBoxButtons.YesNo,MessageBoxIcon.Question)!=DialogResult.Yes)return;
+            backend.Call("profile_delete",J.O("hash",J.S(catalog,"hash"),"id",editing));Reload("whpx");
+        })));
+        Theme.Row(fields,"",actions,true);Theme.Row(fields,"",hint,true);
+        var buttons=Theme.Flow();buttons.Controls.Add(Theme.Button("Выбрать",()=>{if(editing==null){MessageBox.Show(this,"Сначала сохрани новый профиль.");return;}Selected=rows[presets.SelectedIndex];DialogResult=DialogResult.OK;Close();},true));buttons.Controls.Add(Theme.Button("Закрыть",Close));
+        fields.AutoScroll=false;
+        Theme.Dialog(this,new ScrollSurface(fields),buttons,"Профили запуска","Сохранение меняет каталог. Для VM выбери профиль и сохрани её параметры.");
+        presets.SelectedIndexChanged+=(sender,args)=>ShowSelected();Reload(selected);
+    }
+    void Safe(Action action){try{action();}catch(Exception error){MessageBox.Show(this,error.Message,"Профили запуска",MessageBoxButtons.OK,MessageBoxIcon.Warning);}}
+    void EnableFields(bool enabled){title.Enabled=cpu.Enabled=options.Enabled=accelerator.Enabled=enabled;}
+    void Reload(string id){catalog=backend.Call("profile_list",J.O());rows=J.A(J.V(catalog,"profiles")).ToArray();presets.Items.Clear();foreach(var row in rows)presets.Items.Add(J.S(row,"label"));presets.SelectedIndex=Math.Max(0,Array.FindIndex(rows,row=>J.S(row,"id")==id));ShowSelected();}
+    void ShowSelected(){if(rows==null||presets.SelectedIndex<0||presets.SelectedIndex>=rows.Length)return;var row=rows[presets.SelectedIndex];editing=J.S(row,"id");title.Text=J.S(row,"label");var settings=J.V(row,"settings");cpu.Text=J.S(settings,"cpu");options.Text=J.S(settings,"options");accelerator.SelectedIndex=J.S(settings,"accelerator")=="tcg"?1:0;EnableFields(editing!="auto");hint.Text=editing=="auto"?"«Авто» проверяет обычный WHPX, затем TCG; алгоритм не редактируется.":"Изменения каталога не переписывают параметры существующих VM.";}
+}
+
 static class ArgText {
     [DllImport("shell32.dll",CharSet=CharSet.Unicode,SetLastError=true)]static extern IntPtr CommandLineToArgvW(string command,out int count);
     [DllImport("kernel32.dll")]static extern IntPtr LocalFree(IntPtr memory);

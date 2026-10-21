@@ -15,7 +15,7 @@ from vm_runtime import vm_lock
 from vm_disk import disk_format, new_disk_format
 from vm_network import network_args, validate as validate_network
 from vm_ui import ask, choose_machine, notice, options, present
-from vm_profiles import accelerator_args, choose, profile, validate as validate_profile
+from vm_profiles import accelerator_args, choose, initial_accelerator, profile, validate as validate_profile
 from vm_style import assign_color, clean, color_for, enable_vt, library_frame, paint
 
 ROOT = Path(__file__).resolve().parent / 'machines'
@@ -312,12 +312,12 @@ def validate_extra_args(data):
 def build_args(name, data, boot=None, accelerator=None):
     validate_extra_args(data)
     validate_profile(data)
-    accelerator = accelerator or ('tcg' if profile(data) == 'tcg' else 'whpx')
+    accelerator = accelerator or initial_accelerator(data)
     boot = boot or ('disk' if data['disk_path'] else 'iso')
     if not data.get(boot + '_path'):
         raise ValueError('No ' + boot + ' configured.')
     port = checked_qmp_port(name, data)
-    args = ['-name', name] + accelerator_args(accelerator) + ['-machine', 'q35',
+    args = ['-name', name] + accelerator_args(accelerator, data.get('launch_profile_settings')) + ['-machine', 'q35',
             '-smp', str(data['cores']), '-m', str(data['ram_mb']),
             '-display', 'sdl,gl=off',
             '-qmp', 'tcp:127.0.0.1:{},server=on,wait=off'.format(port)]

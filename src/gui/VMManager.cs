@@ -443,10 +443,10 @@ sealed class EditDialog : Form {
         tabs=new PageDeck { Dock=DockStyle.Fill,Padding=new Padding(0) };var common=new PageView("Параметры VM") { BackColor=Theme.Panel };var advanced=new PageView("Конфигурация JSON") { BackColor=Theme.Panel };
         var fields=Theme.Fields();label=Theme.Input(J.S(data,"label",name));ram=Theme.Number(J.N(data,"ram_mb",4096),1,1048576);cores=Theme.Number(J.N(data,"cores",2),1,256);
         width=Theme.Number(J.N(data,"screen_width",1920),320,4095);height=Theme.Number(J.N(data,"screen_height",1080),200,4095);
-        vga=Theme.Combo("std","virtio","qxl","cirrus","none");vga.SelectedItem=J.S(data,"vga","std");profile=Theme.Combo("WHPX","Авто","TCG");profile.SelectedIndex=J.S(data,"launch_profile","whpx")=="auto"?1:J.S(data,"launch_profile")=="tcg"?2:0;
+        vga=Theme.Combo("std","virtio","qxl","cirrus","none");vga.SelectedItem=J.S(data,"vga","std");profile=LaunchProfiles.Selector();var profileField=LaunchProfiles.Field(profile,main.Backend,this);LaunchProfiles.Load(profile,data);
         disk=Theme.Input(J.S(data,"disk_path"));iso=Theme.Input(J.S(data,"iso_path"));
         Theme.Row(fields,"Название",label,true);Theme.Row(fields,"Память, МБ",ram);Theme.Row(fields,"Ядра CPU",cores);Theme.Row(fields,"Ширина экрана",width);Theme.Row(fields,"Высота экрана",height);
-        Theme.Row(fields,"Видеоадаптер",vga);Theme.Row(fields,"Профиль запуска",profile);Theme.Row(fields,"Диск",Theme.Browse(disk,false,"Диски qcow2 / VDI|*.qcow2;*.vdi|Все файлы|*.*"),true);Theme.Row(fields,"ISO",Theme.Browse(iso,false,"ISO|*.iso|Все файлы|*.*"),true);
+        Theme.Row(fields,"Видеоадаптер",vga);Theme.Row(fields,"Профиль запуска",profileField);Theme.Row(fields,"Диск",Theme.Browse(disk,false,"Диски qcow2 / VDI|*.qcow2;*.vdi|Все файлы|*.*"),true);Theme.Row(fields,"ISO",Theme.Browse(iso,false,"ISO|*.iso|Все файлы|*.*"),true);
         var note=Theme.Label("Применится при следующем запуске.\r\nПеред сохранением создаётся копия параметров.",10,Theme.Muted);Theme.Row(fields,"",note);common.Controls.Add(fields);
         raw=Theme.Editor(J.S(original,"raw"));raw.Font=new Font("Consolas",10F);advanced.Padding=new Padding(24);advanced.Controls.Add(raw);tabs.Pages.Add(common);
         launchSettings=new LaunchSettingsUi(main,this,tabs,FieldsData,EnsureVisual);launchSettings.Load(data,J.V(original,"network_view"));
@@ -471,7 +471,7 @@ sealed class EditDialog : Form {
         draft=J.D(parsed);label.Text=J.S(draft,"label",name);disk.Text=J.S(draft,"disk_path",J.S(draft,"kind")=="disk"?J.S(draft,"path"):"");iso.Text=J.S(draft,"iso_path",J.S(draft,"kind")=="iso"?J.S(draft,"path"):"");
         ram.Value=Math.Max(ram.Minimum,Math.Min(ram.Maximum,J.N(draft,"ram_mb",4096)));cores.Value=Math.Max(cores.Minimum,Math.Min(cores.Maximum,J.N(draft,"cores",2)));
         width.Value=Math.Max(width.Minimum,Math.Min(width.Maximum,J.N(draft,"screen_width",1920)));height.Value=Math.Max(height.Minimum,Math.Min(height.Maximum,J.N(draft,"screen_height",1080)));
-        vga.SelectedItem=J.S(draft,"vga","std");profile.SelectedIndex=J.S(draft,"launch_profile","whpx")=="auto"?1:J.S(draft,"launch_profile")=="tcg"?2:0;
+        vga.SelectedItem=J.S(draft,"vga","std");LaunchProfiles.Load(profile,draft);
         launchSettings.Load(draft);jsonCurrent=false;
     }
     public void OpenPage(string page) {
@@ -481,8 +481,8 @@ sealed class EditDialog : Form {
     Dictionary<string,object> FieldsData() {
         var updates=J.O("label",label.Text,"ram_mb",(int)ram.Value,"cores",(int)cores.Value,
             "screen_width",(int)width.Value,"screen_height",(int)height.Value,"vga",Convert.ToString(vga.SelectedItem),
-            "launch_profile",profile.SelectedIndex==1?"auto":profile.SelectedIndex==2?"tcg":"whpx","disk_format",Path.GetExtension(disk.Text.Trim()).Equals(".vdi",StringComparison.OrdinalIgnoreCase)?"vdi":"qcow2","disk_path",disk.Text.Trim(),"iso_path",iso.Text.Trim());
-        var data=new Dictionary<string,object>(draft);foreach(var pair in updates)data[pair.Key]=pair.Value;return launchSettings.Merge(data);
+            "launch_profile",LaunchProfiles.Value(profile),"disk_format",Path.GetExtension(disk.Text.Trim()).Equals(".vdi",StringComparison.OrdinalIgnoreCase)?"vdi":"qcow2","disk_path",disk.Text.Trim(),"iso_path",iso.Text.Trim());
+        var data=new Dictionary<string,object>(draft);foreach(var pair in updates)data[pair.Key]=pair.Value;LaunchProfiles.Apply(profile,data);return launchSettings.Merge(data);
     }
     void Save() {
         try{
@@ -496,17 +496,17 @@ sealed class EditDialog : Form {
 
 sealed class CreateDialog : Form {
     readonly MainWindow main;readonly object[] templates;readonly FieldInput name=Theme.Input(),label=Theme.Input(),disk=Theme.Input(),iso=Theme.Input();
-    readonly ThemedSelector template=Theme.Combo("Новые настройки"),mode=Theme.Combo("Установка ISO на новый диск","Существующий диск","Только Live ISO"),profile=Theme.Combo("WHPX","Авто","TCG");
+    readonly ThemedSelector template=Theme.Combo("Новые настройки"),mode=Theme.Combo("Установка ISO на новый диск","Существующий диск","Только Live ISO"),profile=LaunchProfiles.Selector();
     readonly NumberInput ram=Theme.Number(4096,1,1048576),cores=Theme.Number(2,1,256),size=Theme.Number(60,1,65536);
     readonly Dictionary<string,string> replacements=new Dictionary<string,string>();
     internal readonly LaunchSettingsUi launchSettings;internal readonly AppearanceView appearance;readonly PageDeck tabs;
     public CreateDialog(MainWindow main,object saved,bool fromBackup=false,string selectedTemplate=null) {
-        this.main=main;templates=J.A(saved);Text="Добавление виртуальной машины";Theme.Form(this,1020,830);
+        this.main=main;var profileField=LaunchProfiles.Field(profile,main.Backend,this);templates=J.A(saved);Text="Добавление виртуальной машины";Theme.Form(this,1020,830);
         foreach(object item in templates)template.Items.Add(J.S(item,"backup_name",J.S(item,"id")));
         var fields=Theme.Fields();Theme.Row(fields,"Параметры из копии",template,true);Theme.Row(fields,"Короткое имя VM",name);Theme.Row(fields,"Название",label);Theme.Row(fields,"Источник",mode,true);
         var diskPicker=Theme.Browse(disk,true,"Диски qcow2 / VDI|*.qcow2;*.vdi",()=>mode.SelectedIndex==0);var isoPicker=Theme.Browse(iso,false,"ISO|*.iso|Все файлы|*.*");
         Theme.Row(fields,"Виртуальный диск",diskPicker);Theme.Row(fields,"ISO",isoPicker);Theme.Row(fields,"Размер диска, ГБ",size);
-        Theme.Row(fields,"Память, МБ",ram);Theme.Row(fields,"Ядра CPU",cores);Theme.Row(fields,"Профиль запуска",profile);
+        Theme.Row(fields,"Память, МБ",ram);Theme.Row(fields,"Ядра CPU",cores);Theme.Row(fields,"Профиль запуска",profileField);
         var missing=Theme.Button("Заменить доп. файлы…",MissingFiles);Theme.Row(fields,"Файлы из копии",missing);
         Theme.Row(fields,"",Theme.Label("Копия переносит параметры, включая сеть.\r\nДиск и ISO выбираются отдельно.\r\nПосле создания VM появится в списке.",10,Theme.Muted));
         tabs=new PageDeck{Dock=DockStyle.Fill,Padding=new Padding(0)};var common=new PageView("Параметры VM"){BackColor=Theme.Panel};common.Controls.Add(fields);tabs.Pages.Add(common);
@@ -522,7 +522,7 @@ sealed class CreateDialog : Form {
     void LoadTemplate() {
         replacements.Clear();if(template.SelectedIndex<1){launchSettings.Load(LaunchSettingsUi.Defaults());return;}object saved=templates[template.SelectedIndex-1];object data=J.V(saved,"parameters");
         name.Text=J.S(saved,"original_vm_name");label.Text=J.S(data,"label",name.Text);ram.Value=Math.Max(ram.Minimum,Math.Min(ram.Maximum,J.N(data,"ram_mb",4096)));cores.Value=Math.Max(cores.Minimum,Math.Min(cores.Maximum,J.N(data,"cores",2)));
-        profile.SelectedIndex=J.S(data,"launch_profile","whpx")=="auto"?1:J.S(data,"launch_profile")=="tcg"?2:0;
+        LaunchProfiles.Load(profile,data);
         launchSettings.Load(data,J.V(saved,"network_view"));
     }
     void MissingFiles() {
@@ -538,8 +538,8 @@ sealed class CreateDialog : Form {
     Dictionary<string,object> CreateData(){
         string diskValue=mode.SelectedIndex==2?"":disk.Text.Trim(),isoValue=mode.SelectedIndex==1?"":iso.Text.Trim();
         var data=J.O("label",String.IsNullOrWhiteSpace(label.Text)?name.Text:label.Text,"disk_format",Path.GetExtension(diskValue).Equals(".vdi",StringComparison.OrdinalIgnoreCase)?"vdi":"qcow2","disk_path",diskValue,"iso_path",isoValue,"ram_mb",(int)ram.Value,"cores",(int)cores.Value,
-            "launch_profile",profile.SelectedIndex==1?"auto":profile.SelectedIndex==2?"tcg":"whpx");
-        return launchSettings.Merge(data);
+            "launch_profile",LaunchProfiles.Value(profile));
+        LaunchProfiles.Apply(profile,data);return launchSettings.Merge(data);
     }
     void Create() {
         try{var data=CreateData();

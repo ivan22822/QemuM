@@ -20,6 +20,93 @@ import vm_profiles
 
 
 class BackendTests(unittest.TestCase):
+    def test_custom_profile_catalog_round_trip_and_delete_keeps_vm_snapshot(self):
+        catalog = self.service.profile_list({})
+        settings = dict(accelerator='whpx', cpu='host,vmx=off', options='kernel-irqchip=off')
+        saved = self.service.profile_save(dict(hash=catalog['hash'], profile=dict(label='Intel compatible', settings=settings)))
+        key = saved['selected_id']
+        self.assertTrue(key.startswith('custom-'))
+        self.assertEqual(self.path.read_bytes(), self.raw)
+        self.service.save(dict(name='test', hash=hashlib.sha256(self.raw).hexdigest(), updates=dict(
+            launch_profile=key, launch_profile_label='Intel compatible', launch_profile_settings=settings)))
+        before = self.path.read_bytes()
+        deleted = self.service.profile_delete(dict(hash=saved['hash'], id=key))
+        self.assertNotIn(key, [row['id'] for row in deleted['profiles']])
+        self.assertEqual(self.path.read_bytes(), before)
+        data = self.service.get({'name': 'test'})['data']
+        command = vm.build_args('test', data)
+        self.assertEqual(command[command.index('-accel') + 1], 'whpx,kernel-irqchip=off')
+        self.assertEqual(command[command.index('-cpu') + 1], 'host,vmx=off')
+        check = Mock(return_value={'state': 'ok', 'detail': 'created'})
+        selected, _ = vm_profiles.choose(self.qemu_path, data, check)
+        check.assert_called_once_with(self.qemu_path, 'whpx', settings=settings)
+        self.assertEqual(command, vm.build_args('test', data, accelerator=selected))
+
+    def test_profile_edits_are_persistent_and_reject_stale_catalog(self):
+        catalog = self.service.profile_list({})
+        settings = dict(accelerator='tcg', cpu='max', options='thread=single')
+        saved = self.service.profile_save(dict(hash=catalog['hash'], profile=dict(id='tcg', label='TCG single', settings=settings)))
+        self.assertEqual(self.service.profile_list({}), {key: saved[key] for key in ('profiles', 'hash')})
+        with self.assertRaisesRegex(ValueError, 'другом окне'):
+            self.service.profile_save(dict(hash=catalog['hash'], profile=dict(label='stale', settings=settings)))
+        with self.assertRaisesRegex(ValueError, 'Встроенные'):
+            self.service.profile_delete(dict(hash=saved['hash'], id='tcg'))
+        self.assertEqual(self.path.read_bytes(), self.raw)
+
+    def test_profile_settings_reject_injection_and_duplicate_options(self):
+        for field, value in [('cpu', 'host -drive secret'), ('options', 'kernel-irqchip=off -drive secret'),
+                             ('options', 'thread=multi,thread=single'), ('accelerator', 'unknown')]:
+            settings = dict(accelerator='whpx', cpu='host', options='')
+            settings[field] = value
+            with self.subTest(field=field, value=value), self.assertRaises(ValueError):
+                vm_profiles.validate(dict(self.data, launch_profile='whpx', launch_profile_settings=settings))
+        with self.assertRaisesRegex(ValueError, 'Авто'):
+            vm_profiles.validate(dict(self.data, launch_profile='auto', launch_profile_settings=dict(accelerator='tcg', cpu='max', options='')))
+
+    def test_custom_profile_probe_uses_exact_saved_cpu_and_options(self):
+        settings = dict(accelerator='whpx', cpu='host,vmx=off', options='nested=off,kernel-irqchip=off')
+        process = Mock(side_effect=OSError('No process launched'))
+        vm_profiles.probe(self.qemu_path, 'whpx', popen=process, settings=settings)
+        command = process.call_args.args[0]
+        self.assertEqual(command[command.index('-accel') + 1], 'whpx,nested=off,kernel-irqchip=off')
+        self.assertEqual(command[command.index('-cpu') + 1], settings['cpu'])
+        self.assertIn('-S', command)
+        self.assertNotIn('-drive', command)
+
+    def test_compatible_whpx_preview_and_preflight_use_same_options(self):
+        data = dict(self.data, launch_profile='whpx-compatible')
+        command = vm.build_args('test', data)
+        self.assertEqual(command[command.index('-accel') + 1], 'whpx,kernel-irqchip=off')
+        self.assertEqual(command[command.index('-cpu') + 1], 'host')
+        check = Mock(return_value={'state': 'ok', 'detail': 'created'})
+        selected, _ = vm_profiles.choose(self.qemu_path, data, check)
+        check.assert_called_once_with(self.qemu_path, 'whpx-compatible')
+        self.assertEqual(command, vm.build_args('test', data, accelerator=selected))
+        process = Mock(side_effect=OSError('No process launched in this test'))
+        vm_profiles.probe(self.qemu_path, selected, popen=process)
+        probe_command = process.call_args.args[0]
+        self.assertEqual(probe_command[probe_command.index('-accel') + 1], 'whpx,kernel-irqchip=off')
+        self.assertEqual(probe_command[probe_command.index('-cpu') + 1], 'host')
+
+    def test_existing_profiles_and_failed_compatible_probe_do_not_change_policy(self):
+        for value, expected in [('whpx', 'whpx'), ('auto', 'whpx'), ('tcg', 'tcg,thread=multi')]:
+            command = vm.build_args('test', dict(self.data, launch_profile=value))
+            self.assertEqual(command[command.index('-accel') + 1], expected)
+        check = Mock(return_value={'state': 'failed', 'detail': 'unsupported option'})
+        with self.assertRaisesRegex(ValueError, 'unsupported option'):
+            vm_profiles.choose(self.qemu_path, dict(self.data, launch_profile='whpx-compatible'), check)
+        check.assert_called_once_with(self.qemu_path, 'whpx-compatible')
+        with self.assertRaisesRegex(ValueError, 'extra_args'):
+            vm_profiles.validate(dict(self.data, launch_profile='whpx-compatible', extra_args=['-accel', 'whpx']))
+
+    def test_compatible_profile_is_saved_with_exact_backup(self):
+        saved = self.service.save(dict(name='test', hash=hashlib.sha256(self.raw).hexdigest(),
+                                       updates={'launch_profile': 'whpx-compatible'}))
+        self.assertEqual(Path(saved['backup']).read_bytes(), self.raw)
+        reopened = self.service.get({'name': 'test'})
+        self.assertEqual(reopened['data']['launch_profile'], 'whpx-compatible')
+        self.assertEqual(reopened['data']['custom'], self.data['custom'])
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(dir=HERE)
         self.root = Path(self.temp.name)
