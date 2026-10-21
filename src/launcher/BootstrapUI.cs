@@ -50,8 +50,9 @@ sealed class BootstrapPathField : UserControl {
 }
 
 sealed class BootstrapButton : Button {
-    public BootstrapButton(){FlatStyle=FlatStyle.Flat;FlatAppearance.BorderSize=0;SetStyle(ControlStyles.UserPaint|ControlStyles.OptimizedDoubleBuffer|ControlStyles.ResizeRedraw,true);Cursor=Cursors.Hand;}
+    public BootstrapButton(){FlatStyle=FlatStyle.Flat;FlatAppearance.BorderSize=0;UseVisualStyleBackColor=false;SetStyle(ControlStyles.UserPaint|ControlStyles.OptimizedDoubleBuffer|ControlStyles.ResizeRedraw,true);Cursor=Cursors.Hand;}
     protected override void OnPaint(PaintEventArgs e){
+        e.Graphics.Clear(Parent==null?BootstrapUI.Bg:Parent.BackColor);
         e.Graphics.SmoothingMode=SmoothingMode.AntiAlias;
         var bounds=new Rectangle(0,0,Width-1,Height-1);
         using(var path=new GraphicsPath()){

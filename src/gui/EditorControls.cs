@@ -93,7 +93,9 @@ sealed class ThemedSelector : UserControl {
     internal void ShowChoices(){
         if(!Enabled||Items.Count==0)return;if(popup.Visible){popup.Close();return;}
         choices.Items.Clear();choices.Items.AddRange(Items.ToArray());
-        int height=Math.Min(8,Items.Count)*choices.ItemHeight;int width=Math.Max(Width,180);
+        int height=Math.Min(8,Items.Count)*choices.ItemHeight;
+        int textWidth=Items.Cast<object>().Max(item=>TextRenderer.MeasureText(Convert.ToString(item),choices.Font,Size.Empty,TextFormatFlags.SingleLine).Width);
+        int width=Math.Min(Screen.FromControl(this).WorkingArea.Width-16,Math.Max(Math.Max(Width,180),textWidth+48));
         choices.Size=host.Size=new Size(width-2,height);popup.Size=new Size(width,height+2);choices.SelectedIndex=selected;
         popup.Show(this,new Point(0,Height+3));choices.Focus();Invalidate();
     }

@@ -20,7 +20,16 @@ static class BootstrapTests {
             using(var component=new ComponentProgress("Python")){
                 component.Report("Загрузка",50,100);component.Report("Проверка");component.Report("Готово",1,1);
             }
-            File.WriteAllText(Path.Combine(args[0],"bootstrap-results.json"),"{\"passed\":3}");return 0;
+            using(var parent=new Panel{BackColor=BootstrapUI.Bg})using(var button=BootstrapUI.Button("Установить обновление",true)){
+                parent.Controls.Add(button);button.Size=new Size(220,44);
+                foreach(bool enabled in new[]{true,false}){
+                    button.Enabled=enabled;using(var image=new Bitmap(button.Width,button.Height)){
+                        button.DrawToBitmap(image,button.ClientRectangle);
+                        if(image.GetPixel(0,button.Height-1).ToArgb()!=parent.BackColor.ToArgb())throw new Exception("Updater button corners must match the surrounding background.");
+                    }
+                }
+            }
+            File.WriteAllText(Path.Combine(args[0],"bootstrap-results.json"),"{\"passed\":4}");return 0;
         }catch(Exception error){File.WriteAllText(Path.Combine(args[0],"bootstrap-error.txt"),error.ToString());return 1;}
     }
     static void Save(Form form,string path){using(var image=new Bitmap(form.Width,form.Height)){form.DrawToBitmap(image,new Rectangle(Point.Empty,image.Size));image.Save(path);}}

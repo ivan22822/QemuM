@@ -18,6 +18,16 @@ static class InputStyleTests {
     [STAThread]static int Main(string[] args){
         Application.EnableVisualStyles();Application.SetCompatibleTextRenderingDefault(false);Program.TestMode=true;
         try{
+            using(var main=new MainWindow(args[0],null,true,false))using(var doctor=new DoctorWindow(main,J.O("checks",Enumerable.Range(0,25).Select(index=>J.O("title","Проверка "+index,"scope","host","state","ok","detail","Строка диагностики\r\nДополнительные сведения")).ToArray()))){
+                doctor.Show();Application.DoEvents();var scroll=All(doctor).OfType<ScrollSurface>().Single();
+                Check(scroll.ScrollBar.Visible&&scroll.ScrollBar.Maximum>0&&!All(doctor).OfType<ScrollableControl>().Any(control=>control.AutoScroll),"Doctor uses a themed scrollbar without native white scroll chrome");
+                scroll.ScrollOffset=scroll.ScrollBar.Maximum;Application.DoEvents();
+                Check(scroll.ScrollOffset>0,"Doctor report can scroll to its last checks");
+                Save(doctor,Path.Combine(args[0],"doctor-scroll.png"));doctor.Close();
+            }
+            string folder=Path.Combine(Path.GetTempPath(),"QemuM test disks");
+            Check(Theme.NewDiskPath(folder,"ubuntu-desktop")==Path.Combine(folder,"ubuntu-desktop.qcow2"),"new disk folder selection generates a predictable filename");
+            bool traversal=false;try{Theme.NewDiskPath(folder,"../outside");}catch(InvalidOperationException){traversal=true;}Check(traversal,"generated disk name cannot escape the selected folder");
             using(var form=new Form())using(var field=Theme.Input()){
                 Theme.Form(form,500,200);field.Dock=DockStyle.Top;form.Controls.Add(field);form.Show();Application.DoEvents();
                 string value="C:\\Test Data\\Лаборатория\\диск,копия.qcow2";field.Text=value;

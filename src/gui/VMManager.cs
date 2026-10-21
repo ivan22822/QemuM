@@ -504,7 +504,7 @@ sealed class CreateDialog : Form {
         this.main=main;var profileField=LaunchProfiles.Field(profile,main.Backend,this);templates=J.A(saved);Text="Добавление виртуальной машины";Theme.Form(this,1020,830);
         foreach(object item in templates)template.Items.Add(J.S(item,"backup_name",J.S(item,"id")));
         var fields=Theme.Fields();Theme.Row(fields,"Параметры из копии",template,true);Theme.Row(fields,"Короткое имя VM",name);Theme.Row(fields,"Название",label);Theme.Row(fields,"Источник",mode,true);
-        var diskPicker=Theme.Browse(disk,true,"Диски qcow2 / VDI|*.qcow2;*.vdi",()=>mode.SelectedIndex==0);var isoPicker=Theme.Browse(iso,false,"ISO|*.iso|Все файлы|*.*");
+        var diskPicker=Theme.BrowseNewDisk(disk,()=>mode.SelectedIndex==0,()=>name.Text);var isoPicker=Theme.Browse(iso,false,"ISO|*.iso|Все файлы|*.*");
         Theme.Row(fields,"Виртуальный диск",diskPicker);Theme.Row(fields,"ISO",isoPicker);Theme.Row(fields,"Размер диска, ГБ",size);
         Theme.Row(fields,"Память, МБ",ram);Theme.Row(fields,"Ядра CPU",cores);Theme.Row(fields,"Профиль запуска",profileField);
         var missing=Theme.Button("Заменить доп. файлы…",MissingFiles);Theme.Row(fields,"Файлы из копии",missing);
@@ -641,9 +641,9 @@ sealed class SnapshotsWindow : Form {
 sealed class DoctorWindow : Form {
     public DoctorWindow(MainWindow main,object report) {
         Text="VM Doctor";Theme.Form(this,960,780);
-        var scroll=new BufferedPanel{Dock=DockStyle.Fill,AutoScroll=true,Padding=new Padding(24,8,24,8)};var output=Theme.Flow(true);output.Dock=DockStyle.Top;
+        var output=Theme.Flow(true);output.Padding=new Padding(24,8,24,8);var scroll=new ScrollSurface(output);
         foreach(object item in J.A(J.V(report,"checks")))output.Controls.Add(new DiagnosticCard(item));
-        scroll.Controls.Add(output);scroll.ClientSizeChanged+=(sender,args)=>{int width=Math.Max(260,scroll.ClientSize.Width-scroll.Padding.Horizontal-SystemInformation.VerticalScrollBarWidth);foreach(Control card in output.Controls)card.Width=width;};
+        output.SizeChanged+=(sender,args)=>{int width=Math.Max(260,output.ClientSize.Width-output.Padding.Horizontal);foreach(Control card in output.Controls)card.Width=width;};
         var buttons=Theme.Flow();buttons.Controls.Add(Theme.Button("Сохранить отчёт",()=>main.Run("Сохраняю обезличенный отчёт…",()=>main.Backend.Call("report_save",J.O("token",J.S(report,"token"))),result=>MessageBox.Show(this,J.S(result,"path"),"Отчёт сохранён")),true));buttons.Controls.Add(Theme.Button("Закрыть",Close));Theme.Dialog(this,scroll,buttons,"VM Doctor","Проверки компьютера и конфигурации виртуальных машин.","ДИАГНОСТИКА");
     }
 }

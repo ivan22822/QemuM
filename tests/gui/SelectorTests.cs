@@ -15,6 +15,14 @@ static class SelectorTests {
     [STAThread]static int Main(string[] args){
         Application.EnableVisualStyles();Application.SetCompatibleTextRenderingDefault(false);Program.TestMode=true;
         try{
+            using(var form=new Form())using(var selector=Theme.Combo("WHPX · совместимый (kernel-irqchip=off)","Авто · проверить WHPX, иначе TCG")){
+                Theme.Form(form,330,240);selector.Dock=DockStyle.None;selector.Width=220;form.Controls.Add(selector);form.Show();selector.ShowChoices();Application.DoEvents();
+                var popup=Field<ToolStripDropDown>(selector,"popup");
+                int measured=TextRenderer.MeasureText(Convert.ToString(selector.Items[0]),selector.Font).Width;
+                Check(popup.Width>=measured+40&&popup.Width>selector.Width,"long profile labels expand the popup beyond the field width");
+                using(var image=new Bitmap(popup.Width,popup.Height)){popup.DrawToBitmap(image,popup.ClientRectangle);image.Save(Path.Combine(args[0],"readable-profile-popup.png"));}
+                popup.Close();form.Close();
+            }
             using(var selector=LaunchProfiles.Selector()){
                 foreach(string value in new[]{"whpx","auto","tcg","whpx-compatible"}){
                     LaunchProfiles.Load(selector,J.O("launch_profile",value));

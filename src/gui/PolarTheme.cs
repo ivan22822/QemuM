@@ -4,6 +4,7 @@ using System.Collections.Generic;
 using System.ComponentModel;
 using System.Drawing;
 using System.Drawing.Drawing2D;
+using System.IO;
 using System.Linq;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
@@ -81,11 +82,27 @@ static class Theme {
         return block;
     }
     public static string File(bool save,string filter,string initial=""){using(FileDialog dialog=save?(FileDialog)new SaveFileDialog():(FileDialog)new OpenFileDialog()){dialog.Filter=filter;dialog.FileName=initial;if(save)((SaveFileDialog)dialog).OverwritePrompt=true;return dialog.ShowDialog()==DialogResult.OK?dialog.FileName:null;}}
-    public static Control Browse(FieldInput text,bool save,string filter,Func<bool> dynamicSave=null){
+    public static string NewDiskPath(string folder,string name){
+        name=String.IsNullOrWhiteSpace(name)?"disk":name.Trim();
+        if(name=="."||name==".."||name.IndexOfAny(Path.GetInvalidFileNameChars())>=0)throw new InvalidOperationException("Укажи корректное короткое имя VM перед выбором папки.");
+        return Path.Combine(folder,name+".qcow2");
+    }
+    public static Control BrowseNewDisk(FieldInput text,Func<bool> create,Func<string> name){
+        return Browse(text,false,"Диски qcow2 / VDI|*.qcow2;*.vdi|Все файлы|*.*",()=>{
+            if(!create())return File(false,"Диски qcow2 / VDI|*.qcow2;*.vdi|Все файлы|*.*",text.Text);
+            using(var dialog=new FolderBrowserDialog{Description="Выбери папку для нового виртуального диска. Имя файла будет взято из короткого имени VM.",ShowNewFolderButton=true}){
+                string initial=Directory.Exists(text.Text)?text.Text:Path.GetDirectoryName(text.Text);
+                if(Directory.Exists(initial))dialog.SelectedPath=initial;
+                if(dialog.ShowDialog()!=DialogResult.OK)return null;
+                return NewDiskPath(dialog.SelectedPath,name());
+            }
+        });
+    }
+    public static Control Browse(FieldInput text,bool save,string filter,Func<string> picker=null){
         var panel=new TableLayoutPanel{Dock=DockStyle.Top,ColumnCount=2,Height=40,Margin=Padding.Empty,Padding=Padding.Empty};
         panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));panel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,100));
         text.Dock=DockStyle.Fill;text.Margin=Padding.Empty;panel.Controls.Add(text,0,0);
-        var button=Button("Обзор…",()=>{string path=File(dynamicSave==null?save:dynamicSave(),filter,text.Text);if(path!=null)text.Text=path;});
+        var button=Button("Обзор…",()=>{try{string path=picker==null?File(save,filter,text.Text):picker();if(path!=null)text.Text=path;}catch(Exception error){MessageBox.Show(panel.FindForm(),error.Message,"Выбор пути",MessageBoxButtons.OK,MessageBoxIcon.Warning);}});
         button.MinimumSize=new Size(88,40);button.AutoSize=false;button.Size=new Size(88,40);button.Padding=new Padding(8);button.Margin=new Padding(12,0,0,0);panel.Controls.Add(button,1,0);return panel;
     }
     public static Control EditorLayout(ThemedEditor editor,string title,string description,Control buttons){
