@@ -20,6 +20,40 @@ import vm_profiles
 
 
 class BackendTests(unittest.TestCase):
+    def test_compatible_whpx_preview_and_preflight_use_same_options(self):
+        data = dict(self.data, launch_profile='whpx-compatible')
+        command = vm.build_args('test', data)
+        self.assertEqual(command[command.index('-accel') + 1], 'whpx,kernel-irqchip=off')
+        self.assertEqual(command[command.index('-cpu') + 1], 'host')
+        check = Mock(return_value={'state': 'ok', 'detail': 'created'})
+        selected, _ = vm_profiles.choose(self.qemu_path, data, check)
+        check.assert_called_once_with(self.qemu_path, 'whpx-compatible')
+        self.assertEqual(command, vm.build_args('test', data, accelerator=selected))
+        process = Mock(side_effect=OSError('No process launched in this test'))
+        vm_profiles.probe(self.qemu_path, selected, popen=process)
+        probe_command = process.call_args.args[0]
+        self.assertEqual(probe_command[probe_command.index('-accel') + 1], 'whpx,kernel-irqchip=off')
+        self.assertEqual(probe_command[probe_command.index('-cpu') + 1], 'host')
+
+    def test_existing_profiles_and_failed_compatible_probe_do_not_change_policy(self):
+        for value, expected in [('whpx', 'whpx'), ('auto', 'whpx'), ('tcg', 'tcg,thread=multi')]:
+            command = vm.build_args('test', dict(self.data, launch_profile=value))
+            self.assertEqual(command[command.index('-accel') + 1], expected)
+        check = Mock(return_value={'state': 'failed', 'detail': 'unsupported option'})
+        with self.assertRaisesRegex(ValueError, 'unsupported option'):
+            vm_profiles.choose(self.qemu_path, dict(self.data, launch_profile='whpx-compatible'), check)
+        check.assert_called_once_with(self.qemu_path, 'whpx-compatible')
+        with self.assertRaisesRegex(ValueError, 'extra_args'):
+            vm_profiles.validate(dict(self.data, launch_profile='whpx-compatible', extra_args=['-accel', 'whpx']))
+
+    def test_compatible_profile_is_saved_with_exact_backup(self):
+        saved = self.service.save(dict(name='test', hash=hashlib.sha256(self.raw).hexdigest(),
+                                       updates={'launch_profile': 'whpx-compatible'}))
+        self.assertEqual(Path(saved['backup']).read_bytes(), self.raw)
+        reopened = self.service.get({'name': 'test'})
+        self.assertEqual(reopened['data']['launch_profile'], 'whpx-compatible')
+        self.assertEqual(reopened['data']['custom'], self.data['custom'])
+
     def setUp(self):
         self.temp = tempfile.TemporaryDirectory(dir=HERE)
         self.root = Path(self.temp.name)

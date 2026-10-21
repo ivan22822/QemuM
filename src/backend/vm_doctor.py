@@ -96,14 +96,14 @@ class Doctor:
                 self.add('host', 'tools', 'error', 'Доступность QEMU', error,
                          'Проверь папку QEMU и команду запуска. Doctor ничего не устанавливает.')
             if exe:
-                jobs = {key: pool.submit(self.check, exe, key) for key in ('whpx', 'tcg')}
+                jobs = {key: pool.submit(self.check, exe, key) for key in ('whpx', 'whpx-compatible', 'tcg')}
                 for key, job in jobs.items():
                     try:
                         result = job.result()
                         self.probes[key] = result
                         self.add('host', 'probe-' + key + '-' + result['code'],
                                  {'ok': 'ok', 'failed': 'warning', 'unknown': 'unknown'}[result['state']],
-                                 'Создание временной VM: ' + key.upper(), result['detail'],
+                                 'Создание временной VM: ' + LABELS[key], result['detail'],
                                  'Выбери подходящий профиль в параметрах VM; загрузка гостевой ОС этой пробой не проверяется.')
                     except (OSError, ValueError, subprocess.SubprocessError) as error:
                         self.add('host', 'probe-' + key, 'unknown', 'Проверка ' + key.upper(), error)

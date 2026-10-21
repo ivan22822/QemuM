@@ -8,6 +8,13 @@ using System.Text.RegularExpressions;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
+static class LaunchProfiles {
+    static readonly string[] Values={"whpx","auto","tcg","whpx-compatible"};
+    public static ThemedSelector Selector(){return Theme.Combo("WHPX","Авто","TCG","WHPX · совместимый");}
+    public static void Load(ThemedSelector selector,object data){int index=Array.IndexOf(Values,J.S(data,"launch_profile","whpx"));selector.SelectedIndex=index<0?0:index;}
+    public static string Value(ThemedSelector selector){return Values[selector.SelectedIndex];}
+}
+
 static class ArgText {
     [DllImport("shell32.dll",CharSet=CharSet.Unicode,SetLastError=true)]static extern IntPtr CommandLineToArgvW(string command,out int count);
     [DllImport("kernel32.dll")]static extern IntPtr LocalFree(IntPtr memory);

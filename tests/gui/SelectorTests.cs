@@ -15,6 +15,15 @@ static class SelectorTests {
     [STAThread]static int Main(string[] args){
         Application.EnableVisualStyles();Application.SetCompatibleTextRenderingDefault(false);Program.TestMode=true;
         try{
+            using(var selector=LaunchProfiles.Selector()){
+                foreach(string value in new[]{"whpx","auto","tcg","whpx-compatible"}){
+                    LaunchProfiles.Load(selector,J.O("launch_profile",value));
+                    Check(LaunchProfiles.Value(selector)==value,"launch profile selection round trip: "+value);
+                }
+                Check(selector.Text=="WHPX · совместимый","compatible WHPX has a readable label");
+                LaunchProfiles.Load(selector,J.O());
+                Check(LaunchProfiles.Value(selector)=="whpx","old configurations retain standard WHPX");
+            }
             using(var form=new Form())using(var selector=Theme.Combo("NAT · Интернет","TCP · слушать","TAP · Windows")){
                 Theme.Form(form,480,250);selector.Dock=DockStyle.Top;form.Controls.Add(selector);form.Show();Application.DoEvents();
                 var popup=Field<ToolStripDropDown>(selector,"popup");var list=Field<ThemedList>(selector,"choices");

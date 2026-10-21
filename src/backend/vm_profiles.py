@@ -8,15 +8,16 @@ import tempfile
 import threading
 import time
 
-PROFILES = ('whpx', 'auto', 'tcg')
+PROFILES = ('whpx', 'auto', 'tcg', 'whpx-compatible')
 LABELS = {'whpx': 'WHPX · аппаратное ускорение', 'auto': 'Авто · проверить WHPX, иначе TCG',
-          'tcg': 'TCG · программная эмуляция, медленнее'}
+          'tcg': 'TCG · программная эмуляция, медленнее',
+          'whpx-compatible': 'WHPX · совместимый (kernel-irqchip=off)'}
 
 
 def profile(data):
     value = data.get('launch_profile', 'whpx')
     if value not in PROFILES:
-        raise ValueError('Неизвестный профиль запуска. Выбери WHPX, Авто или TCG в параметрах VM.')
+        raise ValueError('Неизвестный профиль запуска. Выбери профиль в параметрах VM.')
     return value
 
 
@@ -44,11 +45,17 @@ def validate(data):
                          '. Удали конфликт вручную; остальные параметры сохраняются.')
 
 
+def initial_accelerator(data):
+    requested = profile(data)
+    return 'whpx' if requested == 'auto' else requested
+
+
 def accelerator_args(accelerator):
-    if accelerator not in ('whpx', 'tcg'):
+    if accelerator not in ('whpx', 'whpx-compatible', 'tcg'):
         raise ValueError('Сначала выбери фактическое ускорение WHPX или TCG.')
-    return ['-accel', 'whpx' if accelerator == 'whpx' else 'tcg,thread=multi',
-            '-cpu', 'host' if accelerator == 'whpx' else 'max']
+    value = {'whpx': 'whpx', 'whpx-compatible': 'whpx,kernel-irqchip=off',
+             'tcg': 'tcg,thread=multi'}[accelerator]
+    return ['-accel', value, '-cpu', 'max' if accelerator == 'tcg' else 'host']
 
 
 def failure_hint(message):
@@ -157,7 +164,7 @@ def choose(exe, data, check=None):
     validate(data)
     requested = profile(data)
     check = check or probe
-    first = 'tcg' if requested == 'tcg' else 'whpx'
+    first = initial_accelerator(data)
     result = check(exe, first)
     if result['state'] == 'ok':
         return first, result
