@@ -4,6 +4,8 @@
 **/backups/
 **/parameter-backups/
 **/runtime/
+**/snapshot-state/
+**/.qemum-stage-*/
 **/visual-assets/custom/
 **/appearance.json*
 **/installation.json
@@ -72,3 +74,4 @@ secrets*
 *.local.*
 Thumbs.db
 .DS_Store
+**/.qemum-external-*/

@@ -3,6 +3,7 @@ from datetime import datetime
 from vm_ui import ask, notice, present
 from contextlib import contextmanager
 import json
+import locale
 import os
 from pathlib import Path
 import shutil
@@ -16,11 +17,14 @@ def image_tool(qemu_executable):
 
 def image_command(exe, arguments):
     result = subprocess.run([exe] + arguments, stdout=subprocess.PIPE, stderr=subprocess.PIPE,
-                            text=True, encoding='utf-8', errors='replace', shell=False,
-                            creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0))
+                            shell=False,
+                            creationflags=getattr(subprocess, 'CREATE_NO_WINDOW', 0), timeout=120)
+    def decode(value):
+        try:return value.decode('utf-8')
+        except UnicodeDecodeError:return value.decode(locale.getencoding(),errors='replace')
     if result.returncode:
-        raise ValueError('qemu-img: ' + result.stderr.strip())
-    return result.stdout
+        raise ValueError('qemu-img: ' + decode(result.stderr).strip())
+    return decode(result.stdout)
 
 def configured_disks(data):
     extras = data.get('extra_args', [])
@@ -117,36 +121,127 @@ def apply_snapshot(disks, selected, exe, run=image_command):
     with deferred_interrupt() as cancelled:
         return _apply_snapshot(disks, selected, exe, run, cancelled)
 
-def _apply_snapshot(disks, selected, exe, run, cancelled):
+def _apply_snapshot(disks, selected, exe, run, cancelled, journal=lambda phase, detail, checkpoint=None: None):
     current = next((item for item in catalog(disks, exe, run) if item['name'] == selected['name']), None)
     if current is None or current['ids'] != selected['ids']:
         raise ValueError('Список снимков изменился. Выбери снимок заново.')
     checkpoint = 'before-restore-' + datetime.now().strftime('%Y%m%d-%H%M%S') + '-' + uuid.uuid4().hex[:6]
+    journal('checkpoint-intent', 'Создание страховочной группы', checkpoint)
     for disk in disks:
         if cancelled:
             raise ValueError('Отменено до начала отката; текущее содержимое дисков сохранено.')
         try:
             run(exe, ['snapshot', '-c', checkpoint, str(disk)])
+            journal('checkpoint-disk', str(disk), checkpoint)
         except (OSError, ValueError) as error:
             raise ValueError('Не удалось создать страховочный снимок {}. Откат не начат. {}'.format(checkpoint, error)) from error
+    checkpoint_row = next((item for item in catalog(disks, exe, run) if item['name'] == checkpoint), None)
+    if not checkpoint_row or len(checkpoint_row['ids']) != len(disks):
+        raise ValueError('Страховочная группа не подтверждена. Откат не начат: ' + checkpoint)
+    journal('checkpoint-verified', 'Страховочная группа проверена', checkpoint)
     try:
         for disk, snapshot_id in zip(disks, selected['ids']):
             if cancelled:
                 raise ValueError('Запрошена отмена отката.')
+            journal('apply-intent', str(disk), checkpoint)
             run(exe, ['snapshot', '-a', snapshot_id, str(disk)])
+            journal('apply-disk', str(disk), checkpoint)
         if cancelled:
             raise ValueError('Запрошена отмена отката.')
-    except (OSError, ValueError) as error:
+    except (OSError, ValueError, subprocess.SubprocessError) as error:
+        journal('compensating', str(error), checkpoint)
         failures = []
         for disk in disks:
             try:
                 run(exe, ['snapshot', '-a', checkpoint, str(disk)])
-            except (OSError, ValueError) as rollback_error:
+                journal('compensate-disk', str(disk), checkpoint)
+            except (OSError, ValueError, subprocess.SubprocessError) as rollback_error:
                 failures.append('{}: {}'.format(disk, rollback_error))
         if failures:
+            journal('recovery-required', '; '.join(failures), checkpoint)
             raise ValueError('Откат прерван; восстановление прежнего состояния не завершено. VM не запускается. Страховочный снимок: {}. {}'.format(checkpoint, '; '.join(failures))) from error
+        journal('compensated', 'Предыдущее состояние возвращено по подтверждённым ответам qemu-img', checkpoint)
         raise ValueError('Откат отменён, прежнее состояние всех дисков восстановлено. ' + str(error)) from error
     return checkpoint
+
+
+def journalled_apply(root, name, disks, selected, exe, run=image_command, operation_id=None, guard=None):
+    from vm_snapshot_store import Store, digest, operation_lock, identifier
+    from vm_snapshot_service import identity, SnapshotService
+    import time
+    if guard is None:
+        raise ValueError('Не подключена проверка владельцев перед каждым шагом офлайн-записи.')
+    def guarded_run(executable, arguments):
+        if arguments[:1] == ['snapshot']:
+            guard(arguments)
+        return run(executable, arguments)
+    with operation_lock(root, name, [digest(identity(path)['file_id']) for path in disks]):
+        store = Store(root, name)
+        operation_id = identifier(operation_id) if operation_id else str(uuid.uuid4())
+        previous = store.operation(operation_id)
+        if previous:
+            if previous['action'] != 'restore' or previous.get('group_id') != selected.get('id'):
+                raise ValueError('ID операции уже принадлежит другому запросу.')
+            if previous['state'] == 'completed':
+                return previous['result']['checkpoint']
+            raise ValueError('Операция уже существует: ' + operation_id + '. Автоматический повтор отката запрещён.')
+        store.assert_clear()
+        group = next((row for row in store.catalog()['groups'] if row['id'] == selected.get('id')), None)
+        if not group:
+            raise ValueError('Принадлежность старого/внешнего снимка не подтверждена. Автоматический откат запрещён.')
+        actual = []
+        for path in disks:
+            info = json.loads(run(exe, ['info', '--output=json', str(path)]))
+            from vm_snapshot_service import encrypted
+            if info.get('format') != 'qcow2' or encrypted(info) or info.get('backing-filename'):
+                raise ValueError('Откат требует отдельных незашифрованных qcow2 без backing chain.')
+            actual.append(dict(identity(path), snapshots=info.get('snapshots', [])))
+        checked = next(row for row in SnapshotService.reconcile([group], actual) if row['id'] == group['id'])
+        if checked['state'] != 'ready':
+            raise ValueError('Состав группы изменился; восстановление запрещено. ' + checked['state'] + ': ' + checked.get('reason', 'Не все внутренние ID подтверждены.'))
+        chosen = dict(checked)
+        def config_hashes():
+            return {path.name: digest(path.read_bytes().hex()) for path in sorted(set(Path(root).glob('*.json')) | set(Path(root).glob('*.json.disabled')))}
+        expected_configs = config_hashes()
+        operation = dict(schema_version=1, id=operation_id, name=name, action='restore', created=time.time(),
+                         state='validating', steps=[], disks=group['disks'], group_id=group['id'], mutation_started=False)
+        operation['plan'] = dict(config_hashes=expected_configs, catalog_hash=digest(store.catalog()), expires=time.time()+120)
+        def journal(phase, detail, checkpoint=None):
+            if phase in ('checkpoint-intent', 'apply-intent'):
+                if config_hashes() != expected_configs or [identity(path)['file_id'] for path in disks] != [member['file_id'] for member in group['disks']]:
+                    raise ValueError('Конфигурация или личность дисков изменились. Запись отменена.')
+                if phase == 'checkpoint-intent' and time.time() > operation['plan']['expires']:
+                    raise ValueError('План восстановления устарел.')
+            operation.update(state='running', phase=phase, detail=detail, updated=time.time())
+            if checkpoint:
+                operation['checkpoint'] = checkpoint
+            operation['mutation_started'] = True
+            operation['steps'].append(dict(phase=phase, detail=detail, checkpoint=checkpoint))
+            store.save_operation(operation)
+            if phase == 'checkpoint-verified':
+                checkpoint_row = next(item for item in catalog(disks, exe, run) if item['name'] == checkpoint)
+                members = []
+                for member, snapshot_id in zip(group['disks'], checkpoint_row['ids']):
+                    members.append(dict(member, snapshot_id=str(snapshot_id)))
+                checkpoint_group = dict(id=str(uuid.uuid4()), name=checkpoint, label='Перед восстановлением · ' + group.get('label', group['name']),
+                    date=int(time.time()), kind='disk', state='ready', disks=members, protected=True, source='checkpoint',
+                    checkpoint=True, checkpoint_reason='Страховочная группа перед откатом ' + group['id'], operation_id=operation['id'])
+                store.publish(checkpoint_group, digest(store.catalog()))
+                operation['checkpoint_group_id'] = checkpoint_group['id']
+                store.save_operation(operation)
+        store.save_operation(operation)  # intent before creating any checkpoint
+        try:
+            checkpoint = _apply_snapshot(disks, chosen, exe, guarded_run, [], journal)
+            if [identity(path)['file_id'] for path in disks] != [item['file_id'] for item in group['disks']]:
+                raise ValueError('Файл диска заменён при восстановлении.')
+            operation.update(state='completed', phase='Диски восстановлены', result=dict(checkpoint=checkpoint), updated=time.time())
+            store.save_operation(operation)
+            return checkpoint
+        except BaseException as error:
+            operation.update(state='failed' if not operation['mutation_started'] or operation.get('phase') == 'compensated' else 'recovery-required',
+                             phase=str(error), updated=time.time())
+            store.save_operation(operation)
+            raise
 
 def choose_and_apply(root, name, data, exe, query_status, processes=None, runtime_refs=None):
     config_path = root / (name + '.json')
@@ -155,7 +250,8 @@ def choose_and_apply(root, name, data, exe, query_status, processes=None, runtim
     assert_stopped(name, refs, query_status, processes or qemu_processes)
     disks = configured_disks(data)
     assert_private(root, name, disks, exe, runtime_refs=runtime_refs)
-    choices = catalog(disks, exe)
+    from vm_snapshot_service import manager_service
+    choices = [item for item in manager_service(root, name).read_catalog(False, data)['rows'] if item['state'] == 'ready']
     if not choices:
         present('Снимки дисков', name=name, data=data)
         notice('Общих снимков дисков нет. Создай снимок через S в панели VM или выбери простой запуск.', 'warning')
@@ -185,6 +281,11 @@ def choose_and_apply(root, name, data, exe, query_status, processes=None, runtim
         raise ValueError('Параметры VM изменились. Выбери снимок заново.')
     assert_stopped(name, refs, query_status, processes or qemu_processes)
     assert_private(root, name, disks, exe, runtime_refs=runtime_refs)
-    checkpoint = apply_snapshot(disks, selected, exe)
+    from vm_snapshot_service import manager_service
+    if selected.get('kind')=='external':
+        raise ValueError('Для переключения внешней цепочки используй окно снимков; обычный терминальный запуск не меняет граф зависимостей.')
+    from vm_snapshot_transaction import OfflineTransaction
+    transaction=OfflineTransaction(manager_service(root,name))
+    checkpoint=transaction.execute(transaction.plan('offline-restore',selected['id']))['checkpoint']
     notice('Снимок применён. Предыдущее состояние дисков сохранено: ' + checkpoint, 'success')
     return True

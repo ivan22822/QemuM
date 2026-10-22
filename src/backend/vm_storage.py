@@ -163,7 +163,7 @@ def templates(folder):
             continue
     return result
 
-def deletion_plan(root, name, data, image_exe, query_status, processes=None, inspect_chain=None):
+def deletion_plan(root, name, data, image_exe, query_status, processes=None, inspect_chain=None, remove_files=True):
     processes = processes or qemu_processes
     inspect_chain = inspect_chain or backing_chain
     root = Path(root).resolve()
@@ -172,6 +172,13 @@ def deletion_plan(root, name, data, image_exe, query_status, processes=None, ins
     config_files = sorted(set(root.glob('*.json')) | set(root.glob('*.json.disabled')))
     peer_refs = set()
     config_hashes = {str(path): sha(path) for path in config_files}
+    if not remove_files:
+        config = root / (name + '.json')
+        safe_file(config)
+        return {'name': name, 'root': root, 'parameters': data, 'references': references,
+                'files': [config], 'kept': [(str(path), 'файл остаётся на диске') for path, _ in references],
+                'missing': [], 'signatures': {str(config): signature(config)}, 'config_hashes': config_hashes,
+                'remove_files': False}
     for config in config_files:
         if config == root / (name + '.json'):
             continue
@@ -221,7 +228,7 @@ def deletion_plan(root, name, data, image_exe, query_status, processes=None, ins
     files.sort(key=lambda path: path == config)
     return {'name': name, 'root': root, 'parameters': data, 'references': references,
             'files': files, 'kept': kept, 'missing': missing, 'signatures': {str(path): signature(path) for path in files},
-            'config_hashes': config_hashes}
+            'config_hashes': config_hashes, 'remove_files': True}
 
 @contextmanager
 def exclusive_file(path):
@@ -241,15 +248,19 @@ def exclusive_file(path):
     finally:
         kernel.CloseHandle(handle)
 
-def delete_with_template(plan, backup_label, query_status, processes=None):
+def delete_with_template(plan, backup_label, query_status, processes=None, save_backup=True):
     processes = processes or qemu_processes
     name, root = plan['name'], plan['root']
-    backup_label = parameter_name(backup_label)
-    folder = root.parent / 'parameter-backups'
-    backup_path = folder / (backup_label + '.json')
-    safe_file(backup_path)
-    if backup_path.exists():
-        raise ValueError('Копия с таким именем уже есть. Выбери другое имя.')
+    from vm_snapshot_store import assert_can_start
+    assert_can_start(root, name)
+    backup_path = None
+    if save_backup:
+        backup_label = parameter_name(backup_label)
+        folder = root.parent / 'parameter-backups'
+        backup_path = folder / (backup_label + '.json')
+        safe_file(backup_path)
+        if backup_path.exists():
+            raise ValueError('Копия с таким именем уже есть. Выбери другое имя.')
     assert_stopped(name, plan['references'], query_status, processes)
     configs_now = sorted(set(root.glob('*.json')) | set(root.glob('*.json.disabled')))
     if {str(path): sha(path) for path in configs_now} != plan['config_hashes']:
@@ -261,25 +272,26 @@ def delete_with_template(plan, backup_label, query_status, processes=None):
             locks.enter_context(exclusive_file(path))
             if signature(path) != plan['signatures'][str(path)]:
                 raise ValueError('Файл изменился после просмотра списка: ' + str(path))
-        folder.mkdir(exist_ok=True)
-        payload = {'schema_version': 1, 'backup_name': backup_label, 'original_vm_name': name,
-                   'created_utc': datetime.now(timezone.utc).isoformat(), 'parameters': plan['parameters'],
-                   'deleted_files': [str(path) for path in plan['files']], 'preserved_files': plan['kept'],
-                   'missing_files': plan.get('missing', []),
-                   'contains_disk_data': False}
-        encoded = (json.dumps(payload, ensure_ascii=False, indent=2) + '\n').encode('utf-8')
-        with backup_path.open('xb') as stream:
-            stream.write(encoded)
-            stream.flush()
-            os.fsync(stream.fileno())
-        if backup_path.read_bytes() != encoded:
-            raise ValueError('Проверка копии параметров не прошла. Файлы VM не удалены.')
+        if save_backup:
+            folder.mkdir(exist_ok=True)
+            payload = {'schema_version': 1, 'backup_name': backup_label, 'original_vm_name': name,
+                       'created_utc': datetime.now(timezone.utc).isoformat(), 'parameters': plan['parameters'],
+                       'deleted_files': [str(path) for path in plan['files']], 'preserved_files': plan['kept'],
+                       'missing_files': plan.get('missing', []), 'contains_disk_data': False}
+            encoded = (json.dumps(payload, ensure_ascii=False, indent=2) + '\n').encode('utf-8')
+            with backup_path.open('xb') as stream:
+                stream.write(encoded)
+                stream.flush()
+                os.fsync(stream.fileno())
+            if backup_path.read_bytes() != encoded:
+                raise ValueError('Проверка копии параметров не прошла. Файлы VM не удалены.')
         try:
             for path in plan['files']:
                 path.unlink()
                 deleted.append(str(path))
         except OSError as error:
-            raise ValueError('Удаление прервано. Копия параметров: {}. Уже удалено {} файлов. Причина: {}'.format(backup_path, len(deleted), error)) from error
+            backup_note = str(backup_path) if backup_path else 'не создавалась по выбранной настройке'
+            raise ValueError('Удаление прервано. Копия параметров: {}. Уже удалено {} файлов. Причина: {}'.format(backup_note, len(deleted), error)) from error
     # Remove only directories that are empty, never their unknown contents.
     for parent in {path.parent for path in plan['files'] if path.parent not in (root, root.parent, root.parent / 'logs')}:
         try:

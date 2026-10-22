@@ -33,6 +33,13 @@ namespace QemuM.Update {
         public string current {get;set;}
         public string previous {get;set;}
     }
+    public sealed class RepairIntent {
+        public int schema {get;set;}
+        public string id {get;set;}
+        public string version {get;set;}
+        public string old_manifest {get;set;}
+        public string new_manifest {get;set;}
+    }
     public sealed class RuntimeSettings {
         public string python {get;set;}
         public string qemu_dir {get;set;}
@@ -122,7 +129,8 @@ namespace QemuM.Update {
             foreach(string path in Directory.EnumerateFiles(directory)){NoLinks(path);files.Add(path.Substring(root.Length+1).Replace('\\','/'));}
             foreach(string path in Directory.EnumerateDirectories(directory))Inventory(root,path,files);
         }
-        public static Package Stage(string zip,string expectedHash,string root,Action<int,int> progress=null){
+        public static Package Stage(string zip,string expectedHash,string root,Action<int,int> progress=null,string preparedId=null){
+            Guid preparedGuid;if(preparedId!=null&&!Guid.TryParseExact(preparedId,"N",out preparedGuid))throw new IOException("Некорректный ID подготовки.");
             NoLinks(root);CheckHash(Hash(zip),expectedHash);
             string stage=Path.Combine(root,"staging",Guid.NewGuid().ToString("N"));
             NoLinks(stage);Directory.CreateDirectory(stage);
@@ -153,7 +161,7 @@ namespace QemuM.Update {
                     if(progress!=null)progress(++completed,archive.Entries.Count);
                 }
                 VerifyDirectory(stage);
-                string destination=Path.Combine(root,"versions",package.version);NoLinks(destination);
+                string destination=preparedId==null?Path.Combine(root,"versions",package.version):Path.Combine(root,"staging","repair-"+preparedId);NoLinks(destination);
                 Directory.CreateDirectory(Path.GetDirectoryName(destination));
                 if(Directory.Exists(destination))throw new IOException("Эта версия уже есть. Существующие файлы сохранены.");
                 Directory.Move(stage,destination);
@@ -167,13 +175,73 @@ namespace QemuM.Update {
             if(state==null||state.schema!=1)throw new IOException("Повреждён указатель установленной версии.");
             Version(state.current);if(state.previous!=null)Version(state.previous);return state;
         }
+        static RepairIntent RepairState(string root){
+            string path=Path.Combine(root,"repair.json");NoLinks(path);if(!File.Exists(path))return null;
+            var state=Read<RepairIntent>(path);Guid id;
+            if(state==null||state.schema!=1||!Guid.TryParseExact(state.id,"N",out id)||!Regex.IsMatch(state.old_manifest??"","^[0-9a-f]{64}$")||!Regex.IsMatch(state.new_manifest??"","^[0-9a-f]{64}$"))throw new IOException("Повреждён журнал переустановки; файлы сохранены.");
+            Version(state.version);var current=Current(root);if(current==null||current.current!=state.version)throw new IOException("Версия изменилась во время переустановки.");return state;
+        }
+        static string RepairBackup(string root,RepairIntent state){return Path.Combine(root,"repairs",state.id,"previous");}
+        static void VerifyManifest(string directory,string expected){VerifyDirectory(directory);CheckHash(Hash(Path.Combine(directory,"package.json")),expected);}
+        static void FinishRepair(string root,RepairIntent state){
+            string folder=Path.Combine(root,"repairs",state.id);NoLinks(folder);Directory.CreateDirectory(folder);
+            AtomicJson(Path.Combine(folder,"receipt.json"),state);File.Delete(Path.Combine(root,"repair.json"));
+        }
+        // Caller holds both running.lock and update.lock, including during recovery.
+        public static bool RecoverRepair(string root){
+            var state=RepairState(root);if(state==null)return false;
+            string target=Path.Combine(root,"versions",state.version),backup=RepairBackup(root,state);NoLinks(target);NoLinks(backup);
+            if(Directory.Exists(target)){
+                string hash=Hash(Path.Combine(target,"package.json"));
+                if(hash==state.new_manifest){VerifyManifest(target,state.new_manifest);VerifyManifest(backup,state.old_manifest);return true;}
+                if(hash!=state.old_manifest)throw new IOException("Неизвестные файлы на пути переустановки. Нужна ручная проверка.");
+                VerifyManifest(target,state.old_manifest);FinishRepair(root,state);return false;
+            }
+            VerifyManifest(backup,state.old_manifest);Directory.Move(backup,target);FinishRepair(root,state);return false;
+        }
+        public static bool RepairSameVersion(string root,string zip,string expectedHash,Action<int,int> progress=null){
+            RecoverRepair(root);
+            if(File.Exists(Path.Combine(root,"repair.json")))throw new IOException("Сначала запусти и проверь уже переустановленную версию.");
+            var active=Current(root);if(active==null)throw new IOException("Установка не найдена.");
+            string id=Guid.NewGuid().ToString("N"),preparedRoot=Path.Combine(root,"staging","repair-"+id);
+            var package=Stage(zip,expectedHash,root,progress,id);
+            if(package.version!=active.current)throw new IOException("Для переустановки требуется тот же номер версии.");
+            string target=Path.Combine(root,"versions",active.current);VerifyDirectory(target);
+            var state=new RepairIntent{schema=1,id=id,version=active.current,old_manifest=Hash(Path.Combine(target,"package.json")),new_manifest=Hash(Path.Combine(preparedRoot,"package.json"))};
+            if(state.old_manifest==state.new_manifest)return false;
+            string backup=RepairBackup(root,state);NoLinks(backup);Directory.CreateDirectory(Path.GetDirectoryName(backup));
+            AtomicJson(Path.Combine(root,"repair.json"),state);
+            try{Directory.Move(target,backup);Directory.Move(preparedRoot,target);VerifyManifest(target,state.new_manifest);}
+            catch{RecoverRepair(root);throw;}
+            return true;
+        }
+        public static void RefreshBootstrap(string root,string source){
+            string target=Path.Combine(root,"QemuM.exe");NoLinks(source);NoLinks(target);
+            if(String.Equals(Path.GetFullPath(source),Path.GetFullPath(target),StringComparison.OrdinalIgnoreCase))return;
+            string expected=Hash(source);if(File.Exists(target)&&Hash(target)==expected)return;
+            string backups=Path.Combine(root,"launcher-backups");NoLinks(backups);Directory.CreateDirectory(backups);
+            string temporary=target+"."+Guid.NewGuid().ToString("N")+".tmp";NoLinks(temporary);
+            try{
+                using(var input=File.OpenRead(source))using(var output=new FileStream(temporary,FileMode.CreateNew,FileAccess.Write,FileShare.None)){CopyBounded(input,output,input.Length);output.Flush(true);}
+                CheckHash(Hash(temporary),expected);
+                if(File.Exists(target))File.Replace(temporary,target,Path.Combine(backups,Guid.NewGuid().ToString("N")+".exe"));else File.Move(temporary,target);
+            }finally{if(File.Exists(temporary))File.Delete(temporary);}
+        }
+        public static void CompleteRepair(string root,string version){var state=RepairState(root);if(state!=null&&state.version==version){VerifyManifest(Path.Combine(root,"versions",version),state.new_manifest);FinishRepair(root,state);}}
         public static void Activate(string root,Package package){
+            if(File.Exists(Path.Combine(root,"repair.json")))throw new IOException("Сначала заверши проверку переустановки текущей версии.");
             Validate(package);var previous=Current(root);
             if(previous!=null&&Compare(package.version,previous.current)<=0)throw new IOException("Обычное обновление не понижает версию.");
             VerifyDirectory(Path.Combine(root,"versions",package.version));
             AtomicJson(Path.Combine(root,"active.json"),new Active{schema=1,current=package.version,previous=previous==null?null:previous.current});
         }
         public static bool Rollback(string root,string failed){
+            var repair=RepairState(root);
+            if(repair!=null&&repair.version==failed){
+                string target=Path.Combine(root,"versions",failed),backup=RepairBackup(root,repair),rejected=Path.Combine(root,"repairs",repair.id,"rejected");
+                NoLinks(rejected);VerifyManifest(target,repair.new_manifest);VerifyManifest(backup,repair.old_manifest);
+                Directory.Move(target,rejected);Directory.Move(backup,target);FinishRepair(root,repair);return true;
+            }
             var state=Current(root);
             if(state==null||state.current!=failed||state.previous==null)return false;
             VerifyDirectory(Path.Combine(root,"versions",state.previous));

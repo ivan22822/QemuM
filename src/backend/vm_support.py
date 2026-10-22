@@ -10,9 +10,9 @@ import zipfile
 
 from vm_storage import safe_file
 
-SECTIONS = frozenset(('logs', 'parameters', 'state', 'diagnostics', 'screenshot'))
+SECTIONS = frozenset(('logs', 'parameters', 'state', 'diagnostics', 'screenshot','snapshot_history'))
 MAX_LOG = 2 * 1024 * 1024
-VERSION = '0.1.0-alpha.3'
+VERSION = '0.1.0-alpha.4'
 
 
 def redact(value, paths=()):
@@ -113,6 +113,25 @@ def export(service, args):
                             configuration_valid=bool(config()),
                             media=[dict(kind=key, exists=Path(config()[key]).is_file())
                                    for key in ('disk_path', 'iso_path') if config().get(key)]))
+                    elif section == 'snapshot_history':
+                        from vm_snapshot_store import Store, FINAL
+                        store=Store(service.root/'machines',name)
+                        rows=[]; skipped=0
+                        for path in sorted((store.folder/'operations').glob('*.json'),key=lambda item:item.stat().st_mtime_ns,reverse=True):
+                            try:
+                                value=store.operation(path.stem)
+                                if value['state'] in FINAL and sum(row.get('state') in FINAL for row in rows)>=50:
+                                    skipped+=1;continue
+                                # Whitelist, never include RAM, parameters, full plans or media bytes.
+                                row={key:value.get(key) for key in ('id','action','state','created','updated','mutation_started')}
+                                row['detail']=str(value.get('phase',''))[:2000]
+                                row['steps']=[{key:str(step.get(key,''))[:1000] for key in ('state','detail','disk','confirmed')} for step in value.get('steps',[])[-32:]]
+                                rows.append(row)
+                            except Exception as error:rows.append(dict(id=path.stem,error=str(error)[:2000]))
+                            if len(json.dumps(rows,ensure_ascii=False).encode('utf-8'))>MAX_LOG:
+                                rows.pop();skipped+=1;break
+                        add_json('snapshot-history.json',dict(schema=1,operations=rows,truncated=bool(skipped),omitted=skipped,
+                                 note='Последние 50 завершённых операций и незавершённые в пределах 2 МБ. Диски, RAM и полные планы не включаются.'))
                     elif section == 'screenshot':
                         with tempfile.TemporaryDirectory(prefix='qemum-screen-') as temporary:
                             screen = Path(temporary) / 'screen.png'

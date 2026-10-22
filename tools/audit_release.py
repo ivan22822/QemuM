@@ -13,7 +13,7 @@ def main():
                 if path.suffix in ('.py', '.cmd')}
     expected.update({'visual-assets/' + path.name: path
                      for path in (ROOT / 'assets' / 'visual-assets').iterdir() if path.is_file()})
-    for name in ('ALPHA-GUIDE.md', 'UPDATE-PROTOCOL.md'):
+    for name in ('ALPHA-GUIDE.md', 'UPDATE-PROTOCOL.md','SNAPSHOTS.md'):
         expected[name] = ROOT / 'docs' / name
     findings = []
     with zipfile.ZipFile(package) as archive:
@@ -36,7 +36,7 @@ def main():
                 variants.append(content.decode('utf-16-le', 'ignore').encode('utf-8'))
             if any(pattern.search(value) for pattern in [PERSONAL_PATHS, *SECRETS] for value in variants):
                 findings.append('Possible private material: ' + name)
-    for name in (f'QemuM-{VERSION}-Setup.exe', 'QemuM.exe'):
+    for name in (f'QemuM-{VERSION}-Setup.exe', 'QemuM.exe','QemuM-Refresh.exe'):
         content = (OUT / name).read_bytes()
         variants = [content, content.decode('utf-16-le', 'ignore').encode('utf-8')]
         if any(pattern.search(value) for pattern in [PERSONAL_PATHS, *SECRETS] for value in variants):

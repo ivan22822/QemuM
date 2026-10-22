@@ -18,6 +18,54 @@ static class InputStyleTests {
     [STAThread]static int Main(string[] args){
         Application.EnableVisualStyles();Application.SetCompatibleTextRenderingDefault(false);Program.TestMode=true;
         try{
+            using(var main=new MainWindow(args[0],null,true,false)){
+                main.Demo();
+                using(var create=new CreateDialog(main,new object[0])){
+                    create.Show();create.ClientSize=new Size(800,580);Application.DoEvents();
+                    var common=Field<PageDeck>(create,"tabs").Pages.First();var scroll=All(common).OfType<ScrollSurface>().Single();
+                    Check(scroll.ScrollBar.Visible&&!All(common).OfType<ScrollableControl>().Any(control=>control.AutoScroll),"creation form uses themed scrolling without white native scrollbars");
+                    scroll.ScrollOffset=scroll.ScrollBar.Maximum;Save(create,Path.Combine(args[0],"create-form-themed-scroll.png"));create.Close();
+                }
+                using(var deletion=new DeleteDialog(main,J.O("name","test","token","preview","remove_files",false,"files",new[]{"test.json"}))){
+                    deletion.Show();var saveBackup=Field<CheckBox>(deletion,"saveBackup");var confirm=Field<FieldInput>(deletion,"confirm");var backup=Field<FieldInput>(deletion,"backup");var remove=Field<Button>(deletion,"delete");
+                    confirm.Text="test";Check(!remove.Enabled,"default backup still requires its name");saveBackup.Checked=false;
+                    Check(remove.Enabled&&!backup.Enabled&&remove.Text=="Убрать из списка","unregister can omit a backup while retaining exact confirmation");
+                    confirm.Text="tes";Check(!remove.Enabled,"unregister without backup still rejects a partial name");
+                    Save(deletion,Path.Combine(args[0],"unregister-options.png"));deletion.Close();
+                }
+            }
+            ExtraExample captured=null;
+            using(var form=new Form())using(var help=new ExtraHelpView(example=>captured=example)){
+                Theme.Form(form,1000,730);form.Controls.Add(help);form.Show();Field<FieldInput>(help,"search").Text="клавиши Windows";Application.DoEvents();
+                All(help).OfType<Button>().Single(button=>button.Text=="Вставить пример").PerformClick();
+                Check(captured!=null&&captured.Args.Contains("qemu-vdagent,id=vdagent,clipboard=on,mouse=off")&&captured.Args.Contains("gtk,clipboard=on"),"clipboard help inserts the complete requested GTK and vdagent example");
+                Check(Field<ThemedEditor>(help,"body").Text.Contains("Ctrl+Alt+G"),"clipboard help explains releasing keyboard capture");
+                Save(form,Path.Combine(args[0],"clipboard-help.png"));form.Close();
+            }
+            using(var main=new MainWindow(args[0],null,true,false)){
+                main.Demo();var states=Field<Dictionary<string,string>>(main,"states");
+                using(var panel=new VmWindow(main,"ubuntu-desktop")){
+                    panel.Show();Application.DoEvents();
+                    foreach(string state in new[]{"shutdown","stopped","running","error"}){
+                        states["ubuntu-desktop"]=state;panel.RefreshState();Application.DoEvents();
+                        Check(!panel.IsDisposed&&panel.Visible&&panel.Text.Contains(Theme.State(state)),"VM panel remains open and updates its state: "+state);
+                        Check(!main.Visible,"VM state changes do not bring the main window forward: "+state);
+                    }
+                    Check(All(panel).OfType<Button>().Single(button=>button.Text=="▶ Запустить").Enabled,"restart action remains available after the guest stops");
+                    Save(panel,Path.Combine(args[0],"vm-panel-after-stop.png"));panel.Close();Check(!panel.Visible,"VM panel still closes when explicitly requested");
+                }
+            }
+            using(var form=new Form())using(var summary=new ResourceSummary()){
+                Theme.Form(form,670,220);summary.Dock=DockStyle.Top;form.Controls.Add(summary);form.Show();
+                string title="WHPX · аппаратное ускорение — длинное название пользовательского профиля";
+                summary.ShowData(J.O("ram_mb",4096,"cores",4,"launch_profile","whpx","launch_profile_label",title),true);Application.DoEvents();
+                var value=Field<Label>(summary,"profile");var tooltip=Field<ToolTip>(summary,"profileTip");
+                Check(value.Text=="WHPX"&&!value.AutoSize&&value.Bottom<=summary.Height,"resource acceleration stays on one line inside the summary");
+                Check(tooltip.GetToolTip(value)==title,"full profile name remains available without expanding the resource row");
+                summary.ShowData(J.O("ram_mb",4096,"cores",4,"launch_profile","custom-example","launch_profile_label",title,"launch_profile_settings",J.O("accelerator","tcg")),true);
+                Check(value.Text=="TCG","custom profile resource shows its selected accelerator");
+                Save(form,Path.Combine(args[0],"resource-summary-layout.png"));form.Close();
+            }
             using(var main=new MainWindow(args[0],null,true,false))using(var doctor=new DoctorWindow(main,J.O("checks",Enumerable.Range(0,25).Select(index=>J.O("title","Проверка "+index,"scope","host","state","ok","detail","Строка диагностики\r\nДополнительные сведения")).ToArray()))){
                 doctor.Show();Application.DoEvents();var scroll=All(doctor).OfType<ScrollSurface>().Single();
                 Check(scroll.ScrollBar.Visible&&scroll.ScrollBar.Maximum>0&&!All(doctor).OfType<ScrollableControl>().Any(control=>control.AutoScroll),"Doctor uses a themed scrollbar without native white scroll chrome");

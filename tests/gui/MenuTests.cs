@@ -54,6 +54,8 @@ static class MenuTests {
                 }
                 var mode=(LaunchModeSelector)typeof(MainWindow).GetField("launchMode",BindingFlags.Instance|BindingFlags.NonPublic).GetValue(main);
                 var modeMenu=(ContextMenuStrip)typeof(LaunchModeSelector).GetField("menu",BindingFlags.Instance|BindingFlags.NonPublic).GetValue(mode);
+                Check(!modeMenu.ShowImageMargin&&!modeMenu.ShowCheckMargin,"launch mode shares the menu style without a system checkbox gutter");
+                Show(modeMenu,main);using(var image=new Bitmap(modeMenu.Width,modeMenu.Height)){modeMenu.DrawToBitmap(image,modeMenu.ClientRectangle);image.Save(Path.Combine(Path.GetDirectoryName(args[0]),"launch-mode-menu.png"));}modeMenu.Close();
                 for(int index=0;index<6;index++) {
                     Show(modeMenu,main);Select(modeMenu,index%2);
                     Check(mode.SelectedIndex==index%2&&!modeMenu.IsDisposed,"launch mode can be selected and reopened");

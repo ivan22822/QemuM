@@ -21,7 +21,7 @@ def vm_lock(root, name):
     kernel.CreateMutexW.argtypes = [wintypes.LPVOID, wintypes.BOOL, wintypes.LPCWSTR]
     kernel.CreateMutexW.restype = wintypes.HANDLE
     kernel.ReleaseMutex.argtypes = [wintypes.HANDLE]
-    key = hashlib.sha256((str(root.resolve()).casefold() + ':' + name).encode()).hexdigest()
+    key = hashlib.sha256((str(root.resolve()).casefold() + ':' + name.casefold()).encode()).hexdigest()
     handle = kernel.CreateMutexW(None, False, 'Local\\VMManager-' + key)
     if not handle:
         raise ctypes.WinError(ctypes.get_last_error())
@@ -47,6 +47,14 @@ class ProcessWatcher:
         if not self.handle:
             raise ctypes.WinError(ctypes.get_last_error())
         self.pid = pid
+        kernel = self.kernel
+        kernel.GetProcessTimes.argtypes = [wintypes.HANDLE, ctypes.POINTER(wintypes.FILETIME), ctypes.POINTER(wintypes.FILETIME), ctypes.POINTER(wintypes.FILETIME), ctypes.POINTER(wintypes.FILETIME)]
+        created, exited, system, user = (wintypes.FILETIME() for _ in range(4))
+        if not kernel.GetProcessTimes(self.handle, ctypes.byref(created), ctypes.byref(exited), ctypes.byref(system), ctypes.byref(user)):
+            kernel.CloseHandle(self.handle)
+            self.handle = None
+            raise ctypes.WinError(ctypes.get_last_error())
+        self.creation_time = (created.dwHighDateTime << 32) | created.dwLowDateTime
         self.returncode = None
 
     def poll(self):

@@ -112,7 +112,7 @@ sealed class BufferedFlowLayoutPanel : FlowLayoutPanel {
 }
 
 sealed class MainWindow : Form {
-    public Backend Backend; public bool Busy; public string RootPath; internal Exception TestError; readonly bool demo;
+    public Backend Backend; public bool Busy; internal int SnapshotJobs; public string RootPath; internal Exception TestError; readonly bool demo;
     List<object> rows=new List<object>(); Dictionary<string,string> states=new Dictionary<string,string>();
     string selected,mode="normal"; bool updatingMode,polling,closing; readonly string python;
     readonly FlowLayoutPanel cards=Theme.Flow(true), actions=Theme.Flow(); readonly Panel detail=new Panel();
@@ -139,7 +139,7 @@ sealed class MainWindow : Form {
         var top=new BufferedPanel { Dock=DockStyle.Top,Height=43,Padding=new Padding(20,9,20,7) };
         var brand=Theme.Label("QEMU   /   VM Manager",11,null,true);brand.Dock=DockStyle.Left;
         var support=Theme.Flow();support.Dock=DockStyle.Right;support.AutoSize=false;support.Width=310;support.WrapContents=false;
-        support.Controls.Add(Theme.Button("Помощь / отчёт",()=>{using(var window=new SupportWindow(this,selected))window.ShowDialog(this);}));
+        support.Controls.Add(Theme.Button("Помощь / отчёт",()=>{using(var window=new SupportWindow(this,selected,true))window.ShowDialog(this);}));
         support.Controls.Add(Theme.Button("Обновления",()=>AlphaIntegration.Updates(this)));
         top.Height=64;top.Controls.Add(brand);top.Controls.Add(support);
         var bottom=new Panel { Dock=DockStyle.Bottom,Height=32,Padding=new Padding(20,7,16,0) };
@@ -227,8 +227,8 @@ sealed class MainWindow : Form {
         page.Controls.Add(preview);page.Controls.Add(buttons);return page;
     }
     ContextMenuStrip BuildMenu(params object[] entries) {
-        var menu=new ContextMenuStrip(uiComponents) { BackColor=Theme.Panel,ForeColor=Theme.Text,Font=new Font("Segoe UI",10F),ShowImageMargin=false,ShowCheckMargin=false,Padding=new Padding(6),Renderer=new ToolStripProfessionalRenderer(new NightMenuColors()) };
-        for(int index=0;index<entries.Length;index+=2){var action=(Action)entries[index+1];var item=menu.Items.Add((string)entries[index],null,(sender,args)=>action());item.Padding=new Padding(12,10,12,10);}
+        var menu=NightMenuRenderer.Create(uiComponents);
+        for(int index=0;index<entries.Length;index+=2){var action=(Action)entries[index+1];NightMenuRenderer.Add(menu,(string)entries[index],(sender,args)=>action());}
         return menu;
     }
     void ShowLibraryMenu(Control anchor) {
@@ -247,12 +247,12 @@ sealed class MainWindow : Form {
         });
     }
     public void Post(Action action) { if(!IsDisposed && IsHandleCreated) { try { BeginInvoke(action); } catch(InvalidOperationException) {} } }
-    public void Run(string message,Func<object> operation,Action<object> done=null) {
+    public void Run(string message,Func<object> operation,Action<object> done=null,Action<Exception> failed=null,bool notifyError=true) {
         if(demo) return;
         if(Busy) { footer.Text="Дождись завершения текущей операции.";return; }
         Busy=true;progress.Visible=true;footer.Text=message;actions.Enabled=false;launchMode.Enabled=false;
         Task.Run(()=>{try {object result=operation();Post(()=>{Busy=false;progress.Visible=false;actions.Enabled=selected!=null;launchMode.Enabled=true;footer.Text="Готово";if(done!=null)done(result);});}
-            catch(Exception error){Post(()=>{Busy=false;progress.Visible=false;actions.Enabled=selected!=null;launchMode.Enabled=true;footer.Text="Действие не выполнено";if(Program.TestMode)TestError=error;else MessageBox.Show(this,error.Message,"VM Manager",MessageBoxButtons.OK,MessageBoxIcon.Warning);});}});
+            catch(Exception error){Post(()=>{Busy=false;progress.Visible=false;actions.Enabled=selected!=null;launchMode.Enabled=true;footer.Text="Действие не выполнено";if(notifyError){if(Program.TestMode)TestError=error;else MessageBox.Show(this,error.Message,"VM Manager",MessageBoxButtons.OK,MessageBoxIcon.Warning);}if(failed!=null)failed(error);});}});
     }
     void Fill(object result) { rows=J.A(J.V(result,"rows")).ToList();mode=J.S(result,"mode","normal");updatingMode=true;launchMode.SelectedIndex=mode=="snapshot"?1:0;updatingMode=false;if(selected==null || !rows.Any(row=>J.S(row,"name")==selected))selected=rows.Count>0?J.S(rows[0],"name"):null;RenderCards();SelectVm(selected);footer.Text="Машин: "+rows.Count+" · все действия доступны в интерфейсе"; }
     public void Reload() { if(Backend!=null)Run("Обновляю список…",()=>Backend.Call("list"),Fill); }
@@ -338,7 +338,7 @@ sealed class MainWindow : Form {
         }
         Run("Выполняю действие…",()=>Backend.Call("control",J.O("name",name,"action",action,"confirm",name)),result=>{footer.Text=action=="snapshot"?"Снимок дисков создан":"Запрос отправлен VM";Poll();});
     }
-    public void Snapshots(string name,bool boot=false) {if(name==null||Backend==null)return;Run("Читаю снимки дисков…",()=>Backend.Call("snapshots",J.O("name",name)),result=>{var dialog=new SnapshotsWindow(this,name,result,boot);dialog.Show(this);});}
+    public void Snapshots(string name,bool boot=false) {if(name==null||Backend==null)return;new SnapshotsWindow(this,name,null,boot).Show(this);}
     void EditVm(string name,string page=null) {if(name==null||Backend==null)return;Run("Читаю параметры…",()=>Backend.Call("get",J.O("name",name)),result=>{var dialog=new EditDialog(this,name,result);dialog.OpenPage(page);dialog.Show(this);});}
     void CreateVm() {CreateVm(false);}
     void CreateVm(bool fromBackup) {
@@ -350,11 +350,11 @@ sealed class MainWindow : Form {
             }else new CreateDialog(this,result).Show(this);
         });
     }
-    void DeleteVm(string name) {if(name==null||Backend==null)return;Run("Проверяю файлы и состояние VM…",()=>Backend.Call("delete_plan",J.O("name",name)),result=>{var dialog=new DeleteDialog(this,result);dialog.Show(this);});}
+    void DeleteVm(string name) {if(name==null||Backend==null)return;Run("Проверяю файлы и состояние VM…",()=>Backend.Call("delete_plan",J.O("name",name,"remove_files",false)),result=>{var dialog=new DeleteDialog(this,result);dialog.Show(this);});}
     public void RunDoctor(string name) {if(Backend==null)return;Run("VM Doctor · выполняю проверки…",()=>Backend.Call("doctor",name==null?J.O():J.O("name",name)),result=>{var dialog=new DoctorWindow(this,result);dialog.Show(this);});}
     void OnClosing(object sender,FormClosingEventArgs args) {
         if(demo)return;
-        if(Busy){args.Cancel=true;MessageBox.Show(this,"Дождись завершения текущей операции, чтобы не прервать работу с дисками.","VM Manager");return;}
+        if(Busy||SnapshotJobs>0){args.Cancel=true;if(!Program.TestMode)MessageBox.Show(this,"Дождись завершения текущей операции, чтобы не прервать работу с дисками.","VM Manager");return;}
         bool running=rows.Any(row=>State(J.S(row,"name"))!="stopped"&&State(J.S(row,"name"))!="error");
         if(!Program.TestMode && !closing && running && MessageBox.Show(this,"Закрыть менеджер? Работающие VM продолжат работу. Если статус неизвестен, VM также может быть запущена.","Закрытие менеджера",MessageBoxButtons.YesNo,MessageBoxIcon.Information)!=DialogResult.Yes){args.Cancel=true;return;}
         closing=true;timer.Stop();foreach(var window in panels.Values.Cast<Form>().Concat(logs.Values).ToArray())window.Close();if(Backend!=null)Backend.Dispose();
@@ -378,7 +378,7 @@ sealed class ChoiceDialog : Form {
 }
 
 sealed class VmWindow : Form {
-    readonly MainWindow main;readonly string name;readonly Label status=Theme.Label("",13);readonly FlowLayoutPanel actions=Theme.Flow();bool hasRun;
+    readonly MainWindow main;readonly string name;readonly Label status=Theme.Label("",13);readonly FlowLayoutPanel actions=Theme.Flow();
     public VmWindow(MainWindow main,string name) {
         this.main=main;this.name=name;object row=main.Row(name);object data=J.V(row,"data");
         Text=J.S(data,"label",name)+" | "+name+" | QEMU";Theme.Form(this,760,570);Icon=Theme.Icon(Theme.VmColor(row));
@@ -393,10 +393,7 @@ sealed class VmWindow : Form {
     }
     public void RefreshState() {
         string value=main.State(name);status.Text=Theme.State(value);status.ForeColor=Theme.StateColor(value);actions.Enabled=!main.Busy;
-        bool online=new[]{"running","paused","prelaunch","shutdown"}.Contains(value);
-        if(online)hasRun=true;
         Text=name+" | "+Theme.State(value)+" | QEMU";
-        if(hasRun && (value=="stopped"||value=="error")){Close();if(!main.IsDisposed){main.Show();main.Activate();}}
     }
 }
 
@@ -447,7 +444,7 @@ sealed class EditDialog : Form {
         disk=Theme.Input(J.S(data,"disk_path"));iso=Theme.Input(J.S(data,"iso_path"));
         Theme.Row(fields,"Название",label,true);Theme.Row(fields,"Память, МБ",ram);Theme.Row(fields,"Ядра CPU",cores);Theme.Row(fields,"Ширина экрана",width);Theme.Row(fields,"Высота экрана",height);
         Theme.Row(fields,"Видеоадаптер",vga);Theme.Row(fields,"Профиль запуска",profileField);Theme.Row(fields,"Диск",Theme.Browse(disk,false,"Диски qcow2 / VDI|*.qcow2;*.vdi|Все файлы|*.*"),true);Theme.Row(fields,"ISO",Theme.Browse(iso,false,"ISO|*.iso|Все файлы|*.*"),true);
-        var note=Theme.Label("Применится при следующем запуске.\r\nПеред сохранением создаётся копия параметров.",10,Theme.Muted);Theme.Row(fields,"",note);common.Controls.Add(fields);
+        var note=Theme.Label("Применится при следующем запуске.\r\nПеред сохранением создаётся копия параметров.",10,Theme.Muted);Theme.Row(fields,"",note);common.Controls.Add(Theme.FieldsView(fields));
         raw=Theme.Editor(J.S(original,"raw"));raw.Font=new Font("Consolas",10F);advanced.Padding=new Padding(24);advanced.Controls.Add(raw);tabs.Pages.Add(common);
         launchSettings=new LaunchSettingsUi(main,this,tabs,FieldsData,EnsureVisual);launchSettings.Load(data,J.V(original,"network_view"));
         appearance=new AppearanceView(main.Visuals,()=>J.O("iso_path",iso.Text,"label",label.Text,"disk_path",disk.Text),()=>name,main.Visuals.Choice(name));
@@ -509,7 +506,7 @@ sealed class CreateDialog : Form {
         Theme.Row(fields,"Память, МБ",ram);Theme.Row(fields,"Ядра CPU",cores);Theme.Row(fields,"Профиль запуска",profileField);
         var missing=Theme.Button("Заменить доп. файлы…",MissingFiles);Theme.Row(fields,"Файлы из копии",missing);
         Theme.Row(fields,"",Theme.Label("Копия переносит параметры, включая сеть.\r\nДиск и ISO выбираются отдельно.\r\nПосле создания VM появится в списке.",10,Theme.Muted));
-        tabs=new PageDeck{Dock=DockStyle.Fill,Padding=new Padding(0)};var common=new PageView("Параметры VM"){BackColor=Theme.Panel};common.Controls.Add(fields);tabs.Pages.Add(common);
+        tabs=new PageDeck{Dock=DockStyle.Fill,Padding=new Padding(0)};var common=new PageView("Параметры VM"){BackColor=Theme.Panel};common.Controls.Add(Theme.FieldsView(fields));tabs.Pages.Add(common);
         launchSettings=new LaunchSettingsUi(main,this,tabs,CreateData);launchSettings.Load(LaunchSettingsUi.Defaults());
         appearance=new AppearanceView(main.Visuals,()=>J.O("iso_path",iso.Text,"label",label.Text,"disk_path",disk.Text),()=>name.Text);
         var appearancePage=new PageView("Оформление");appearancePage.Controls.Add(appearance);tabs.Pages.Add(appearancePage);
@@ -607,35 +604,41 @@ sealed class TemplatesWindow : Form {
 }
 
 sealed class DeleteDialog : Form {
-    readonly MainWindow main;readonly object plan;readonly FieldInput backup=Theme.Input(),confirm=Theme.Input();
+    readonly MainWindow main;readonly string vmName;object plan;readonly FieldInput backup=Theme.Input(),confirm=Theme.Input();
+    readonly ThemedSelector mode=Theme.Combo("Убрать из списка · файлы сохранить","Удалить VM и её личные файлы");
+    readonly CheckBox saveBackup=new CheckBox{Text="Сохранить копию параметров",Checked=true,AutoSize=true,ForeColor=Theme.Text};
+    readonly ThemedEditor files=Theme.Editor();readonly Label note=Theme.Label("",10,Theme.Muted);readonly Button delete;bool planning;
     public DeleteDialog(MainWindow main,object plan) {
-        this.main=main;this.plan=plan;Text="Удаление | "+J.S(plan,"name");Theme.Form(this,850,760);
-        var fields=Theme.Fields();var files=Theme.Editor();files.ReadOnly=true;files.Height=260;files.Font=new Font("Consolas",9F);
-        var text=new StringBuilder("БУДУТ УДАЛЕНЫ\r\n");foreach(object item in J.A(J.V(plan,"files")))text.AppendLine(Convert.ToString(item));
-        text.AppendLine("\r\nБУДУТ СОХРАНЕНЫ");foreach(object item in J.A(J.V(plan,"kept")))text.AppendLine(String.Join(" — ",J.A(item).Select(Convert.ToString)));
-        text.AppendLine("\r\nУЖЕ ОТСУТСТВУЮТ");foreach(object item in J.A(J.V(plan,"missing")))text.AppendLine(Convert.ToString(item));files.Text=text.ToString();
-        Theme.Row(fields,"Имя копии параметров",backup);Theme.Row(fields,"Введи имя VM",confirm);Theme.Row(fields,"",files);
-        Theme.Row(fields,"",Theme.Label("Для подтверждения: "+J.S(plan,"name")+"\r\nКопия содержит настройки. Диск и ОС в неё не входят.",10,Theme.Yellow));
-        var buttons=Theme.Flow();var delete=Theme.Button("Удалить VM",Delete,false,true);delete.BackColor=Theme.Red;delete.ForeColor=Theme.Bg;delete.Enabled=false;
-        EventHandler validate=(sender,args)=>delete.Enabled=!String.IsNullOrWhiteSpace(backup.Text)&&confirm.Text==J.S(plan,"name");backup.TextChanged+=validate;confirm.TextChanged+=validate;
-        buttons.Controls.Add(delete);buttons.Controls.Add(Theme.Button("Отмена",Close));Theme.Dialog(this,fields,buttons,"Удаление машины",J.S(plan,"name")+" · сначала сохраним именную копию параметров");
+        this.main=main;this.plan=plan;vmName=J.S(plan,"name");Text="Удаление | "+vmName;Theme.Form(this,850,800);
+        mode.SelectedIndex=J.D(plan).ContainsKey("remove_files")&&!J.B(plan,"remove_files")?0:1;
+        var fields=Theme.Fields();files.ReadOnly=true;files.Height=250;files.Font=new Font("Consolas",9F);
+        Theme.Row(fields,"Действие",mode,true);Theme.Row(fields,"",saveBackup,true);
+        Theme.Row(fields,"Имя копии параметров",backup);Theme.Row(fields,"Введи имя VM",confirm);Theme.Row(fields,"",files);Theme.Row(fields,"",note);
+        var buttons=Theme.Flow();delete=Theme.Button("Удалить VM",Delete,false,true);delete.Enabled=false;
+        backup.TextChanged+=(sender,args)=>ValidateChoice();confirm.TextChanged+=(sender,args)=>ValidateChoice();saveBackup.CheckedChanged+=(sender,args)=>{backup.Enabled=saveBackup.Checked;ValidateChoice();};
+        mode.SelectedIndexChanged+=(sender,args)=>LoadPlan();
+        buttons.Controls.Add(delete);buttons.Controls.Add(Theme.Button("Отмена",Close));Theme.Dialog(this,fields,buttons,"Удаление машины",J.S(plan,"name")+" · выбери, какие данные удалить");Render();
     }
-    void Delete() {var args=J.O("name",J.S(plan,"name"),"token",J.S(plan,"token"),"backup_name",backup.Text,"confirm",confirm.Text);main.Run("Сохраняю копию и удаляю личные файлы VM…",()=>main.Backend.Call("delete",args),result=>{main.SaveAppearanceAfterOperation(J.S(plan,"name"),"auto");Close();main.Reload();});}
-}
-
-sealed class SnapshotsWindow : Form {
-    readonly MainWindow main;readonly string name;object[] rows;bool online;readonly ThemedList list=Theme.ListBox();readonly Button restore;
-    readonly Label note=Theme.Label("",10,Theme.Muted);
-    public SnapshotsWindow(MainWindow main,string name,object result,bool boot=false) {
-        this.main=main;this.name=name;Text=(boot?"Загрузка со снимка | ":"Снимки дисков | ")+name;Theme.Form(this,760,470);
-        var content=new Panel { Dock=DockStyle.Fill,Padding=new Padding(22) };content.Controls.Add(list);note.Dock=DockStyle.Top;note.Height=45;content.Controls.Add(note);
-        var buttons=Theme.Flow();buttons.Dock=DockStyle.Bottom;buttons.Padding=new Padding(22,10,10,0);
-        buttons.Controls.Add(Theme.Button("Создать снимок",()=>main.Run("Создаю снимок дисков…",()=>main.Backend.Call("control",J.O("name",name,"action","snapshot")),value=>Reload())));
-        buttons.Controls.Add(Theme.Button("Обновить",Reload));restore=Theme.Button("Загрузить снимок",Restore,true);buttons.Controls.Add(restore);buttons.Controls.Add(Theme.Button("Закрыть",Close));Theme.Dialog(this,content,buttons,boot?"Загрузка со снимка":"Снимки диска",name+" · точки восстановления без оперативной памяти");Fill(result);
+    void ValidateChoice(){delete.Enabled=!planning&&plan!=null&&confirm.Text==J.S(plan,"name")&&(!saveBackup.Checked||!String.IsNullOrWhiteSpace(backup.Text));}
+    void Render(){
+        if(plan==null)return;var text=new StringBuilder("Будет удалено:\r\n");foreach(object item in J.A(J.V(plan,"files")))text.AppendLine(Convert.ToString(item));
+        text.AppendLine("\r\nОстанется на диске:");foreach(object item in J.A(J.V(plan,"kept")))text.AppendLine(String.Join(" — ",J.A(item).Select(Convert.ToString)));
+        if(J.A(J.V(plan,"missing")).Length>0){text.AppendLine("\r\nУже отсутствует:");foreach(object item in J.A(J.V(plan,"missing")))text.AppendLine(Convert.ToString(item));}files.Text=text.ToString();
+        bool removeFiles=mode.SelectedIndex==1;delete.Text=removeFiles?"Удалить VM":"Убрать из списка";
+        note.Text=removeFiles?"Будут удалены только файлы из списка выше. Общие диски и ISO сохраняются.":"Удалится только JSON записи. Диски, ISO, логи и прежние копии останутся на месте.";
+        note.Text+="\r\nКопия параметров содержит настройки, без дисков и ОС.";ValidateChoice();
     }
-    void Fill(object result) {rows=J.A(J.V(result,"rows"));online=J.B(result,"online");list.Items.Clear();foreach(object row in rows){DateTime date=new DateTime(1970,1,1,0,0,0,DateTimeKind.Utc).AddSeconds(J.L(row,"date")).ToLocalTime();list.Items.Add(J.S(row,"name")+"   ·   "+date.ToString("yyyy-MM-dd HH:mm"));}if(rows.Length>0)list.SelectedIndex=0;restore.Enabled=!online && rows.Length>0;note.Text=online?"VM работает. Можно сохранить снимок; для восстановления сначала выключи её.":rows.Length==0?"Снимков дисков пока нет. Создай снимок у работающей VM.":"Снимки содержат только диски, без оперативной памяти.";}
-    void Reload() {main.Run("Обновляю снимки…",()=>main.Backend.Call("snapshots",J.O("name",name)),Fill);}
-    void Restore() {if(online||list.SelectedIndex<0)return;object selected=rows[list.SelectedIndex];if(MessageBox.Show(this,"Вернуть диски к снимку «"+J.S(selected,"name")+"» и запустить VM?\r\n\r\nПеред откатом сохранится страховочный снимок текущего состояния. RAM не восстанавливается.","Восстановление снимка",MessageBoxButtons.YesNo,MessageBoxIcon.Warning)!=DialogResult.Yes)return;Close();main.StartVm(name,selected);}
+    async void LoadPlan(){
+        if(main.Backend==null)return;bool removeFiles=mode.SelectedIndex==1;plan=null;planning=true;mode.Enabled=false;ValidateChoice();
+        try{var result=await Task.Run(()=>main.Backend.Call("delete_plan",J.O("name",vmName,"remove_files",removeFiles)));if(!IsDisposed){plan=result;Render();}}
+        catch(Exception error){if(!IsDisposed)MessageBox.Show(this,error.Message,"Проверка удаления",MessageBoxButtons.OK,MessageBoxIcon.Warning);}
+        finally{if(!IsDisposed){planning=false;mode.Enabled=true;ValidateChoice();}}
+    }
+    void Delete(){
+        if(main.Busy)return;var args=J.O("name",vmName,"token",J.S(plan,"token"),"backup_name",backup.Text,"save_backup",saveBackup.Checked,"confirm",confirm.Text);
+        mode.Enabled=saveBackup.Enabled=delete.Enabled=false;
+        main.Run("Удаляю выбранные данные VM…",()=>main.Backend.Call("delete",args),result=>{main.SaveAppearanceAfterOperation(vmName,"auto");Close();main.Reload();},error=>{if(!IsDisposed){mode.Enabled=saveBackup.Enabled=true;ValidateChoice();}});
+    }
 }
 
 sealed class DoctorWindow : Form {

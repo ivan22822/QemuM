@@ -8,7 +8,7 @@ import subprocess
 ROOT = Path(__file__).resolve().parents[1]
 FORBIDDEN_SUFFIXES = {'.exe', '.dll', '.pdb', '.iso', '.img', '.qcow', '.qcow2', '.vdi', '.vmdk',
     '.vhd', '.vhdx', '.raw', '.nvram', '.zip', '.7z', '.bak', '.log', '.pem', '.key', '.pfx', '.kdbx'}
-FORBIDDEN_PARTS = {'machines', 'logs', 'backups', 'parameter-backups', 'runtime', 'build', 'dist',
+FORBIDDEN_PARTS = {'machines', 'logs', 'backups', 'parameter-backups', 'runtime', 'snapshot-state', 'build', 'dist',
                    'releases', '__pycache__', 'node_modules', '.venv', 'sources',
                    'data', 'downloads', 'staging', 'health', 'versions'}
 SECRETS = [
@@ -35,7 +35,7 @@ def main():
     for name in names:
         path = Path(name)
         parts = {part.lower() for part in path.parts}
-        if path.suffix.lower() in FORBIDDEN_SUFFIXES or parts & FORBIDDEN_PARTS or path.name.lower() in {
+        if path.suffix.lower() in FORBIDDEN_SUFFIXES or parts & FORBIDDEN_PARTS or any(part.startswith(('.qemum-stage-','.qemum-external-')) for part in parts) or path.name.lower() in {
             'appearance.json', 'installation.json', 'manager-settings.json', 'launch-profiles.json', 'runtime.json', 'active.json', '.env'}:
             findings.append(dict(path=name, category='runtime/private/generated file'))
         if path.suffix.lower() == '.png' and not name.startswith('assets/visual-assets/'):

@@ -11,6 +11,11 @@ static class Launcher {
         Application.EnableVisualStyles();Application.SetCompatibleTextRenderingDefault(false);
         string root=AppDomain.CurrentDomain.BaseDirectory.TrimEnd(Path.DirectorySeparatorChar);
         try{
+            if(args.Length==0&&String.Equals(Path.GetFileName(Application.ExecutablePath),"QemuM-Refresh.exe",StringComparison.OrdinalIgnoreCase)){
+                root=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"QemuM Alpha");Core.NoLinks(root);
+                if(!File.Exists(Path.Combine(root,"active.json")))throw new IOException("Стандартная установка QemuM не найдена. Для другой папки используй --check-updates --install-root <папка>.");
+                Application.Run(new UpdateWindow(root));return;
+            }
             if(args.Length==3&&args[0]=="--check-updates"&&args[1]=="--install-root"){
                 root=Path.GetFullPath(args[2]);Core.NoLinks(root);
                 if(!File.Exists(Path.Combine(root,"active.json")))throw new IOException("Не найдена установка QemuM.");
@@ -28,6 +33,7 @@ static class Launcher {
         using(running){
             Process child;string ready,version;
             using(Core.Lock(root,"update.lock")){
+                Core.RecoverRepair(root);
                 var state=Core.Current(root);if(state==null)throw new IOException("Установка не завершена. Запусти установщик заново в новой папке.");
                 version=state.current;
                 string app=Path.Combine(root,"versions",version);var package=Core.VerifyDirectory(app);
@@ -57,6 +63,7 @@ static class Launcher {
                 while(!child.WaitForExit(250)){if(File.Exists(ready))healthy=true;}
                 healthy=healthy||File.Exists(ready);
                 if(File.Exists(ready))File.Delete(ready);
+                if(healthy){using(Core.Lock(root,"update.lock"))Core.CompleteRepair(root,version);}
                 if(!healthy){
                     bool rolledBack;using(Core.Lock(root,"update.lock"))rolledBack=Core.Rollback(root,version);
                     MessageBox.Show(rolledBack?"Приложение завершилось до готовности. Возвращена предыдущая версия; открой QemuM снова.":
@@ -90,10 +97,10 @@ sealed class UpdateWindow : Form {
             work=Path.Combine(root,"downloads",Guid.NewGuid().ToString("N"));Core.NoLinks(work);Directory.CreateDirectory(work);
             feed=await Task.Run(()=>Core.Latest(work));
             if(feed==null)status.Text="Опубликованных обновлений alpha пока нет.";
-            else if(current!=null&&Core.Compare(feed.version,current.current)<=0)status.Text="Установлена актуальная версия: "+current.current;
+            else if(current!=null&&Core.Compare(feed.version,current.current)<0)status.Text="Локальная версия новее опубликованной: "+current.current;
             else if(feed.min_launcher_protocol>Core.Protocol||feed.min_launcher_protocol<1)
                 status.Text="Версия "+feed.version+" требует нового установщика. Открой Releases проекта.";
-            else{status.Text="Доступна версия "+feed.version+".\n\nПеред установкой закрой окно менеджера. Работающие VM продолжат работу. Предыдущая версия сохранится.";install.Enabled=true;}
+            else{bool same=current!=null&&Core.Compare(feed.version,current.current)==0;install.Text=same?"Переустановить текущую версию":"Установить обновление";status.Text=same?"Версия "+current.current+" уже установлена. Можно сверить пакет с GitHub и переустановить её без изменения номера.\n\nПрежние файлы программы сохранятся. Данные VM не заменяются. Перед действием закрой менеджер.":"Доступна версия "+feed.version+".\n\nПеред установкой закрой окно менеджера. Работающие VM продолжат работу. Предыдущая версия сохранится.";install.Enabled=true;}
         }catch(Exception error){status.Text="Проверка не завершена: "+error.Message;}
         finally{busy=false;check.Enabled=true;}
     }
@@ -103,12 +110,15 @@ sealed class UpdateWindow : Form {
         busy=true;check.Enabled=install.Enabled=false;
         try{
             using(Core.Lock(root,"running.lock"))using(Core.Lock(root,"update.lock")){
+                Core.RecoverRepair(root);
                 status.Text="Скачиваю и проверяю пакет…";progress.Visible=true;
                 var updates=new Progress<InstallProgress>(item=>progress.Report(item.Phase,item.Done,item.Total));
                 IProgress<InstallProgress> reporter=updates;
                 await Task.Run(()=>{
                     string zip=Path.Combine(work,Guid.NewGuid().ToString("N")+".zip");Core.Download(feed.url,zip,128*1024*1024,false,(done,total)=>reporter.Report(new InstallProgress("QemuM","Загрузка",done,total)));
                     reporter.Report(new InstallProgress("QemuM","Проверка SHA-256"));
+                    var current=Core.Current(root);
+                    if(current!=null&&current.current==feed.version){Core.RefreshBootstrap(root,Application.ExecutablePath);Core.RepairSameVersion(root,zip,feed.sha256,(done,total)=>reporter.Report(new InstallProgress("QemuM","Переустановка",done,total)));return;}
                     var package=Core.Stage(zip,feed.sha256,root,(done,total)=>reporter.Report(new InstallProgress("QemuM","Распаковка",done,total)));
                     if(package.version!=feed.version||package.min_launcher_protocol!=feed.min_launcher_protocol)
                         throw new IOException("Версия пакета не соответствует обновлению.");

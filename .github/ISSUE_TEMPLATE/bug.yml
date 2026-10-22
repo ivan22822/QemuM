@@ -38,3 +38,8 @@ body:
     attributes:
       label: Windows и гостевая ОС
       placeholder: Windows 11, Ubuntu Desktop, профиль Auto
+  - type: input
+    id: snapshot_operation
+    attributes:
+      label: ID операции снимков и состояние VM
+      description: Если ошибка связана со снимками, скопируй ID из окна и укажи, работает ли VM или выключена. Не прикладывай диск или RAM.

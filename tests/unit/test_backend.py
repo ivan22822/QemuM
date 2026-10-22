@@ -398,6 +398,87 @@ class BackendTests(unittest.TestCase):
             self.service.delete(dict(name='test', token='stale', backup_name='x', confirm='test'))
         self.assertTrue(self.path.exists())
 
+    def test_unregister_without_backup_touches_only_registration(self):
+        disk = self.root / 'private.qcow2'
+        disk.write_bytes(b'private disk sentinel')
+        log = self.root / 'logs' / 'test-20261021-120000-aabbcc.log'
+        log.parent.mkdir()
+        log.write_bytes(b'log sentinel')
+        old_copy = self.path.with_suffix('.json.bak')
+        old_copy.write_bytes(b'old config copy')
+        self.path.write_text(json.dumps(dict(self.data, disk_path=str(disk))), encoding='utf-8')
+        with patch.object(self.service, 'query', side_effect=TimeoutError()), \
+                patch.object(vm_storage, 'qemu_processes', return_value=[]), \
+                patch.object(vm, 'qemu_executable', side_effect=AssertionError('No QEMU dependency for unregister')):
+            plan = self.service.delete_plan(dict(name='test', remove_files=False))
+            self.assertEqual(plan['files'], [str(self.path)])
+            result = self.service.delete(dict(name='test', token=plan['token'], confirm='test', save_backup=False))
+        self.assertIsNone(result['backup'])
+        self.assertFalse(self.path.exists())
+        self.assertEqual(disk.read_bytes(), b'private disk sentinel')
+        self.assertEqual(log.read_bytes(), b'log sentinel')
+        self.assertEqual(old_copy.read_bytes(), b'old config copy')
+        self.assertEqual(self.iso.read_bytes(), b'ISO sentinel: do not boot')
+        self.assertFalse((self.root / 'parameter-backups').exists())
+
+    def test_delete_without_backup_and_stale_unregister_are_guarded(self):
+        with patch.object(self.service, 'query', side_effect=TimeoutError()), patch.object(vm_storage, 'qemu_processes', return_value=[]):
+            plan = self.service.delete_plan(dict(name='test', remove_files=False))
+            self.path.write_bytes(self.raw + b'\n')
+            with self.assertRaisesRegex(ValueError, 'изменились'):
+                self.service.delete(dict(name='test', token=plan['token'], confirm='test', save_backup=False))
+            self.assertTrue(self.path.exists())
+            plan = self.service.delete_plan(dict(name='test'))
+            result = self.service.delete(dict(name='test', token=plan['token'], confirm='test', save_backup=False))
+        self.assertIsNone(result['backup'])
+        self.assertFalse(self.path.exists())
+        self.assertFalse((self.root / 'parameter-backups').exists())
+
+    def test_unregister_running_vm_is_rejected(self):
+        with patch.object(self.service, 'query', return_value={'status': 'running'}):
+            with self.assertRaisesRegex(ValueError, 'выключи'):
+                self.service.delete_plan(dict(name='test', remove_files=False))
+        self.assertEqual(self.path.read_bytes(), self.raw)
+
+    def test_no_backup_does_not_disable_shared_disk_protection(self):
+        disk = self.root / 'shared.qcow2'
+        disk.write_bytes(b'shared disk sentinel')
+        data = dict(self.data, disk_path=str(disk))
+        self.path.write_text(json.dumps(data), encoding='utf-8')
+        peer = self.path.with_name('peer.json')
+        peer.write_text(json.dumps(data), encoding='utf-8')
+        with patch.object(self.service, 'query', side_effect=TimeoutError()), \
+                patch.object(vm_storage, 'qemu_processes', return_value=[]), \
+                patch.object(vm_storage, 'backing_chain', return_value=[disk]):
+            plan = self.service.delete_plan(dict(name='test', remove_files=True))
+            self.assertNotIn(str(disk), plan['files'])
+            self.service.delete(dict(name='test', token=plan['token'], confirm='test', save_backup=False))
+        self.assertEqual(disk.read_bytes(), b'shared disk sentinel')
+        self.assertTrue(peer.exists())
+
+    def test_full_delete_without_backup_removes_approved_private_disk(self):
+        disk = self.root / 'private.qcow2'
+        disk.write_bytes(b'private temporary disk')
+        self.path.write_text(json.dumps(dict(self.data, disk_path=str(disk))), encoding='utf-8')
+        with patch.object(self.service, 'query', side_effect=TimeoutError()), \
+                patch.object(vm_storage, 'qemu_processes', return_value=[]), \
+                patch.object(vm_storage, 'backing_chain', return_value=[disk]):
+            plan = self.service.delete_plan(dict(name='test', remove_files=True))
+            self.assertIn(str(disk), plan['files'])
+            self.service.delete(dict(name='test', token=plan['token'], confirm='test', save_backup=False))
+        self.assertFalse(disk.exists())
+        self.assertFalse(self.path.exists())
+        self.assertTrue(self.iso.exists())
+
+    def test_display_override_is_not_duplicated(self):
+        command = vm.build_args('test', dict(self.data, extra_args=['-display', 'gtk,clipboard=on']))
+        self.assertEqual(command.count('-display'), 1)
+        self.assertEqual(command[command.index('-display') + 1], 'gtk,clipboard=on')
+        command = vm.build_args('test', self.data)
+        self.assertEqual(command.count('-display'), 1)
+        with self.assertRaisesRegex(ValueError, 'один'):
+            vm.build_args('test', dict(self.data, extra_args=['-display', 'gtk', '-display', 'sdl']))
+
     def test_mode_changes_only_explicitly(self):
         self.assertEqual(self.service.list({})['mode'], 'normal')
         self.assertFalse((self.root / 'manager-settings.json').exists())

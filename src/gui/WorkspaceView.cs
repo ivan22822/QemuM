@@ -247,6 +247,25 @@ sealed class NightMenuColors : ProfessionalColorTable {
     public override Color ImageMarginGradientEnd { get { return Theme.Panel; } }
 }
 
+sealed class NightMenuRenderer : ToolStripProfessionalRenderer {
+    public NightMenuRenderer():base(new NightMenuColors()){}
+    protected override void OnRenderMenuItemBackground(ToolStripItemRenderEventArgs e){
+        var bounds=new Rectangle(3,2,e.Item.Width-6,e.Item.Height-4);
+        if(e.Item.Selected&&e.Item.Enabled)using(var path=Drawing.Rounded(bounds,6))using(var brush=new SolidBrush(Theme.Card))e.Graphics.FillPath(brush,path);
+        var item=e.Item as ToolStripMenuItem;if(item!=null&&item.Checked)using(var brush=new SolidBrush(Theme.Accent))e.Graphics.FillRectangle(brush,4,8,3,Math.Max(1,e.Item.Height-16));
+    }
+    protected override void OnRenderItemCheck(ToolStripItemImageRenderEventArgs e){}
+    protected override void OnRenderItemText(ToolStripItemTextRenderEventArgs e){
+        var bounds=new Rectangle(16,0,e.Item.Width-30,e.Item.Height);
+        TextRenderer.DrawText(e.Graphics,e.Text,e.TextFont,bounds,e.Item.Enabled?Theme.Text:Theme.Muted,TextFormatFlags.Left|TextFormatFlags.VerticalCenter|TextFormatFlags.SingleLine|TextFormatFlags.NoPrefix);
+    }
+    public static ContextMenuStrip Create(System.ComponentModel.IContainer owner=null){
+        var menu=owner==null?new ContextMenuStrip():new ContextMenuStrip(owner);
+        menu.BackColor=Theme.Panel;menu.ForeColor=Theme.Text;menu.Font=new Font("Segoe UI",10F);menu.ShowImageMargin=false;menu.ShowCheckMargin=false;menu.Padding=new Padding(6);menu.Renderer=new NightMenuRenderer();return menu;
+    }
+    public static ToolStripItem Add(ContextMenuStrip menu,string text,EventHandler click){var item=menu.Items.Add(text,null,click);item.Padding=new Padding(16,10,16,10);return item;}
+}
+
 sealed class LaunchModeSelector : PolarButton {
     readonly ContextMenuStrip menu;
     int selected=-1;
@@ -262,9 +281,9 @@ sealed class LaunchModeSelector : PolarButton {
         }
     }
     public LaunchModeSelector() {
-        menu=new ContextMenuStrip { BackColor=Theme.Panel,ForeColor=Theme.Text,Renderer=new ToolStripProfessionalRenderer(new NightMenuColors()) };
-        menu.Items.Add("Обычный запуск",null,(sender,args)=>SelectedIndex=0);
-        menu.Items.Add("Выбор снимка",null,(sender,args)=>SelectedIndex=1);
+        menu=NightMenuRenderer.Create();
+        NightMenuRenderer.Add(menu,"Обычный запуск",(sender,args)=>SelectedIndex=0);
+        NightMenuRenderer.Add(menu,"Выбор снимка",(sender,args)=>SelectedIndex=1);
         BackColor=Theme.Bg;ForeColor=Theme.Muted;Font=new Font("Segoe UI",9F);
         AutoSize=true;MinimumSize=new Size(0,34);Padding=new Padding(0,5,0,5);SelectedIndex=0;
         Click+=(sender,args)=>menu.Show(this,new Point(0,Height));

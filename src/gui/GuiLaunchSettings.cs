@@ -244,6 +244,7 @@ sealed class ExtraHelpView : UserControl {
         layout.Controls.Add(left,0,0);layout.Controls.Add(right,1,0);Controls.Add(layout);
         right.Resize+=(sender,args)=>{
             int width=Math.Max(1,right.ClientSize.Width),inner=Math.Max(1,width-32);
+            articleTitle.MaximumSize=new Size(width,0);
             buttons.MaximumSize=new Size(inner,0);exampleCaption.MaximumSize=new Size(inner,0);
             int actionHeight=buttons.GetPreferredSize(new Size(inner,0)).Height;
             sample.RowStyles[2].Height=actionHeight;
@@ -302,9 +303,18 @@ MAC задаётся шестью шестнадцатеричными окте�
         T("Звук",@"Аудиоконтроллер виден гостевой ОС; audiodev выбирает backend вывода на хосте. Возможные backend зависят от сборки. Для обычной Windows-среды сначала проверь доступные варианты через справку самой QEMU, а не копируй Linux-специфичный alsa/pa.
 
 intel-hda вместе с hda-duplex — распространённая комбинация контроллера и кодека. В госте нужен драйвер. Существующий звук в Extra args сначала проверь: повторный контроллер или кодек не заменяет старый автоматически.",E("Виртуальный HDA-контроллер","-device","intel-hda,id=hda_extra","-device","hda-duplex,bus=hda_extra.0")),
-        T("Экран и буфер обмена",@"Модель видео и разрешение настраиваются в основных параметрах. -display выбирает окно хоста, а не драйвер видеокарты гостя. Наличие gtk/sdl, OpenGL и clipboard зависит от сборки QEMU. Если добавляешь -display в Extra args, проверь, что твоя сборка принимает значение; не добавляй второй -vga.
+        T("Экран и буфер обмена",@"Модель видео и разрешение настраиваются в основных параметрах. -display выбирает окно хоста, а не драйвер видеокарты гостя. Наличие gtk/sdl, OpenGL и clipboard зависит от сборки QEMU. Один -display в Extra args заменяет окно SDL по умолчанию. Не добавляй второй -display или -vga.
 
 Буфер обмена через qemu-vdagent требует устройства virtio-serial и работающего агента в гостевой системе. Не все режимы экрана поддерживают одинаковые функции. Изменение аргументов само по себе агент в гостя не устанавливает. Поддержка 3D также зависит от backend, драйвера и гостя.",E("Окно SDL без OpenGL","-display","sdl,gl=off")),
+        T("Буфер и клавиши Windows",@"Пример включает окно GTK, общий буфер обмена через qemu-vdagent и USB-планшет для абсолютных координат мыши. Он не пробрасывает физическую мышь. GTK и clipboard должны поддерживаться сборкой QEMU.
+
+В Linux-госте нужен установленный и работающий spice-vdagent в графической сессии; поведение зависит от рабочего стола и X11/Wayland. В Windows-госте нужны совместимые virtio-serial драйвер и SPICE vdagent. Одни аргументы QEMU агент не устанавливают. Проверь копирование обычного текста в обе стороны.
+
+Чтобы сочетания клавиш Windows оставались на хосте, отпусти захват ввода в окне GTK: Ctrl+Alt+G переключает захват клавиатуры и мыши. Для отключения захвата при наведении можно добавить grab-on-hover=off к gtk,clipboard=on. Опция mouse=off отключает передачу мыши через vdagent; она не управляет захватом клавиатуры. Зарезервированные сочетания хоста могут не передаваться гостю.
+
+Перед вставкой проверь, нет ли уже usb-tablet, virtio-serial-pci, chardev с ID vdagent или порта com.redhat.spice.0. Не добавляй их повторно. Если -display уже указан, замени его: в конфигурации должен остаться один. Изменения применятся при следующем запуске VM.
+
+Документация клавиш: https://www.qemu.org/docs/master/system/keys.html",E("GTK · буфер обмена и USB-планшет","-usb","-device","usb-tablet","-device","virtio-serial-pci","-chardev","qemu-vdagent,id=vdagent,clipboard=on,mouse=off","-device","virtserialport,chardev=vdagent,name=com.redhat.spice.0","-display","gtk,clipboard=on")),
         T("Serial и текстовый вывод",@"Живые логи показывают stdout/stderr QEMU и события менеджера. Чтобы увидеть текст гостевого ядра через serial, настрой соответствующую консоль внутри гостя и направь виртуальный serial в файл. Без настройки гостя файл может оставаться пустым.
 
 stdio не является удобным выбором в GUI: отдельного терминала нет. Используй файл и заранее существующую папку. Путь из примера замени своим. Serial-консоль может содержать команды и сведения из гостевой ОС; выбирай место хранения осознанно.",E("Serial в файл","-serial",@"file:C:\VM Logs\serial.log")),

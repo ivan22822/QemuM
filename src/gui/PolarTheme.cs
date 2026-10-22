@@ -16,7 +16,7 @@ static class Theme {
         Green=Hex("#A3D9C4"), Red=Hex("#EE97B0"), Yellow=Hex("#EBC8A4");
     static Color Hex(string value){return ColorTranslator.FromHtml(value);}
     public static Color VmColor(object row){try{return ColorTranslator.FromHtml(J.S(J.V(row,"data"),"ui_color","#65C7FF"));}catch(ArgumentException){return Accent;}}
-    public static string State(string value){switch(value){case "running":return "Работает";case "paused":return "Пауза";case "prelaunch":return "Ожидает запуска";case "stopped":return "Выключена";case "no-qmp":return "Запущена · нет QMP";case "shutdown":return "Завершается";case "checking":return "Проверка…";case "error":return "Ошибка QEMU · открой логи";default:return "Состояние неизвестно";}}
+    public static string State(string value){switch(value){case "recovery-required":return "Нужна проверка снимков";case "running":return "Работает";case "paused":return "Пауза";case "prelaunch":return "Ожидает запуска";case "stopped":return "Выключена";case "no-qmp":return "Запущена · нет QMP";case "shutdown":return "Завершается";case "checking":return "Проверка…";case "error":return "Ошибка QEMU · открой логи";default:return "Состояние неизвестно";}}
     public static Color StateColor(string value){return value=="running"?Green:value=="stopped"?Muted:new[]{"paused","prelaunch","shutdown"}.Contains(value)?Yellow:Red;}
     public static void Form(Form form,int width,int height){
         form.BackColor=Bg;form.ForeColor=Text;form.Font=new Font("Segoe UI",10F);form.AutoScaleMode=AutoScaleMode.Dpi;
@@ -47,10 +47,12 @@ static class Theme {
         var category=Label(eyebrow,8,Muted);category.Margin=new Padding(0,0,0,7);layout.Controls.Add(category);layout.Controls.Add(Label(title,22,null,true));layout.Controls.Add(Label(subtitle,9,Muted));panel.Controls.Add(layout);return panel;
     }
     public static void Dialog(Form form,Control content,Control buttons,string title,string subtitle,string eyebrow="QEMU / VM MANAGER"){
+        if(content is TableLayoutPanel&&content.Tag is int)content=FieldsView((TableLayoutPanel)content);
         content.Dock=DockStyle.Fill;buttons.Dock=DockStyle.Bottom;buttons.BackColor=Bg;buttons.Padding=new Padding(24,14,14,6);
         form.Controls.Add(content);form.Controls.Add(buttons);form.Controls.Add(Header(title,subtitle,eyebrow));
     }
-    public static TableLayoutPanel Fields(){var table=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=2,RowCount=0,Padding=new Padding(24),AutoScroll=true,BackColor=Bg,Tag=0};table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,50));table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,50));return table;}
+    public static TableLayoutPanel Fields(){var table=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=2,RowCount=0,Padding=new Padding(24),AutoScroll=false,BackColor=Bg,Tag=0};table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,50));table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,50));return table;}
+    public static Control FieldsView(TableLayoutPanel fields){return new ScrollSurface(fields);}
     public static Control Row(TableLayoutPanel table, string title, Control value, bool fullWidth=false) {
         int index=(int)table.Tag;
         bool full=fullWidth || String.IsNullOrEmpty(title);
@@ -76,6 +78,7 @@ static class Theme {
         if(value is TextBox && !((TextBox)value).Multiline) value.Height=32;
         if(value is FieldInput){value.Height=40;value.AccessibleName=title;}
         block.Controls.Add(value,0,hasTitle?1:0);
+        block.SizeChanged+=(sender,args)=>{foreach(Label label in block.Controls.OfType<Label>())label.MaximumSize=new Size(Math.Max(1,block.ClientSize.Width),0);};
         table.Controls.Add(block,index%2,row);
         if(full) table.SetColumnSpan(block,2);
         table.Tag=index+(full?2:1);
@@ -141,11 +144,21 @@ sealed class PageView : BufferedPanel {
 
 sealed class ResourceSummary : UserControl {
     readonly Label memory=Theme.Label("—",17),cores=Theme.Label("—",17),profile=Theme.Label("—",17);
+    readonly ToolTip profileTip=new ToolTip();
     public ResourceSummary(){Size=new Size(650,80);BackColor=Theme.Bg;Margin=new Padding(0);var table=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=3,RowCount=2,Padding=new Padding(0,12,0,8)};
         for(int index=0;index<3;index++)table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,33.333F));
+        table.RowStyles.Add(new RowStyle(SizeType.Absolute,22));table.RowStyles.Add(new RowStyle(SizeType.Percent,100));
+        foreach(var value in new[]{memory,cores,profile}){value.AutoSize=false;value.AutoEllipsis=true;value.Dock=DockStyle.Fill;value.TextAlign=ContentAlignment.MiddleLeft;}
         table.Controls.Add(Theme.Label("Оперативная память",9,Theme.Muted),0,0);table.Controls.Add(Theme.Label("Процессор",9,Theme.Muted),1,0);table.Controls.Add(Theme.Label("Ускорение",9,Theme.Muted),2,0);table.Controls.Add(memory,0,1);table.Controls.Add(cores,1,1);table.Controls.Add(profile,2,1);Controls.Add(table);
     }
-    public void ShowData(object data,bool present){int ram=J.N(data,"ram_mb");memory.Text=present?(ram>0&&ram%1024==0?ram/1024+" ГБ":ram+" МБ"):"—";cores.Text=present?J.N(data,"cores")+" CPU":"—";profile.Text=present?J.S(data,"launch_profile_label",J.S(data,"launch_profile","whpx").ToUpperInvariant()):"—";}
+    public void ShowData(object data,bool present){
+        int ram=J.N(data,"ram_mb");memory.Text=present?(ram>0&&ram%1024==0?ram/1024+" ГБ":ram+" МБ"):"—";cores.Text=present?J.N(data,"cores")+" CPU":"—";
+        string id=J.S(data,"launch_profile","whpx"),accelerator=J.S(J.V(data,"launch_profile_settings"),"accelerator");
+        // The resource value describes acceleration; the full preset name belongs in its tooltip.
+        profile.Text=!present?"—":accelerator.Length>0?accelerator.ToUpperInvariant():id=="auto"?"Авто":id=="tcg"?"TCG":id=="whpx"||id=="whpx-compatible"?"WHPX":"—";
+        string description=present?J.S(data,"launch_profile_label",id):"";profileTip.SetToolTip(profile,description);profile.AccessibleDescription=description;
+    }
+    protected override void Dispose(bool disposing){if(disposing)profileTip.Dispose();base.Dispose(disposing);}
     protected override void OnPaint(PaintEventArgs e){base.OnPaint(e);using(var pen=new Pen(Theme.Line)){e.Graphics.DrawLine(pen,0,0,Width,0);e.Graphics.DrawLine(pen,0,Height-1,Width,Height-1);}}
 }
 

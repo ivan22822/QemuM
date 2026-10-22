@@ -123,25 +123,6 @@ def list_snapshots(request):
         rows.append('{}  |  {}  |  {}'.format(clean(name), when, kind))
     return rows
 
-def save_snapshot(request, progress):
-    disks = snapshot_disks(request)
-    devices = list(dict.fromkeys(disk['device'] for disk in disks))
-    tag = 'disk-' + datetime.now().strftime('%Y%m%d-%H%M%S') + '-' + uuid.uuid4().hex[:6]
-    actions = [{'type': 'blockdev-snapshot-internal-sync', 'data': {'device': device, 'name': tag}} for device in devices]
-    progress('Saving disk snapshot (no RAM): ' + tag)
-    # The synchronous transaction includes all writable disks and rolls back on failure.
-    try:
-        request('transaction', {'actions': actions})
-        verified = snapshot_disks(request)
-    except OSError as error:
-        raise ValueError('Snapshot result not confirmed. Check the list before retrying: ' + tag) from error
-    by_device = {disk['device']: disk for disk in verified}
-    for device in devices:
-        matches = [item for item in by_device.get(device, {}).get('image', {}).get('snapshots', []) if item.get('name') == tag]
-        if len(matches) != 1 or matches[0].get('vm-state-size', 0) != 0:
-            raise ValueError('Disk snapshot could not be verified. Check the list before retrying: ' + tag)
-    return tag
-
 class VMConsole:
     def __init__(self, name, data, port, command, query, terminal_factory=Terminal, watcher_factory=watch_qmp_process):
         self.name, self.data, self.port = name, data, port
@@ -191,6 +172,10 @@ class VMConsole:
                 try:
                     if task == 'toggle':
                         current = self.query(self.name, self.port)
+                        if not current['running']:
+                            import vm
+                            from vm_snapshot_store import assert_can_start
+                            assert_can_start(vm.ROOT, self.name)
                         self.request('stop' if current['running'] else 'cont')
                         text = 'Pause requested.' if current['running'] else 'Resume requested.'
                     elif task == 'shutdown':
@@ -206,10 +191,18 @@ class VMConsole:
                         self.force_quit()
                         text = 'Остановка QEMU запрошена. Ожидаю завершения процесса.'
                     elif task == 'snapshot':
-                        tag = save_snapshot(self.request, lambda text: self.events.put(('progress', text)))
+                        from vm_snapshot_service import manager_service
+                        import vm
+                        snapshots = manager_service(vm.ROOT, self.name)
+                        result = snapshots.create(snapshots.plan_create(), lambda text: self.events.put(('progress', text)))
+                        tag = result['result']
                         text = 'Disk snapshot saved: ' + tag
                     elif task == 'list':
-                        self.events.put(('details', list_snapshots(self.request)))
+                        from vm_snapshot_service import manager_service
+                        import vm
+                        state = self.query(self.name, self.port)['status']
+                        catalog = manager_service(vm.ROOT, self.name).read_catalog(True, self.data, state)
+                        self.events.put(('details', [row.get('label', row['name']) + ' | ' + row['state'] + ' | ' + row['id'] for row in catalog['rows']]))
                         text = 'Saved snapshots. DISK ONLY = RAM was not saved.'
                     self.events.put(('done', text))
                 except (OSError, ValueError) as error:

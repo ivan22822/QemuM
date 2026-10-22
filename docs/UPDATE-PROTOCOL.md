@@ -1,5 +1,27 @@
 # QemuM update protocol 1
 
+## Explicit reinstall of the current version
+
+The updater offers «Переустановить текущую версию» when GitHub and the installed
+version have the same number. This is opt-in. Download SHA-256 and package file
+hashes are verified. An identical manifest is a no-op. A different same-version
+package is prepared under staging; the prior directory is retained under
+`repairs/<operation>/previous`, while active.json and data remain unchanged.
+Both running.lock and update.lock are required. Durable repair.json records
+the old/new manifest hashes before renaming. The launcher reconciles an interrupted
+repair before startup, retains unknown files and fails closed, and restores the
+prior build if the new frontend fails before readiness. A successful startup
+archives the receipt; old application files remain available. This is a rename
+and verification protocol, not an assertion about physical power loss.
+
+Early locally installed alpha.4 updaters do not know this action. Download and
+run `QemuM-Refresh.exe` from the release once, close the manager and explicitly
+choose reinstall. It finds the default installation, fetches GitHub's package
+and refreshes the protocol-1 launcher with an exact backup before repairing.
+Custom locations use `--check-updates --install-root <directory>`.
+Subsequent requests can use the normal Updates button. No Python or QEMU
+replacement, guest termination, or VM-data migration is performed by repair.
+
 The stable `QemuM.exe` launcher is a separate .NET Framework executable. It does
 not import the frontend or depend on Python. Keep this contract when replacing
 the UI, backend, language or framework. An arbitrary replacement that ignores

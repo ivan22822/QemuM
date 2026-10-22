@@ -308,6 +308,8 @@ def validate_extra_args(data):
     conflicts = [arg.split('=', 1)[0] for arg in data.get('extra_args', []) if arg.split('=', 1)[0] in managed]
     if conflicts:
         raise ValueError('Эти параметры задаются менеджером и недоступны в Extra args: ' + ', '.join(dict.fromkeys(conflicts)))
+    if sum(arg.split('=', 1)[0] == '-display' for arg in data.get('extra_args', [])) > 1:
+        raise ValueError('В Extra args должен быть только один параметр -display.')
 
 def build_args(name, data, boot=None, accelerator=None):
     validate_extra_args(data)
@@ -319,14 +321,24 @@ def build_args(name, data, boot=None, accelerator=None):
     port = checked_qmp_port(name, data)
     args = ['-name', name] + accelerator_args(accelerator, data.get('launch_profile_settings')) + ['-machine', 'q35',
             '-smp', str(data['cores']), '-m', str(data['ram_mb']),
-            '-display', 'sdl,gl=off',
             '-qmp', 'tcp:127.0.0.1:{},server=on,wait=off'.format(port)]
+    if not any(arg.split('=', 1)[0] == '-display' for arg in data.get('extra_args', [])):
+        args += ['-display', 'sdl,gl=off']
     args += video_args(data)
     if data['disk_path']:
         # QEMU uses commas as option separators; double literal commas.
         disk = data['disk_path'].replace(',', ',,')
         args += ['-drive', 'file=' + disk + ',format=' + disk_format(data) + ',if=virtio']
     args += network_args(data)
+    if data.get('guest_agent_enabled'):
+        agent_port=data.get('guest_agent_port')
+        if type(agent_port) is not int or not 1024<=agent_port<=65535 or agent_port==port:
+            raise ValueError('Для QEMU Guest Agent нужен отдельный локальный guest_agent_port 1024–65535.')
+        if any('org.qemu.guest_agent.0' in item or 'id=qemum-qga' in item for item in data.get('extra_args',[])):
+            raise ValueError('Канал Guest Agent уже задан в Extra args; используй один способ настройки.')
+        args+=['-chardev','socket,id=qemum-qga,host=127.0.0.1,port='+str(agent_port)+',server=on,wait=off',
+               '-device','virtio-serial-pci,id=qemum-qga-bus',
+               '-device','virtserialport,bus=qemum-qga-bus.0,chardev=qemum-qga,name=org.qemu.guest_agent.0']
     if boot == 'iso':
         args += ['-cdrom', data['iso_path'], '-boot', 'order=c,once=d' if data['disk_path'] else 'order=d']
     else:
@@ -348,6 +360,8 @@ def launch(name, boot=None, iso_override=None):
         return _launch(name, boot, iso_override)
 
 def _launch(name, boot=None, iso_override=None, prepared_data=None):
+    from vm_snapshot_store import assert_can_start
+    assert_can_start(ROOT, name)
     data = load(name) if prepared_data is None else prepared_data
     original = config_path(name).read_bytes()
     if data.get('vga', 'std') not in ('std', 'virtio'):

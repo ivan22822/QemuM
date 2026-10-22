@@ -33,7 +33,6 @@ from vm_storage import (assert_stopped, deletion_plan, delete_with_template, exc
                         media, qemu_processes, safe_file, signature, templates)
 from vm_snapshots import (configured_disks, catalog, assert_private, image_tool, image_command,
                           _apply_snapshot, runtime_image_files)
-from vm_console import save_snapshot, snapshot_disks
 
 HIDDEN = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
 
@@ -98,11 +97,36 @@ class Service:
         self.watchers = {}
         self.events = {}
         self.plans = {}
+        self.snapshot_plans = {}
+        from vm_snapshot_jobs import Jobs
+        self.snapshot_jobs=Jobs(self)
         self.reports = {}
         self.inventory = None
         self.inventory_time = 0
         self.inventory_running = False
         self.pool = ThreadPoolExecutor(max_workers=4)
+        self.schedule_stop=threading.Event()
+
+    def start_schedules(self):
+        def work():
+            from vm_snapshot_service import manager_service
+            from vm_snapshot_schedule import Schedule
+            while not self.schedule_stop.wait(30):
+                for path in sorted(vm.ROOT.glob('*.json')):
+                    if self.schedule_stop.is_set():return
+                    try:Schedule(manager_service(vm.ROOT,path.stem)).tick()
+                    except Exception as error:self.event(path.stem,'Расписание: '+str(error))
+        threading.Thread(target=work,name='snapshot-schedules',daemon=True).start()
+
+    def snapshot_schedule(self,args):
+        from vm_snapshot_service import manager_service
+        from vm_snapshot_schedule import Schedule
+        return Schedule(manager_service(vm.ROOT,self.name(args))).save(args.get('options'),args.get('revision'))
+
+    def snapshot_chain_plan(self,args):
+        from vm_snapshot_service import manager_service
+        from vm_snapshot_external import ExternalSnapshots
+        return ExternalSnapshots(manager_service(vm.ROOT,self.name(args))).maintenance_plan(args.get('action','merge'))
 
     def name(self, args):
         name = args.get('name')
@@ -138,9 +162,17 @@ class Service:
             self.inventory_running = False
 
     def list(self, args):
-        return dict(rows=[dict(name=name, data=data, network_view=network_display(data))
-                          for name, data in vm.menu_rows(vm.entries())],
-                    mode=vm.manager_settings()['launch_mode'], version='0.1.0-alpha.3')
+        from vm_snapshot_store import assert_can_start
+        rows = []
+        for name, data in vm.menu_rows(vm.entries()):
+            error = ''
+            try:
+                assert_can_start(vm.ROOT, name)
+            except (OSError, ValueError) as failure:
+                error = str(failure)
+            rows.append(dict(name=name, data=data, network_view=network_display(data), snapshot_recovery=bool(error), snapshot_error=error))
+        return dict(rows=rows,
+                    mode=vm.manager_settings()['launch_mode'], version='0.1.0-alpha.4')
 
     def states(self, args):
         if not self.inventory_running and time.monotonic() - self.inventory_time > 10:
@@ -150,6 +182,11 @@ class Service:
             name, data = row
             if data.get('_invalid'):
                 return name, 'unavailable'
+            from vm_snapshot_store import assert_can_start
+            try:
+                assert_can_start(vm.ROOT, name)
+            except (OSError, ValueError):
+                return name, 'recovery-required'
             try:
                 state = self.query(name, data)['status']
                 try:
@@ -299,6 +336,8 @@ class Service:
     def start(self, args):
         name = self.name(args)
         with vm_lock(vm.ROOT, name):
+            from vm_snapshot_store import assert_can_start
+            assert_can_start(vm.ROOT, name)
             data = vm.load(name)
             before = vm.config_path(name).read_bytes()
             try:
@@ -322,6 +361,7 @@ class Service:
             accelerator, checked = choose(exe, data)
             self.event(name, 'Выбрано ускорение ' + accelerator.upper())
             selected = args.get('snapshot')
+            checkpoint = None
             if vm.config_path(name).read_bytes() != before:
                 raise ValueError('Параметры изменились во время подготовки запуска.')
             old_port = vm.qmp_port(name, data)
@@ -336,22 +376,45 @@ class Service:
                 image = image_tool(vm.qemu_executable)
                 self.stopped(name, data)
                 assert_private(vm.ROOT, name, disks, image, runtime_refs=self.peer_refs)
-                checkpoint = _apply_snapshot(disks, selected, image, image_command, [])
+                from vm_snapshot_service import manager_service
+                from vm_snapshot_transaction import OfflineTransaction
+                transaction=OfflineTransaction(manager_service(vm.ROOT,name))
+                if selected.get('kind')=='external':
+                    from vm_snapshot_external import ExternalSnapshots
+                    external=ExternalSnapshots(manager_service(vm.ROOT,name))
+                    checkpoint=external.execute(external.plan(selected.get('id')))['result']
+                    data=vm.load(name);before=vm.config_path(name).read_bytes()
+                else:
+                    operation_id=args.get('snapshot_operation_id')
+                    previous=transaction.store.operation(operation_id) if operation_id else None
+                    if previous:
+                        if previous['action']!='offline-restore' or previous['plan']['selected']['id']!=selected.get('id'):raise ValueError('ID восстановления принадлежит другому действию.')
+                        checkpoint=transaction.service.result(previous)['checkpoint']
+                    else:
+                        restore_plan=transaction.plan('offline-restore',selected.get('id'))
+                        if operation_id:
+                            from vm_snapshot_store import identifier
+                            restore_plan['id']=identifier(operation_id)
+                        checkpoint=transaction.execute(restore_plan,lambda text,*counts:self.event(name,text))['checkpoint']
                 self.event(name, 'Снимок применён; страховочная точка: ' + checkpoint)
-            self.stopped(name, data)
-            if vm.config_path(name).read_bytes() != before:
-                raise ValueError('Параметры изменились перед запуском. VM не запущена.')
-            command = [exe] + vm.build_args(name, data, boot, accelerator=accelerator)
-            logs = self.root / 'logs'
-            logs.mkdir(exist_ok=True)
-            path = logs / ('{}-{}-{}.log'.format(name, datetime.now().strftime('%Y%m%d-%H%M%S'), uuid.uuid4().hex[:6]))
-            with path.open('xb') as stream:
-                process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=stream, stderr=subprocess.STDOUT,
-                                           shell=False, creationflags=HIDDEN | getattr(subprocess, 'CREATE_NEW_PROCESS_GROUP', 0))
+            try:
+                self.stopped(name, data)
+                if vm.config_path(name).read_bytes() != before:
+                    raise ValueError('Параметры изменились перед запуском. VM не запущена.')
+                command = [exe] + vm.build_args(name, data, boot, accelerator=accelerator)
+                if args.get('paused') is True:command+=['-S']
+                logs = self.root / 'logs';logs.mkdir(exist_ok=True)
+                path = logs / ('{}-{}-{}.log'.format(name, datetime.now().strftime('%Y%m%d-%H%M%S'), uuid.uuid4().hex[:6]))
+                with path.open('xb') as stream:
+                    process = subprocess.Popen(command, stdin=subprocess.DEVNULL, stdout=stream, stderr=subprocess.STDOUT,
+                                               shell=False, creationflags=HIDDEN | getattr(subprocess, 'CREATE_NEW_PROCESS_GROUP', 0))
+            except Exception as error:
+                if checkpoint:raise ValueError('Диски восстановлены; следующий запуск не подтверждён: '+str(error)+'. Страховочная точка: '+checkpoint+'. Автоматического повторного отката нет.') from error
+                raise
             self.sessions[name] = dict(process=process, log=path, accelerator=accelerator)
             self.event(name, 'Запущен QEMU, PID ' + str(process.pid))
             # No retry with another accelerator after a real guest process starts.
-            return dict(pid=process.pid, accelerator=accelerator, log=str(path), detail=checked['detail'])
+            return dict(pid=process.pid, accelerator=accelerator, log=str(path), detail=checked['detail'], checkpoint=checkpoint)
 
     def control(self, args):
         name = self.name(args)
@@ -360,13 +423,20 @@ class Service:
             raise ValueError('Неизвестное действие.')
         if action in ('shutdown', 'reset', 'quit') and args.get('confirm') != name:
             raise ValueError('Нужно подтверждение выбранной VM.')
+        if action == 'snapshot':
+            from vm_snapshot_service import manager_service
+            snapshots = manager_service(vm.ROOT, name)
+            result = snapshots.create(snapshots.plan_create(), lambda text: self.event(name, text))
+            self.event(name, 'Снимок создан: ' + result['result'])
+            return result
         with vm_lock(vm.ROOT, name):
             data = vm.load(name)
             current = self.query(name, data)
             request = lambda command, arguments=None: self.query(name, data, command, arguments, timeout=8)
-            if action == 'snapshot':
-                result = save_snapshot(request, lambda text: self.event(name, text))
-            elif action == 'toggle':
+            if action == 'toggle':
+                if not current['running']:
+                    from vm_snapshot_store import assert_can_start
+                    assert_can_start(vm.ROOT, name)
                 result = request('stop' if current['running'] else 'cont')
             elif action == 'shutdown':
                 if not current['running']:
@@ -396,32 +466,162 @@ class Service:
     def snapshots(self, args):
         name = self.name(args)
         data = vm.load(name)
+        from vm_snapshot_service import manager_service
+        snapshots = manager_service(vm.ROOT, name)
         try:
-            self.query(name, data)
+            state = self.query(name, data)['status']
         except (ConnectionRefusedError, TimeoutError):
-            disks = configured_disks(data)
-            rows = catalog(disks, image_tool(vm.qemu_executable))
-            return dict(rows=rows, online=False)
-        disks = snapshot_disks(lambda command: self.query(name, data, command, timeout=5))
-        catalogs = [disk.get('image', {}).get('snapshots', []) for disk in disks]
-        common = set(item['name'] for item in catalogs[0] if not item.get('vm-state-size', 0))
-        for entries in catalogs[1:]:
-            common.intersection_update(item['name'] for item in entries if not item.get('vm-state-size', 0))
-        return dict(rows=[dict(name=tag, date=next(item.get('date-sec', 0) for item in catalogs[0] if item['name'] == tag))
-                          for tag in sorted(common)], online=True)
+            self.stopped(name, data)
+            return snapshots.read_catalog(False, data)
+        return snapshots.read_catalog(True, data, state)
+
+    def snapshot_plan(self, args):
+        from vm_snapshot_service import manager_service
+        name = self.name(args)
+        if len(self.snapshot_plans) > 100:
+            self.snapshot_plans = {key: value for key, value in self.snapshot_plans.items() if value['expires'] > time.time()}
+            if len(self.snapshot_plans) > 100:
+                raise ValueError('Слишком много неподтверждённых планов. Закрой лишние окна.')
+        snapshots=manager_service(vm.ROOT,name)
+        if (args.get('options') or {}).get('kind')=='ram':
+            from vm_snapshot_ram import RamSnapshots
+            plan=RamSnapshots(snapshots).plan(args.get('options'))
+        elif (args.get('options') or {}).get('kind')=='external':
+            from vm_snapshot_external import ExternalSnapshots
+            plan=ExternalSnapshots(snapshots).plan(options=args.get('options'))
+            plan['excluded']=[]
+        else:
+            try:snapshots.request('query-status')
+            except (ConnectionRefusedError,TimeoutError):
+                from vm_snapshot_transaction import OfflineTransaction
+                plan=OfflineTransaction(snapshots).plan('offline-create',options=args.get('options'))
+            else:plan=snapshots.plan_create(args.get('options'),args.get('operation_id'))
+        self.snapshot_plans[plan['id']] = plan
+        detail={'ram-create':'Полное состояние CPU/RAM/устройств и дисков. Содержит личные данные. Нужна та же сборка QEMU, TCG и настройки.',
+                'external':'Внешняя цепочка на приватной базе. Новый каталог: '+plan.get('destination_folder',''),
+                'offline-create':'Выключенная VM; полные рабочие копии, непрерывное владение оригиналами и проверка перед публикацией. Прежние образы сохранятся.'}.get(plan['action'],'Только диски, без RAM; уровень подготовки Guest Agent выбран отдельно. Рост снимков требует свободного места.')
+        return dict(operation_id=plan['id'], expires=plan['expires'], disks=plan['disks'], excluded=plan['excluded'],
+                    detail=detail)
+
+    def snapshot_offline_plan(self, args):
+        from vm_snapshot_service import manager_service
+        name=self.name(args)
+        manager_service(vm.ROOT,name).assert_offline()
+        result=self.snapshot_plan(args);plan=self.snapshot_plans[result['operation_id']]
+        result.update(can_publish=True,required_copy_bytes=sum(row['size'] for row in plan.get('signatures',[])))
+        return result
+
+    def snapshot_operation_plan(self,args):
+        from vm_snapshot_transaction import OfflineTransaction
+        from vm_snapshot_service import manager_service
+        name=self.name(args)
+        if args.get('action') not in ('offline-delete','offline-restore'):raise ValueError('Неизвестное действие.')
+        snapshots=manager_service(vm.ROOT,name)
+        selected=next((row for row in snapshots.store.catalog()['groups'] if row['id']==args.get('group_id')),None)
+        if selected and selected['kind']=='external':
+            if args['action']!='offline-restore':raise ValueError('Внешние слои с зависимостями не удаляются как независимые файлы.')
+            from vm_snapshot_external import ExternalSnapshots
+            plan=ExternalSnapshots(snapshots).plan(selected['id'])
+        else:plan=OfflineTransaction(snapshots).plan(args['action'],args.get('group_id'),args.get('options'))
+        self.snapshot_plans[plan['id']]=plan
+        return dict(operation_id=plan['id'],disks=plan['disks'],expires=plan['expires'],excluded=[],config_diff=plan.get('config_diff',[]),
+                    detail='VM останется выключенной. Проверенные рабочие копии заменят образы; прежние образы сохранятся для восстановления.')
+
+    def snapshot_export_plan(self,args):
+        from vm_snapshot_export import Export
+        from vm_snapshot_service import manager_service
+        name=self.name(args)
+        plan=Export(manager_service(vm.ROOT,name)).plan(args.get('group_id'),args.get('options'))
+        self.snapshot_plans[plan['id']]=plan
+        return dict(operation_id=plan['id'],disks=plan['disks'],required_bytes=plan['required_bytes'],expires=plan['expires'],
+                    detail='Новый независимый ZIP: '+plan['target']+'. VM должна оставаться выключенной. RAM и runtime исключены.')
+
+    def snapshot_job_start(self,args):return self.snapshot_jobs.start(args)
+    def snapshot_job_status(self,args):return self.snapshot_jobs.status(args)
+    def snapshot_cancel(self,args):return self.snapshot_jobs.cancel(args)
+
+    def snapshot_execute(self, args, progress=None, cancelled=lambda:False):
+        from vm_snapshot_service import manager_service
+        name = self.name(args)
+        snapshots = manager_service(vm.ROOT, name)
+        operation_id = args.get('operation_id')
+        previous = snapshots.store.operation(operation_id)
+        if previous:
+            return snapshots.result(previous)
+        plan = self.snapshot_plans.get(operation_id)
+        if not plan or plan['name'] != name:
+            raise ValueError('План не найден. Сформируй новый план снимка.')
+        progress=progress or (lambda text,*counts:self.event(name,text))
+        if plan['action']=='export':
+            from vm_snapshot_export import Export
+            return Export(snapshots).execute(plan,progress,cancelled)
+        if plan['action'].startswith('offline-'):
+            from vm_snapshot_transaction import OfflineTransaction
+            return OfflineTransaction(snapshots).execute(plan,progress,cancelled)
+        if plan['action']=='external':
+            from vm_snapshot_external import ExternalSnapshots
+            return ExternalSnapshots(snapshots).execute(plan)
+        if plan['action']=='ram-create':
+            from vm_snapshot_ram import RamSnapshots
+            return RamSnapshots(snapshots).create(plan)
+        return snapshots.create(plan,progress)
+
+    def snapshot_ram_restore(self,args):
+        from vm_snapshot_ram import RamSnapshots
+        from vm_snapshot_service import manager_service
+        name=self.name(args);snapshots=manager_service(vm.ROOT,name)
+        selected=next((row for row in snapshots.store.catalog()['groups'] if row['id']==args.get('group_id') and row['kind']=='ram'),None)
+        if not selected:raise ValueError('Полное состояние не найдено.')
+        from vm_snapshot_parameters import capture
+        if capture(vm.load(name))['launch']!=selected['fingerprint']['launch']:raise ValueError('Текущие настройки отличаются от полного состояния. VM не запускалась.')
+        with vm_lock(vm.ROOT,name):
+            try:self.query(name,vm.load(name))
+            except (ConnectionRefusedError,TimeoutError):
+                self.start(dict(name=name,boot='disk',paused=True))
+                deadline=time.monotonic()+15
+                while True:
+                    try:self.query(name,vm.load(name));break
+                    except (ConnectionRefusedError,TimeoutError):
+                        if time.monotonic()>deadline:raise ValueError('Приостановленный QEMU не подключился. Полное состояние не загружалось.')
+                        time.sleep(.05)
+            result=RamSnapshots(manager_service(vm.ROOT,name)).restore(selected['id'])
+            if args.get('start_after') is True:self.control(dict(name=name,action='toggle'))
+            return result
+
+    def snapshot_recover(self, args):
+        from vm_snapshot_service import manager_service
+        name = self.name(args)
+        return manager_service(vm.ROOT, name).recover_create(args.get('operation_id'), lambda: self.stopped(name, vm.load(name)))
+
+    def snapshot_adopt(self, args):
+        from vm_snapshot_service import manager_service
+        name = self.name(args)
+        return manager_service(vm.ROOT, name).adopt(args.get('tag'), args.get('confirm'), lambda: self.stopped(name, vm.load(name)))
+
+    def snapshot_metadata(self, args):
+        from vm_snapshot_service import manager_service
+        name=self.name(args)
+        return manager_service(vm.ROOT,name).metadata(args.get('group_id'),args.get('revision'),args.get('action'),args.get('options'))
 
     def delete_plan(self, args):
         name = self.name(args)
+        remove_files = args.get('remove_files', True)
+        if type(remove_files) is not bool:
+            raise ValueError('Выбери способ удаления VM.')
         with vm_lock(vm.ROOT, name):
             data = vm.load(name)
-            plan = deletion_plan(vm.ROOT, name, data, image_tool(vm.qemu_executable), lambda: self.query(name, data))
+            image = image_tool(vm.qemu_executable) if remove_files else None
+            plan = deletion_plan(vm.ROOT, name, data, image, lambda: self.query(name, data), remove_files=remove_files)
             token = uuid.uuid4().hex
             self.plans = {token: (time.monotonic(), plan)}
             return dict(token=token, name=name, files=[str(path) for path in plan['files']],
-                        kept=plan['kept'], missing=plan['missing'])
+                        kept=plan['kept'], missing=plan['missing'], remove_files=remove_files)
 
     def delete(self, args):
         name = self.name(args)
+        save_backup = args.get('save_backup', True)
+        if type(save_backup) is not bool:
+            raise ValueError('Выбери, сохранять ли копию параметров.')
         if args.get('confirm') != name:
             raise ValueError('Для удаления введи точное имя VM.')
         saved = self.plans.get(args.get('token'))
@@ -429,9 +629,9 @@ class Service:
             raise ValueError('План удаления устарел. Открой просмотр файлов заново.')
         with vm_lock(vm.ROOT, name):
             data = vm.load(name)
-            path = delete_with_template(saved[1], args.get('backup_name', ''), lambda: self.query(name, data))
+            path = delete_with_template(saved[1], args.get('backup_name', ''), lambda: self.query(name, data), save_backup=save_backup)
             self.plans.clear()
-            return dict(backup=str(path))
+            return dict(backup=str(path) if path else None)
 
     def mode(self, args):
         value = args.get('value')
@@ -500,6 +700,7 @@ class Service:
 
     def close(self):
         # Closing the frontend never terminates detached guest processes.
+        self.schedule_stop.set()
         self.pool.shutdown(wait=False)
         for watcher in self.watchers.values():
             watcher.close()
@@ -509,12 +710,13 @@ class Service:
         return dict(protocol=1, python=sys.version.split()[0], pid=os.getpid(), root=str(self.root))
 
 
-COMMANDS = {'profile_list', 'profile_save', 'profile_delete', 'ping', 'list', 'states', 'get', 'save', 'template_list', 'network_import', 'network_validate', 'create', 'start', 'control',
-            'snapshots', 'delete_plan', 'delete', 'mode', 'doctor', 'report_save', 'logs', 'support_export'}
+COMMANDS = {'snapshot_export_plan','snapshot_job_start','snapshot_job_status','snapshot_cancel','profile_list', 'profile_save', 'profile_delete', 'ping', 'list', 'states', 'get', 'save', 'template_list', 'network_import', 'network_validate', 'create', 'start', 'control',
+            'snapshots', 'snapshot_plan', 'snapshot_offline_plan', 'snapshot_operation_plan', 'snapshot_execute', 'snapshot_recover', 'snapshot_adopt', 'snapshot_metadata', 'snapshot_schedule', 'snapshot_chain_plan', 'snapshot_ram_restore', 'delete_plan', 'delete', 'mode', 'doctor', 'report_save', 'logs', 'support_export'}
 
 
 def serve(root=None):
     service = Service(root)
+    service.start_schedules()
     for stream in (sys.stdin, sys.stdout, sys.stderr):
         if hasattr(stream, 'reconfigure'):
             stream.reconfigure(encoding='utf-8', errors='replace')
@@ -533,8 +735,9 @@ def serve(root=None):
                 result = getattr(service, request['command'])(request.get('args', {}))
                 reply = dict(id=request.get('id'), ok=True, result=result)
             except Exception as error:
+                from vm_snapshot_errors import describe
                 reply = dict(id=request.get('id') if isinstance(request, dict) else None, ok=False,
-                             error=str(error) or type(error).__name__)
+                             error=str(error) or type(error).__name__,failure=describe(error))
             print(json.dumps(reply, ensure_ascii=False, default=str), flush=True)
     finally:
         service.close()

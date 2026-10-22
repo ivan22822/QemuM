@@ -41,6 +41,8 @@ def release():
     OUT.mkdir(parents=True, exist_ok=True)
     launcher = OUT / 'QemuM.exe'
     compile_launcher(launcher, 'Launcher', [LAUNCHER / 'Launcher.cs'])
+    refresh=OUT/'QemuM-Refresh.exe'
+    compile_launcher(refresh,'Launcher',[LAUNCHER/'Launcher.cs'])
     package = OUT / ('QemuM-' + VERSION + '-app.zip')
     with tempfile.TemporaryDirectory(prefix='release-source-', dir=ROOT / 'build') as temporary:
         stage = Path(temporary)
@@ -50,6 +52,7 @@ def release():
                         manifest=GUI / 'app.manifest')
         shutil.copy2(ROOT / 'docs' / 'ALPHA-GUIDE.md', stage / 'ALPHA-GUIDE.md')
         shutil.copy2(ROOT / 'docs' / 'UPDATE-PROTOCOL.md', stage / 'UPDATE-PROTOCOL.md')
+        shutil.copy2(ROOT / 'docs' / 'SNAPSHOTS.md', stage / 'SNAPSHOTS.md')
         files = {path.relative_to(stage).as_posix(): hash_file(path)
                  for path in sorted(stage.rglob('*')) if path.is_file()}
         manifest = dict(schema=1, min_launcher_protocol=1, version=VERSION, channel='alpha',
@@ -69,7 +72,7 @@ def release():
                   url=f'https://github.com/ivan22822/QemuM/releases/download/v{VERSION}/{package.name}',
                   sha256=digest)
     (OUT / 'update.json').write_text(json.dumps(update, indent=2), encoding='utf-8')
-    assets = [setup, package, OUT / 'update.json']
+    assets = [setup, package, launcher, refresh, OUT / 'update.json']
     (OUT / 'SHA256SUMS.txt').write_text(
         ''.join(hash_file(path) + '  ' + path.name + '\n' for path in assets), encoding='ascii')
     print('Release artifacts:', OUT)
