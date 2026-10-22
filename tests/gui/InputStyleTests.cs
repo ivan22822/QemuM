@@ -74,6 +74,10 @@ static class InputStyleTests {
                 Save(doctor,Path.Combine(args[0],"doctor-scroll.png"));doctor.Close();
             }
             string folder=Path.Combine(Path.GetTempPath(),"QemuM test disks");
+            Check(Theme.DiskPickerInitialFolder("")==null&&Theme.DiskPickerInitialFolder("   ")==null,"empty new disk field opens folder picker without parsing an empty path");
+            Check(Theme.DiskPickerInitialFolder("\0")==null&&Theme.DiskPickerInitialFolder("bad:path:here")==null,"malformed initial disk path does not prevent choosing a replacement folder");
+            Check(Theme.DiskPickerInitialFolder(args[0])==Path.GetFullPath(args[0]),"existing folder is retained as the picker starting location");
+            Check(Theme.DiskPickerInitialFolder(Path.Combine(args[0],"new disk.qcow2"))==Path.GetFullPath(args[0]),"disk filename initializes the picker to its existing parent folder");
             Check(Theme.NewDiskPath(folder,"ubuntu-desktop")==Path.Combine(folder,"ubuntu-desktop.qcow2"),"new disk folder selection generates a predictable filename");
             bool traversal=false;try{Theme.NewDiskPath(folder,"../outside");}catch(InvalidOperationException){traversal=true;}Check(traversal,"generated disk name cannot escape the selected folder");
             using(var form=new Form())using(var field=Theme.Input()){

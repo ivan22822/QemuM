@@ -12,6 +12,9 @@ from build import ROOT, GUI, compiler, compile_program, copy_runtime, build
 
 VERSION = (ROOT / 'VERSION').read_text(encoding='utf-8').strip()
 OUT = ROOT / 'build' / 'release' / VERSION
+BUILD_NUMBER = int((ROOT / 'BUILD-NUMBER').read_text(encoding='ascii').strip()) if (ROOT / 'BUILD-NUMBER').exists() else 0
+if BUILD_NUMBER:
+    OUT = OUT / f'build.{BUILD_NUMBER}'
 LAUNCHER = ROOT / 'src' / 'launcher'
 
 
@@ -34,7 +37,7 @@ def compile_launcher(output, main, sources, resources=()):
     subprocess.run(args + [str(LAUNCHER / 'UpdateCore.cs'), str(LAUNCHER / 'BootstrapUI.cs')] + [str(path) for path in sources], check=True)
 
 
-def release():
+def release(patch=False):
     if not re.fullmatch(r'\d+\.\d+\.\d+-alpha\.\d+', VERSION):
         raise ValueError('Unsupported version')
     build()
@@ -55,7 +58,7 @@ def release():
         shutil.copy2(ROOT / 'docs' / 'SNAPSHOTS.md', stage / 'SNAPSHOTS.md')
         files = {path.relative_to(stage).as_posix(): hash_file(path)
                  for path in sorted(stage.rglob('*')) if path.is_file()}
-        manifest = dict(schema=1, min_launcher_protocol=1, version=VERSION, channel='alpha',
+        manifest = dict(schema=1, min_launcher_protocol=1, version=VERSION, build=BUILD_NUMBER, channel='alpha',
                         entrypoint='VMManager.exe', requires_python=True, files=files)
         (stage / 'package.json').write_text(json.dumps(manifest, indent=2), encoding='utf-8')
         with zipfile.ZipFile(package, 'w', zipfile.ZIP_DEFLATED) as archive:
@@ -66,17 +69,22 @@ def release():
     digest_path = OUT / 'app.sha256'
     digest_path.write_text(digest + '\n', encoding='ascii')
     setup = OUT / ('QemuM-' + VERSION + '-Setup.exe')
-    compile_launcher(setup, 'Setup', [LAUNCHER / 'Setup.cs'],
-                     [(package, 'app.zip'), (digest_path, 'app.sha256'), (launcher, 'QemuM.exe')])
-    update = dict(schema=1, min_launcher_protocol=1, version=VERSION, channel='alpha',
-                  url=f'https://github.com/ivan22822/QemuM/releases/download/v{VERSION}/{package.name}',
+    if not patch:
+        compile_launcher(setup, 'Setup', [LAUNCHER / 'Setup.cs'],
+                         [(package, 'app.zip'), (digest_path, 'app.sha256'), (launcher, 'QemuM.exe')])
+    asset_name=f'QemuM-{VERSION}-build.{BUILD_NUMBER}-app.zip' if BUILD_NUMBER else package.name
+    update = dict(schema=1, min_launcher_protocol=1, version=VERSION, build=BUILD_NUMBER, channel='alpha',
+                  url=f'https://github.com/ivan22822/QemuM/releases/download/v{VERSION}/{asset_name}',
                   sha256=digest)
     (OUT / 'update.json').write_text(json.dumps(update, indent=2), encoding='utf-8')
-    assets = [setup, package, launcher, refresh, OUT / 'update.json']
+    assets = ([setup] if not patch else []) + [package, launcher, refresh, OUT / 'update.json']
     (OUT / 'SHA256SUMS.txt').write_text(
         ''.join(hash_file(path) + '  ' + path.name + '\n' for path in assets), encoding='ascii')
     print('Release artifacts:', OUT)
 
 
 if __name__ == '__main__':
-    release()
+    import argparse
+    parser=argparse.ArgumentParser(description=__doc__)
+    parser.add_argument('--patch',action='store_true',help='Build application patch and updater without installer')
+    release(parser.parse_args().patch)

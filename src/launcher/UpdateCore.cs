@@ -15,6 +15,7 @@ namespace QemuM.Update {
         public int schema {get;set;}
         public int min_launcher_protocol {get;set;}
         public string version {get;set;}
+        public int build {get;set;}
         public string channel {get;set;}
         public string entrypoint {get;set;}
         public bool requires_python {get;set;}
@@ -24,6 +25,7 @@ namespace QemuM.Update {
         public int schema {get;set;}
         public int min_launcher_protocol {get;set;}
         public string version {get;set;}
+        public int build {get;set;}
         public string channel {get;set;}
         public string url {get;set;}
         public string sha256 {get;set;}
@@ -48,6 +50,7 @@ namespace QemuM.Update {
         public const int Protocol=1;
         public const string Repository="https://github.com/ivan22822/QemuM";
         public const string Api="https://api.github.com/repos/ivan22822/QemuM/releases?per_page=100";
+        public const string PatchChannel="https://raw.githubusercontent.com/ivan22822/QemuM/codex/alpha-update-channel/alpha.json";
         static JavaScriptSerializer Json(){return new JavaScriptSerializer{MaxJsonLength=2*1024*1024};}
         public static T Read<T>(string path){
             if(new FileInfo(path).Length>2*1024*1024)throw new IOException("Слишком большой manifest.");
@@ -69,6 +72,24 @@ namespace QemuM.Update {
         public static int Compare(string left,string right){
             int[] a=Version(left),b=Version(right);
             for(int i=0;i<a.Length;i++){int result=a[i].CompareTo(b[i]);if(result!=0)return result;}return 0;
+        }
+        public static int CompareBuild(string left,int leftBuild,string right,int rightBuild){
+            int version=Compare(left,right);return version==0?leftBuild.CompareTo(rightBuild):version;
+        }
+        public static string Display(string version,int build){return version+" · сборка "+build;}
+        public static void ValidateFeed(Feed feed){
+            if(feed==null||feed.schema!=1||feed.channel!="alpha"||feed.build<0||feed.min_launcher_protocol<1||
+               !Regex.IsMatch(feed.sha256??"",@"^[a-f0-9]{64}$"))throw new IOException("Некорректный manifest обновления.");
+            Version(feed.version);Uri uri;
+            if(!Uri.TryCreate(feed.url,UriKind.Absolute,out uri)||uri.Scheme!="https"||uri.Host!="github.com"||uri.Port!=443||
+               !String.IsNullOrEmpty(uri.UserInfo)||!String.IsNullOrEmpty(uri.Query)||!String.IsNullOrEmpty(uri.Fragment)||
+               !Regex.IsMatch(uri.AbsolutePath,"^/ivan22822/QemuM/releases/download/v"+Regex.Escape(feed.version)+@"/[a-zA-Z0-9_.-]+\.zip$"))
+                throw new IOException("Источник пакета обновления не разрешён.");
+        }
+        public static void MatchFeed(Package package,Feed feed){
+            ValidateFeed(feed);
+            if(package.version!=feed.version||package.build!=feed.build||package.min_launcher_protocol!=feed.min_launcher_protocol)
+                throw new IOException("Сборка пакета не соответствует обновлению.");
         }
         public static string Relative(string path){
             if(String.IsNullOrEmpty(path)||path.Length>180||path.Contains("\\")||path.StartsWith("/")||path.EndsWith("/"))throw new IOException("Недопустимый путь пакета.");
@@ -103,6 +124,7 @@ namespace QemuM.Update {
             if(package==null||package.schema!=1||package.channel!="alpha"||package.min_launcher_protocol<1||package.min_launcher_protocol>Protocol)
                 throw new IOException("Пакет требует другую версию установщика.");
             Version(package.version);
+            if(package.build<0)throw new IOException("Некорректный номер сборки.");
             if(package.files==null||package.files.Count==0||package.files.Count>2000)throw new IOException("Некорректный список файлов.");
             var names=new HashSet<string>(StringComparer.OrdinalIgnoreCase);
             foreach(var file in package.files){
@@ -199,12 +221,13 @@ namespace QemuM.Update {
             }
             VerifyManifest(backup,state.old_manifest);Directory.Move(backup,target);FinishRepair(root,state);return false;
         }
-        public static bool RepairSameVersion(string root,string zip,string expectedHash,Action<int,int> progress=null){
+        public static bool RepairSameVersion(string root,string zip,string expectedHash,Action<int,int> progress=null,Feed expectedFeed=null){
             RecoverRepair(root);
             if(File.Exists(Path.Combine(root,"repair.json")))throw new IOException("Сначала запусти и проверь уже переустановленную версию.");
             var active=Current(root);if(active==null)throw new IOException("Установка не найдена.");
             string id=Guid.NewGuid().ToString("N"),preparedRoot=Path.Combine(root,"staging","repair-"+id);
             var package=Stage(zip,expectedHash,root,progress,id);
+            if(expectedFeed!=null)MatchFeed(package,expectedFeed);
             if(package.version!=active.current)throw new IOException("Для переустановки требуется тот же номер версии.");
             string target=Path.Combine(root,"versions",active.current);VerifyDirectory(target);
             var state=new RepairIntent{schema=1,id=id,version=active.current,old_manifest=Hash(Path.Combine(target,"package.json")),new_manifest=Hash(Path.Combine(preparedRoot,"package.json"))};
@@ -254,6 +277,7 @@ namespace QemuM.Update {
         static bool Allowed(Uri uri,bool dependencies){
             if(uri.Scheme!="https"||uri.Port!=443||!String.IsNullOrEmpty(uri.UserInfo))return false;
             if(uri.Host=="api.github.com")return uri.AbsolutePath.StartsWith("/repos/ivan22822/QemuM/",StringComparison.OrdinalIgnoreCase);
+            if(uri.Host=="raw.githubusercontent.com")return uri.AbsoluteUri==PatchChannel;
             if(uri.Host=="github.com")return uri.AbsolutePath.StartsWith("/ivan22822/QemuM/releases/download/",StringComparison.OrdinalIgnoreCase);
             if(uri.Host=="release-assets.githubusercontent.com"||uri.Host=="objects.githubusercontent.com")return true;
             return dependencies&&(uri.Host=="www.python.org"||uri.Host=="qemu.weilnetz.de");
@@ -282,10 +306,15 @@ namespace QemuM.Update {
             }
             throw new IOException("Слишком много перенаправлений.");
         }
-        public static Feed Latest(string work){
-            string releases=Path.Combine(work,"releases.json");Download(Api,releases,2*1024*1024);
-            var rows=Json().DeserializeObject(File.ReadAllText(releases)) as object[];
+        public static Feed Latest(string work,Action<string,string,long> fetch=null){
+            if(fetch==null)fetch=(url,path,limit)=>Download(url,path,limit);
+            // Only a missing channel falls back. Malformed metadata or a network error fails closed.
+            string channel=Path.Combine(work,Guid.NewGuid().ToString("N")+".json");
             Feed latest=null;
+            try{fetch(PatchChannel,channel,65536);latest=Read<Feed>(channel);ValidateFeed(latest);}
+            catch(WebException error){var response=error.Response as HttpWebResponse;if(response==null||response.StatusCode!=HttpStatusCode.NotFound)throw;}
+            string releases=Path.Combine(work,Guid.NewGuid().ToString("N")+".json");fetch(Api,releases,2*1024*1024);
+            var rows=Json().DeserializeObject(File.ReadAllText(releases)) as object[];
             foreach(object raw in rows??new object[0]){
                 var row=raw as Dictionary<string,object>;if(row==null||Convert.ToBoolean(row["draft"]))continue;
                 string tag=Convert.ToString(row["tag_name"]);
@@ -293,11 +322,11 @@ namespace QemuM.Update {
                 foreach(var asset in (row["assets"] as object[]??new object[0]).OfType<Dictionary<string,object>>()){
                     if(Convert.ToString(asset["name"])!="update.json")continue;
                     string manifest=Path.Combine(work,Guid.NewGuid().ToString("N")+".json");
-                    Download(Convert.ToString(asset["browser_download_url"]),manifest,65536);
+                    fetch(Convert.ToString(asset["browser_download_url"]),manifest,65536);
                     var feed=Read<Feed>(manifest);
-                    if(feed==null||feed.schema!=1||feed.channel!="alpha"||tag!="v"+feed.version)throw new IOException("Некорректный manifest обновления.");
-                    Version(feed.version);
-                    if(latest==null||Compare(feed.version,latest.version)>0)latest=feed;
+                    ValidateFeed(feed);
+                    if(tag!="v"+feed.version)throw new IOException("Некорректный manifest обновления.");
+                    if(latest==null||CompareBuild(feed.version,feed.build,latest.version,latest.build)>0)latest=feed;
                 }
             }
             return latest;

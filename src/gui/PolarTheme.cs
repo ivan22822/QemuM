@@ -90,12 +90,22 @@ static class Theme {
         if(name=="."||name==".."||name.IndexOfAny(Path.GetInvalidFileNameChars())>=0)throw new InvalidOperationException("Укажи корректное короткое имя VM перед выбором папки.");
         return Path.Combine(folder,name+".qcow2");
     }
+    public static string DiskPickerInitialFolder(string value){
+        if(String.IsNullOrWhiteSpace(value))return null;
+        try{
+            string path=Path.GetFullPath(value.Trim());
+            string folder=Directory.Exists(path)?path:Path.GetDirectoryName(path);
+            return Directory.Exists(folder)?folder:null;
+        }catch(ArgumentException){return null;}
+        catch(NotSupportedException){return null;}
+        catch(PathTooLongException){return null;}
+    }
     public static Control BrowseNewDisk(FieldInput text,Func<bool> create,Func<string> name){
         return Browse(text,false,"Диски qcow2 / VDI|*.qcow2;*.vdi|Все файлы|*.*",()=>{
             if(!create())return File(false,"Диски qcow2 / VDI|*.qcow2;*.vdi|Все файлы|*.*",text.Text);
             using(var dialog=new FolderBrowserDialog{Description="Выбери папку для нового виртуального диска. Имя файла будет взято из короткого имени VM.",ShowNewFolderButton=true}){
-                string initial=Directory.Exists(text.Text)?text.Text:Path.GetDirectoryName(text.Text);
-                if(Directory.Exists(initial))dialog.SelectedPath=initial;
+                string initial=DiskPickerInitialFolder(text.Text);
+                if(initial!=null)dialog.SelectedPath=initial;
                 if(dialog.ShowDialog()!=DialogResult.OK)return null;
                 return NewDiskPath(dialog.SelectedPath,name());
             }

@@ -91,22 +91,23 @@ sealed class UpdateWindow : Form {
         if(autoCheck)Shown+=(sender,args)=>Check();FormClosing+=(sender,args)=>{if(busy)args.Cancel=true;};
     }
     async void Check(){
-        if(busy)return;busy=true;check.Enabled=install.Enabled=false;status.Text="Проверяю выпуски GitHub…";
+        if(busy)return;busy=true;check.Enabled=install.Enabled=false;status.Text="Проверяю обновления GitHub…";
         try{
             var current=Core.Current(root);
+            var local=current==null?null:Core.Read<Package>(Path.Combine(root,"versions",current.current,"package.json"));
             work=Path.Combine(root,"downloads",Guid.NewGuid().ToString("N"));Core.NoLinks(work);Directory.CreateDirectory(work);
             feed=await Task.Run(()=>Core.Latest(work));
             if(feed==null)status.Text="Опубликованных обновлений alpha пока нет.";
-            else if(current!=null&&Core.Compare(feed.version,current.current)<0)status.Text="Локальная версия новее опубликованной: "+current.current;
+            else if(local!=null&&Core.CompareBuild(feed.version,feed.build,local.version,local.build)<0)status.Text="Локальная сборка новее опубликованной: "+Core.Display(local.version,local.build);
             else if(feed.min_launcher_protocol>Core.Protocol||feed.min_launcher_protocol<1)
                 status.Text="Версия "+feed.version+" требует нового установщика. Открой Releases проекта.";
-            else{bool same=current!=null&&Core.Compare(feed.version,current.current)==0;install.Text=same?"Переустановить текущую версию":"Установить обновление";status.Text=same?"Версия "+current.current+" уже установлена. Можно сверить пакет с GitHub и переустановить её без изменения номера.\n\nПрежние файлы программы сохранятся. Данные VM не заменяются. Перед действием закрой менеджер.":"Доступна версия "+feed.version+".\n\nПеред установкой закрой окно менеджера. Работающие VM продолжат работу. Предыдущая версия сохранится.";install.Enabled=true;}
+            else{bool same=local!=null&&Core.CompareBuild(feed.version,feed.build,local.version,local.build)==0;install.Text=same?"Переустановить сборку":"Установить обновление";status.Text=same?"Установлена "+Core.Display(local.version,local.build)+". Можно сверить пакет с GitHub и переустановить сборку.\n\nПрежние файлы программы сохранятся. Данные VM не заменяются. Перед действием закрой менеджер.":"Доступна "+Core.Display(feed.version,feed.build)+".\n\nПеред установкой закрой окно менеджера. Работающие VM продолжат работу. Прежние файлы программы сохранятся.";install.Enabled=true;}
         }catch(Exception error){status.Text="Проверка не завершена: "+error.Message;}
         finally{busy=false;check.Enabled=true;}
     }
     async void Install(){
         if(busy||feed==null)return;
-        if(MessageBox.Show(this,"Установить "+feed.version+"? Закрой менеджер перед продолжением.","QemuM",MessageBoxButtons.OKCancel)!=DialogResult.OK)return;
+        if(MessageBox.Show(this,"Установить "+Core.Display(feed.version,feed.build)+"? Закрой менеджер перед продолжением.","QemuM",MessageBoxButtons.OKCancel)!=DialogResult.OK)return;
         busy=true;check.Enabled=install.Enabled=false;
         try{
             using(Core.Lock(root,"running.lock"))using(Core.Lock(root,"update.lock")){
@@ -118,15 +119,15 @@ sealed class UpdateWindow : Form {
                     string zip=Path.Combine(work,Guid.NewGuid().ToString("N")+".zip");Core.Download(feed.url,zip,128*1024*1024,false,(done,total)=>reporter.Report(new InstallProgress("QemuM","Загрузка",done,total)));
                     reporter.Report(new InstallProgress("QemuM","Проверка SHA-256"));
                     var current=Core.Current(root);
-                    if(current!=null&&current.current==feed.version){Core.RefreshBootstrap(root,Application.ExecutablePath);Core.RepairSameVersion(root,zip,feed.sha256,(done,total)=>reporter.Report(new InstallProgress("QemuM","Переустановка",done,total)));return;}
+                    if(current!=null){var local=Core.Read<Package>(Path.Combine(root,"versions",current.current,"package.json"));if(Core.CompareBuild(feed.version,feed.build,local.version,local.build)<0)throw new IOException("Обновление устарело. Проверь наличие новой сборки ещё раз.");}
+                    if(current!=null&&current.current==feed.version){Core.RefreshBootstrap(root,Application.ExecutablePath);Core.RepairSameVersion(root,zip,feed.sha256,(done,total)=>reporter.Report(new InstallProgress("QemuM","Установка сборки",done,total)),feed);return;}
                     var package=Core.Stage(zip,feed.sha256,root,(done,total)=>reporter.Report(new InstallProgress("QemuM","Распаковка",done,total)));
-                    if(package.version!=feed.version||package.min_launcher_protocol!=feed.min_launcher_protocol)
-                        throw new IOException("Версия пакета не соответствует обновлению.");
+                    Core.MatchFeed(package,feed);
                     Core.Activate(root,package);
                 });
             }
             progress.Report("Готово",1,1);
-            status.Text="Установлена версия "+feed.version+". Открой QemuM через прежний ярлык.";
+            status.Text="Установлена "+Core.Display(feed.version,feed.build)+". Открой QemuM через прежний ярлык.";
         }catch(IOException error){status.Text="Обновление не установлено. Проверь, что менеджер закрыт.\n"+error.Message;}
         catch(Exception error){status.Text="Обновление не установлено: "+error.Message;}
         finally{busy=false;check.Enabled=true;}

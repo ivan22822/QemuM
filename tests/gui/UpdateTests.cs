@@ -11,11 +11,11 @@ static class UpdateTests {
     static int count;
     static void Check(bool value,string text){if(!value)throw new Exception(text);count++;}
     static void Reject(Action action,string text){bool failed=false;try{action();}catch(IOException){failed=true;}Check(failed,text);}
-    static string Make(string root,string version,string extra=null,bool corrupt=false,string body=null){
+    static string Make(string root,string version,string extra=null,bool corrupt=false,string body=null,int build=0){
         string zip=Path.Combine(root,Guid.NewGuid().ToString("N")+".zip");
         byte[] content=Encoding.UTF8.GetBytes("test executable "+version+(body??""));
         string hash;using(var stream=new MemoryStream(content))hash=Core.Hash(stream);
-        var package=new Package{schema=1,min_launcher_protocol=1,channel="alpha",version=version,entrypoint="App.exe",
+        var package=new Package{schema=1,min_launcher_protocol=1,channel="alpha",version=version,build=build,entrypoint="App.exe",
             files=new Dictionary<string,string>{{"App.exe",corrupt?new string('0',64):hash}}};
         using(var archive=ZipFile.Open(zip,ZipArchiveMode.Create)){
             using(var stream=archive.CreateEntry("App.exe").Open())stream.Write(content,0,content.Length);
@@ -29,6 +29,27 @@ static class UpdateTests {
         try{
             Check(Core.Compare("0.1.0-alpha.10","0.1.0-alpha.2")>0,"numeric prerelease comparison");
             Check(Core.Compare("1.0.0-alpha.1","0.99.0-alpha.99")>0,"numeric major comparison");
+            Check(Core.CompareBuild("0.1.0-alpha.4",2,"0.1.0-alpha.4",0)>0,"patch build upgrades a legacy manifest without changing version");
+            Check(Core.CompareBuild("0.1.0-alpha.4",1,"0.1.0-alpha.4",2)<0,"older same-version build is a downgrade");
+            Check(Core.CompareBuild("0.1.0-alpha.5",0,"0.1.0-alpha.4",999)>0,"next normal release outranks a patched earlier version");
+            var patchFeed=new Feed{schema=1,min_launcher_protocol=1,channel="alpha",version="0.1.0-alpha.4",build=2,url="https://github.com/ivan22822/QemuM/releases/download/v0.1.0-alpha.4/patch.zip",sha256=new string('a',64)};
+            Core.ValidateFeed(patchFeed);
+            Action<string,string,long> fetch=(url,path,limit)=>{
+                if(url==Core.PatchChannel)File.WriteAllText(path,new JavaScriptSerializer().Serialize(patchFeed));
+                else if(url==Core.Api)File.WriteAllText(path,"[{\"tag_name\":\"v0.1.0-alpha.5\",\"draft\":false,\"assets\":[{\"name\":\"update.json\",\"browser_download_url\":\"https://github.com/ivan22822/QemuM/releases/download/v0.1.0-alpha.5/update.json\"}]}]");
+                else File.WriteAllText(path,new JavaScriptSerializer().Serialize(new Feed{schema=1,min_launcher_protocol=1,channel="alpha",version="0.1.0-alpha.5",url="https://github.com/ivan22822/QemuM/releases/download/v0.1.0-alpha.5/app.zip",sha256=new string('b',64)}));
+            };
+            Check(Core.Latest(root,fetch).version=="0.1.0-alpha.5","normal release remains discoverable after patch channel introduction");
+            Action<string,string,long> onlyPatch=(url,path,limit)=>{File.WriteAllText(path,url==Core.Api?"[]":new JavaScriptSerializer().Serialize(patchFeed));};
+            Check(Core.Latest(root,onlyPatch).build==2,"patch discovered without a separate release");
+            Reject(()=>Core.Latest(root,(url,path,limit)=>File.WriteAllText(path,"null")),"broken channel cannot silently fall back to an old release");
+            bool networkFailed=false;try{Core.Latest(root,(url,path,limit)=>{throw new System.Net.WebException("fixture network failure");});}catch(System.Net.WebException){networkFailed=true;}Check(networkFailed,"network errors are surfaced instead of advertising stale metadata");
+            foreach(string url in new[]{"https://example.invalid/app.zip","http://github.com/ivan22822/QemuM/releases/download/v0.1.0-alpha.4/app.zip","https://github.com/another/repo/releases/download/v0.1.0-alpha.4/app.zip","https://github.com/ivan22822/QemuM/releases/download/v0.1.0-alpha.3/app.zip"}){
+                string previous=patchFeed.url;patchFeed.url=url;Reject(()=>Core.ValidateFeed(patchFeed),"untrusted or mismatched patch URL");patchFeed.url=previous;
+            }
+            patchFeed.build=-1;Reject(()=>Core.ValidateFeed(patchFeed),"negative patch build");patchFeed.build=2;
+            Core.MatchFeed(new Package{version=patchFeed.version,build=2,min_launcher_protocol=1},patchFeed);
+            Reject(()=>Core.MatchFeed(new Package{version=patchFeed.version,build=1,min_launcher_protocol=1},patchFeed),"package cannot claim a different build than the feed");
             var incompatible=new Package{schema=1,channel="stable",min_launcher_protocol=1,version="0.1.0-alpha.1",entrypoint="App.exe",files=new Dictionary<string,string>{{"App.exe",new string('0',64)}}};
             Reject(()=>Core.Validate(incompatible),"wrong channel");
             incompatible.channel="alpha";incompatible.min_launcher_protocol=2;
@@ -49,6 +70,12 @@ static class UpdateTests {
             Check(File.ReadAllText(bootstrapTarget)=="NEW BOOTSTRAP"&&Directory.GetFiles(Path.Combine(root,"launcher-backups")).Any(path=>File.ReadAllText(path)=="OLD BOOTSTRAP"),"atomic bootstrap refresh retains previous loader");
             byte[] activeBefore=File.ReadAllBytes(Path.Combine(root,"active.json"));
             Check(!Core.RepairSameVersion(root,first,Core.Hash(first)),"identical package does not replace the current version");
+            string wrongBuild=Make(root,one.version,body:"wrong build",build:1);patchFeed.version=one.version;patchFeed.url="https://github.com/ivan22822/QemuM/releases/download/v"+one.version+"/patch.zip";
+            Reject(()=>Core.RepairSameVersion(root,wrongBuild,Core.Hash(wrongBuild),expectedFeed:patchFeed),"build mismatch rejected before replacing installed application");
+            Check(Core.VerifyDirectory(Path.Combine(root,"versions",one.version)).build==0&&!File.Exists(Path.Combine(root,"repair.json")),"rejected patch preserves installed build and creates no repair intent");
+            string patch=Make(root,one.version,body:"patch",build:2);Core.RepairSameVersion(root,patch,Core.Hash(patch),expectedFeed:patchFeed);
+            Check(Core.VerifyDirectory(Path.Combine(root,"versions",one.version)).build==2,"same-version patch records its build in installed manifest");
+            Check(Core.Rollback(root,one.version)&&Core.VerifyDirectory(Path.Combine(root,"versions",one.version)).build==0,"failed patch health restores legacy build number");
             string revised=Make(root,one.version,body:" revised");
             using(Core.Lock(root,"running.lock"))using(Core.Lock(root,"update.lock"))Check(Core.RepairSameVersion(root,revised,Core.Hash(revised)),"same numbered package can be explicitly reinstalled");
             Check(File.ReadAllBytes(Path.Combine(root,"active.json")).SequenceEqual(activeBefore),"same version repair preserves the active version and previous version");
