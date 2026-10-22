@@ -1,5 +1,45 @@
 # QemuM update protocol 1
 
+## Patch builds without a new GitHub Release
+
+`BUILD-NUMBER` is an independent monotonically increasing integer within VERSION.
+Both package.json and the schema-1 feed carry optional `build`; absence means 0
+for existing installations. Version is compared first, build second. A future
+alpha release still outranks every build of an older alpha. The updater displays
+both values, refuses stale downgrades under its locks, and checks the package's
+version, build and protocol against its feed before replacing application files.
+
+The fixed channel is alpha.json on branch `codex/alpha-update-channel` in this
+repository, fetched from raw.githubusercontent.com. Only this exact raw URL is
+allowed. Patch ZIPs remain SHA-256 verified GitHub Release assets in this same
+repository, under the matching version tag. No arbitrary download hosts are
+accepted. Release discovery is retained for later full releases. A missing
+channel (HTTP 404) falls back to Releases; corrupt metadata and network failures
+stop the check without installing anything.
+
+Build with `python tools/release.py --patch`, audit with
+`python tools/audit_release.py --patch`, run unit/GUI and isolated installation
+checks, then commit and push the source branch for CI. The explicit publication
+tool `python tools/publish_patch.py --commit <full SHA> --publish` requires a clean
+checkout and successful CI for that exact commit. It adds uniquely named immutable
+package/feed/checksum assets to the existing release. It never creates a release,
+changes a tag, merges main, force-pushes, or edits the original app ZIP/installer.
+After verifying uploads it advances the JSON-only channel branch. It also refreshes
+the existing release's mutable update.json so old updaters can find the patch;
+the previous feed and checksum file are retained under unique archive names.
+There is a short interval during this feed switch when legacy checks may fail;
+retrying is safe. Future full releases must also publish their latest feed to the
+channel; normal Releases discovery remains active as a compatibility safeguard.
+
+Users of the released alpha.4 choose “Обновления” and explicitly reinstall the
+same version once; their old updater ignores the additional build field safely.
+Early local alpha.4 builds that cannot reinstall must run QemuM-Refresh.exe from
+the existing release once. Thereafter newer same-version builds are shown as
+updates. Checks/installations remain user-triggered: no background service or
+silent termination of QEMU/manager is introduced. The FAQ documents this transition.
+The channel relies on GitHub account/repository security and TLS, like the existing
+release feed; SHA-256 protects integrity, not against a compromised publisher.
+
 ## Explicit reinstall of the current version
 
 The updater offers «Переустановить текущую версию» when GitHub and the installed

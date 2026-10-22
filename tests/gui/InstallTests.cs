@@ -43,7 +43,13 @@ static class InstallTests {
             string journal=Path.Combine(snapshotFolder,"operations","f7b09d64-2b38-416f-aa8f-993a8815bb5b.json");
             File.WriteAllText(journal,"{\"schema_version\":1,\"id\":\"f7b09d64-2b38-416f-aa8f-993a8815bb5b\",\"name\":\"upgrade-test\",\"action\":\"metadata\",\"state\":\"uncertain\",\"created\":1,\"steps\":[]}");
             byte[] machineBytes=File.ReadAllBytes(machine),journalBytes=File.ReadAllBytes(journal);string diskHash=Core.Hash(privateDisk);
-            var package=Core.Stage(args[1],Core.Hash(args[1]),root);Core.Activate(root,package);
+            Package package;
+            var before=Core.Current(root);
+            if(before!=null&&Core.Read<Package>(Path.Combine(root,"versions",before.current,"package.json")).version==Core.Read<Package>(ManifestFromZip(args[1],root)).version){
+                using(Core.Lock(root,"running.lock"))using(Core.Lock(root,"update.lock"))Core.RepairSameVersion(root,args[1],Core.Hash(args[1]));
+                package=Core.VerifyDirectory(Path.Combine(root,"versions",before.current));
+                Check(package.build>0,"legacy same-version installation upgraded to a numbered build");
+            }else{package=Core.Stage(args[1],Core.Hash(args[1]),root);Core.Activate(root,package);}
             Check(File.ReadAllBytes(machine).SequenceEqual(machineBytes)&&File.ReadAllBytes(journal).SequenceEqual(journalBytes)&&Core.Hash(privateDisk)==diskHash,"activation preserves VM registration, pending journal and media bytes");
             Core.AtomicJson(Path.Combine(root,"runtime.json"),new RuntimeSettings{python="runtime\\python\\python.exe",qemu_dir=args[4]});
             File.Copy(args[2],Path.Combine(root,"QemuM.exe"));
@@ -55,6 +61,8 @@ static class InstallTests {
                 if(app==null)foreach(var candidate in Process.GetProcessesByName("VMManager")){
                     try{if(String.Equals(candidate.MainModule.FileName,expected,StringComparison.OrdinalIgnoreCase)){app=candidate;break;}}
                     catch(System.ComponentModel.Win32Exception){}
+                    catch(InvalidOperationException){} // A candidate may exit during enumeration.
+                    catch(NullReferenceException){} // .NET ProcessModule can lose its native process during FileName.
                     if(candidate!=app)candidate.Dispose();
                 }
                 if(app!=null&&app.MainWindowHandle!=IntPtr.Zero)ShowWindow(app.MainWindowHandle,0);
@@ -76,6 +84,7 @@ static class InstallTests {
             ShowWindow(app.MainWindowHandle,5);Check(app.CloseMainWindow(),"close owned frontend");
             Check(CloseOwnedFrontend(app)&&launcher.WaitForExit(15000),"frontend and launcher exit cleanly");
             Check(Core.Current(root).current==package.version,"healthy version remains active");
+            Check(!File.Exists(Path.Combine(root,"repair.json")),"healthy patched frontend completes same-version upgrade");
             Core.VerifyDirectory(Path.Combine(root,"versions",package.version));
             using(Core.Lock(root,"running.lock"))using(Core.Lock(root,"update.lock"))Core.RepairSameVersion(root,args[7],Core.Hash(args[7]));
             launcher.Dispose();launcher=Process.Start(new ProcessStartInfo(Path.Combine(root,"QemuM.exe")){UseShellExecute=false,CreateNoWindow=true});
@@ -99,4 +108,9 @@ static class InstallTests {
         }
     }
     static string Quote(string value){return "\""+value.Replace("\"","\\\"")+"\"";}
+    static string ManifestFromZip(string zip,string root){
+        string path=Path.Combine(root,"incoming-manifest.json");
+        using(var archive=System.IO.Compression.ZipFile.OpenRead(zip))using(var input=archive.GetEntry("package.json").Open())using(var output=File.Create(path))input.CopyTo(output);
+        return path;
+    }
 }

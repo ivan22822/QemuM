@@ -4,10 +4,10 @@ import json
 import zipfile
 
 from audit import SECRETS, PERSONAL_PATHS
-from release import ROOT, OUT, VERSION, hash_file
+from release import ROOT, OUT, VERSION, BUILD_NUMBER, hash_file
 
 
-def main():
+def main(patch=False):
     package = OUT / f'QemuM-{VERSION}-app.zip'
     expected = {path.name: path for path in (ROOT / 'src' / 'backend').iterdir()
                 if path.suffix in ('.py', '.cmd')}
@@ -21,7 +21,7 @@ def main():
         if len(names) != len(set(names)) or set(names) != set(expected) | {'VMManager.exe', 'QemuM.Update.exe', 'package.json'}:
             findings.append('Unexpected package file list')
         manifest = json.loads(archive.read('package.json'))
-        if manifest['version'] != VERSION or set(manifest['files']) != set(expected) | {'VMManager.exe', 'QemuM.Update.exe'}:
+        if manifest['version'] != VERSION or manifest.get('build',0)!=BUILD_NUMBER or set(manifest['files']) != set(expected) | {'VMManager.exe', 'QemuM.Update.exe'}:
             findings.append('Unexpected manifest')
         for name in names:
             content = archive.read(name)
@@ -36,13 +36,13 @@ def main():
                 variants.append(content.decode('utf-16-le', 'ignore').encode('utf-8'))
             if any(pattern.search(value) for pattern in [PERSONAL_PATHS, *SECRETS] for value in variants):
                 findings.append('Possible private material: ' + name)
-    for name in (f'QemuM-{VERSION}-Setup.exe', 'QemuM.exe','QemuM-Refresh.exe'):
+    for name in ([] if patch else [f'QemuM-{VERSION}-Setup.exe'])+['QemuM.exe','QemuM-Refresh.exe']:
         content = (OUT / name).read_bytes()
         variants = [content, content.decode('utf-16-le', 'ignore').encode('utf-8')]
         if any(pattern.search(value) for pattern in [PERSONAL_PATHS, *SECRETS] for value in variants):
             findings.append('Possible private material: ' + name)
     feed = json.loads((OUT / 'update.json').read_text(encoding='utf-8'))
-    if feed['sha256'] != hash_file(package) or feed['version'] != VERSION:
+    if feed['sha256'] != hash_file(package) or feed['version'] != VERSION or feed.get('build',0)!=BUILD_NUMBER:
         findings.append('Feed mismatch')
     for line in (OUT / 'SHA256SUMS.txt').read_text(encoding='ascii').splitlines():
         digest, name = line.split('  ', 1)
@@ -53,4 +53,6 @@ def main():
 
 
 if __name__ == '__main__':
-    raise SystemExit(main())
+    import argparse
+    parser=argparse.ArgumentParser();parser.add_argument('--patch',action='store_true')
+    raise SystemExit(main(parser.parse_args().patch))

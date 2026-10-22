@@ -14,6 +14,7 @@ def main():
     parser.add_argument('--python-archive', type=Path, required=True,
                         help='official python-3.14.8-embed-amd64.zip; hash is checked')
     parser.add_argument('--previous-package',type=Path,help='previous released app ZIP for an isolated upgrade test')
+    parser.add_argument('--launcher',type=Path,help='previously released launcher for compatibility testing')
     args = parser.parse_args()
     output = ROOT / 'build' / 'test-results'
     output.mkdir(parents=True, exist_ok=True)
@@ -37,7 +38,7 @@ def main():
         archive.write(future,'Future.exe')
         archive.writestr('package.json',json.dumps(dict(schema=1,min_launcher_protocol=1,channel='alpha',version=VERSION,entrypoint='Future.exe',requires_python=False,files={'Future.exe':hash_file(future)})))
     subprocess.run([str(exe), str(output), str(OUT / f'QemuM-{VERSION}-app.zip'),
-                    str(OUT / 'QemuM.exe'), str(args.python_archive.resolve()), '', str(future_zip),
+                    str(args.launcher.resolve()) if args.launcher else str(OUT / 'QemuM.exe'), str(args.python_archive.resolve()), '', str(future_zip),
                     str(args.previous_package.resolve()) if args.previous_package else '',str(same_zip)],
                    timeout=75, creationflags=HIDDEN, check=True)
     print('Release install/startup test passed; existing installations untouched.')
