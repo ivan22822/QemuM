@@ -1,0 +1,511 @@
+import base64
+import errno
+from contextlib import contextmanager
+import hashlib
+import json
+from pathlib import Path
+import subprocess
+import sys
+import tempfile
+import unittest
+from unittest.mock import Mock, patch
+
+HERE = Path(__file__).resolve().parent
+APP = HERE.parents[1] / 'src' / 'backend'
+sys.path.insert(0, str(APP))
+import vm_backend as backend
+import vm
+import vm_storage
+import vm_profiles
+
+
+class BackendTests(unittest.TestCase):
+    def test_custom_profile_catalog_round_trip_and_delete_keeps_vm_snapshot(self):
+        catalog = self.service.profile_list({})
+        settings = dict(accelerator='whpx', cpu='host,vmx=off', options='kernel-irqchip=off')
+        saved = self.service.profile_save(dict(hash=catalog['hash'], profile=dict(label='Intel compatible', settings=settings)))
+        key = saved['selected_id']
+        self.assertTrue(key.startswith('custom-'))
+        self.assertEqual(self.path.read_bytes(), self.raw)
+        self.service.save(dict(name='test', hash=hashlib.sha256(self.raw).hexdigest(), updates=dict(
+            launch_profile=key, launch_profile_label='Intel compatible', launch_profile_settings=settings)))
+        before = self.path.read_bytes()
+        deleted = self.service.profile_delete(dict(hash=saved['hash'], id=key))
+        self.assertNotIn(key, [row['id'] for row in deleted['profiles']])
+        self.assertEqual(self.path.read_bytes(), before)
+        data = self.service.get({'name': 'test'})['data']
+        command = vm.build_args('test', data)
+        self.assertEqual(command[command.index('-accel') + 1], 'whpx,kernel-irqchip=off')
+        self.assertEqual(command[command.index('-cpu') + 1], 'host,vmx=off')
+        check = Mock(return_value={'state': 'ok', 'detail': 'created'})
+        selected, _ = vm_profiles.choose(self.qemu_path, data, check)
+        check.assert_called_once_with(self.qemu_path, 'whpx', settings=settings)
+        self.assertEqual(command, vm.build_args('test', data, accelerator=selected))
+
+    def test_profile_edits_are_persistent_and_reject_stale_catalog(self):
+        catalog = self.service.profile_list({})
+        settings = dict(accelerator='tcg', cpu='max', options='thread=single')
+        saved = self.service.profile_save(dict(hash=catalog['hash'], profile=dict(id='tcg', label='TCG single', settings=settings)))
+        self.assertEqual(self.service.profile_list({}), {key: saved[key] for key in ('profiles', 'hash')})
+        with self.assertRaisesRegex(ValueError, 'другом окне'):
+            self.service.profile_save(dict(hash=catalog['hash'], profile=dict(label='stale', settings=settings)))
+        with self.assertRaisesRegex(ValueError, 'Встроенные'):
+            self.service.profile_delete(dict(hash=saved['hash'], id='tcg'))
+        self.assertEqual(self.path.read_bytes(), self.raw)
+
+    def test_profile_settings_reject_injection_and_duplicate_options(self):
+        for field, value in [('cpu', 'host -drive secret'), ('options', 'kernel-irqchip=off -drive secret'),
+                             ('options', 'thread=multi,thread=single'), ('accelerator', 'unknown')]:
+            settings = dict(accelerator='whpx', cpu='host', options='')
+            settings[field] = value
+            with self.subTest(field=field, value=value), self.assertRaises(ValueError):
+                vm_profiles.validate(dict(self.data, launch_profile='whpx', launch_profile_settings=settings))
+        with self.assertRaisesRegex(ValueError, 'Авто'):
+            vm_profiles.validate(dict(self.data, launch_profile='auto', launch_profile_settings=dict(accelerator='tcg', cpu='max', options='')))
+
+    def test_custom_profile_probe_uses_exact_saved_cpu_and_options(self):
+        settings = dict(accelerator='whpx', cpu='host,vmx=off', options='nested=off,kernel-irqchip=off')
+        process = Mock(side_effect=OSError('No process launched'))
+        vm_profiles.probe(self.qemu_path, 'whpx', popen=process, settings=settings)
+        command = process.call_args.args[0]
+        self.assertEqual(command[command.index('-accel') + 1], 'whpx,nested=off,kernel-irqchip=off')
+        self.assertEqual(command[command.index('-cpu') + 1], settings['cpu'])
+        self.assertIn('-S', command)
+        self.assertNotIn('-drive', command)
+
+    def test_compatible_whpx_preview_and_preflight_use_same_options(self):
+        data = dict(self.data, launch_profile='whpx-compatible')
+        command = vm.build_args('test', data)
+        self.assertEqual(command[command.index('-accel') + 1], 'whpx,kernel-irqchip=off')
+        self.assertEqual(command[command.index('-cpu') + 1], 'host')
+        check = Mock(return_value={'state': 'ok', 'detail': 'created'})
+        selected, _ = vm_profiles.choose(self.qemu_path, data, check)
+        check.assert_called_once_with(self.qemu_path, 'whpx-compatible')
+        self.assertEqual(command, vm.build_args('test', data, accelerator=selected))
+        process = Mock(side_effect=OSError('No process launched in this test'))
+        vm_profiles.probe(self.qemu_path, selected, popen=process)
+        probe_command = process.call_args.args[0]
+        self.assertEqual(probe_command[probe_command.index('-accel') + 1], 'whpx,kernel-irqchip=off')
+        self.assertEqual(probe_command[probe_command.index('-cpu') + 1], 'host')
+
+    def test_existing_profiles_and_failed_compatible_probe_do_not_change_policy(self):
+        for value, expected in [('whpx', 'whpx'), ('auto', 'whpx'), ('tcg', 'tcg,thread=multi')]:
+            command = vm.build_args('test', dict(self.data, launch_profile=value))
+            self.assertEqual(command[command.index('-accel') + 1], expected)
+        check = Mock(return_value={'state': 'failed', 'detail': 'unsupported option'})
+        with self.assertRaisesRegex(ValueError, 'unsupported option'):
+            vm_profiles.choose(self.qemu_path, dict(self.data, launch_profile='whpx-compatible'), check)
+        check.assert_called_once_with(self.qemu_path, 'whpx-compatible')
+        with self.assertRaisesRegex(ValueError, 'extra_args'):
+            vm_profiles.validate(dict(self.data, launch_profile='whpx-compatible', extra_args=['-accel', 'whpx']))
+
+    def test_compatible_profile_is_saved_with_exact_backup(self):
+        saved = self.service.save(dict(name='test', hash=hashlib.sha256(self.raw).hexdigest(),
+                                       updates={'launch_profile': 'whpx-compatible'}))
+        self.assertEqual(Path(saved['backup']).read_bytes(), self.raw)
+        reopened = self.service.get({'name': 'test'})
+        self.assertEqual(reopened['data']['launch_profile'], 'whpx-compatible')
+        self.assertEqual(reopened['data']['custom'], self.data['custom'])
+
+    def setUp(self):
+        self.temp = tempfile.TemporaryDirectory(dir=HERE)
+        self.root = Path(self.temp.name)
+        self.service = backend.Service(self.root)
+        vm.ROOT.mkdir()
+        self.iso = self.root / 'live.iso'
+        self.iso.write_bytes(b'ISO sentinel: do not boot')
+        self.data = dict(iso_path=str(self.iso), disk_path='', label='Тестовая машина', ram_mb=256,
+                         cores=1, extra_args=['-device', 'usb-tablet'], ui_color='#79B8FF', custom={'preserved': True})
+        self.path = vm.ROOT / 'test.json'
+        self.raw = json.dumps(self.data, ensure_ascii=False).encode('utf-8')
+        self.path.write_bytes(self.raw)
+        available = patch.object(vm, 'qmp_bind_error', return_value=None)
+        available.start()
+        self.addCleanup(available.stop)
+        # Unit tests mock process creation; discovery must not depend on host QEMU.
+        self.qemu_path = str(self.root / 'tools' / 'qemu-system-x86_64.exe')
+        executable = patch.object(vm, 'qemu_executable', return_value=self.qemu_path)
+        executable.start()
+        self.addCleanup(executable.stop)
+
+    def tearDown(self):
+        self.service.close()
+        self.temp.cleanup()
+
+    def test_opening_library_does_not_initialize_or_migrate(self):
+        before = {path.name: path.read_bytes() for path in vm.ROOT.iterdir()}
+        result = self.service.list({})
+        self.assertEqual(result['rows'][0]['name'], 'test')
+        self.assertEqual(before, {path.name: path.read_bytes() for path in vm.ROOT.iterdir()})
+        self.assertFalse((vm.ROOT / '.initialized').exists())
+
+    def test_current_network_is_described_without_migration_or_disk_access(self):
+        data = dict(self.data, disk_path=str(self.root / 'never-open.qcow2'), extra_args=[
+            '-netdev', 'socket,id=lab,listen=127.0.0.1:12001',
+            '-device', 'e1000,netdev=lab', '-device', 'usb-tablet'])
+        raw = json.dumps(data).encode('utf-8')
+        self.path.write_bytes(raw)
+        before = {path.name: path.read_bytes() for path in vm.ROOT.iterdir()}
+        with patch.object(backend, 'image_command', side_effect=AssertionError('No disk inspection')):
+            opened = self.service.get({'name': 'test'})
+            listed = self.service.list({})['rows'][0]
+        for result in (opened, listed):
+            self.assertEqual([nic['id'] for nic in result['network_view']['adapters']], ['net0', 'lab'])
+            self.assertNotIn('network_adapters', result['data'])
+            self.assertEqual(result['data']['extra_args'], data['extra_args'])
+        self.assertEqual(before, {path.name: path.read_bytes() for path in vm.ROOT.iterdir()})
+        self.assertFalse((self.root / 'never-open.qcow2').exists())
+
+    def test_network_display_keeps_managed_and_opaque_settings_unchanged(self):
+        data = dict(self.data, network_adapters=[], extra_args=['-nic', 'none'])
+        before = json.dumps(data, sort_keys=True)
+        result = backend.network_display(data)
+        self.assertEqual(result['adapters'], [])
+        self.assertTrue(result['warnings'])
+        self.assertEqual(json.dumps(data, sort_keys=True), before)
+
+    def test_free_qmp_port_keeps_exact_config_without_backup(self):
+        stopped = Mock()
+        data, raw, port, backup = vm.prepare_qmp_port('test', self.data, self.raw, stopped)
+        self.assertIsNone(backup)
+        self.assertEqual(self.path.read_bytes(), self.raw)
+        self.assertEqual(raw, self.raw)
+        self.assertEqual(port, vm.qmp_port('test', self.data))
+        stopped.assert_not_called()
+
+    def test_reserved_qmp_port_is_replaced_with_exact_backup_and_legacy_fields_preserved(self):
+        legacy = dict(label='Legacy', kind='iso', path=str(self.iso), ram_mb=256, cores=1, custom={'network': 'kept'})
+        raw = json.dumps(legacy).encode()
+        self.path.write_bytes(raw)
+        stopped = Mock()
+        replies = iter([PermissionError(errno.EACCES, 'reserved'), None])
+        with patch.object(vm, 'qmp_bind_error', side_effect=lambda port: next(replies)):
+            data, saved, port, backup = vm.prepare_qmp_port('test', vm.load('test'), raw, stopped)
+        self.assertEqual(backup.read_bytes(), raw)
+        self.assertEqual(json.loads(saved), dict(legacy, qmp_port=port))
+        self.assertEqual(vm.qmp_port('test', vm.load('test')), port)
+        self.assertEqual(data['iso_path'], str(self.iso))
+        stopped.assert_called_once()
+
+    def test_port_selection_skips_other_vm_ports(self):
+        seed = int.from_bytes(hashlib.sha256(b'test').digest()[:2], 'big')
+        used = 20000 + seed % 25000
+        (vm.ROOT / 'other.json').write_text(json.dumps(dict(self.data, qmp_port=used)), encoding='utf-8')
+        replies = iter([OSError(errno.EADDRINUSE, 'busy'), None])
+        with patch.object(vm, 'qmp_bind_error', side_effect=lambda port: next(replies)) as probe:
+            data, saved, port, backup = vm.prepare_qmp_port('test', self.data, self.raw, Mock())
+        self.assertNotEqual(port, used)
+        self.assertNotIn(unittest.mock.call(used), probe.call_args_list)
+
+    def test_running_vm_cannot_have_its_qmp_port_moved(self):
+        with patch.object(vm, 'qmp_bind_error', return_value=PermissionError(errno.EACCES, 'reserved')):
+            with self.assertRaisesRegex(ValueError, 'still running'):
+                vm.prepare_qmp_port('test', self.data, self.raw, Mock(side_effect=ValueError('still running')))
+        self.assertEqual(self.path.read_bytes(), self.raw)
+        self.assertFalse(list(vm.ROOT.glob('*.bak')))
+
+    def test_no_available_ports_preserves_parameters_and_does_not_launch_qemu(self):
+        with patch.object(vm, 'qmp_bind_error', return_value=PermissionError(errno.EACCES, 'reserved')), \
+                patch.object(backend.subprocess, 'Popen') as launch:
+            with self.assertRaisesRegex(ValueError, 'Не найден доступный'):
+                vm.prepare_qmp_port('test', self.data, self.raw, Mock())
+        launch.assert_not_called()
+        self.assertEqual(self.path.read_bytes(), self.raw)
+        self.assertFalse(list(vm.ROOT.glob('*.bak')))
+
+    def test_port_repair_rejects_external_config_change_and_network_failures(self):
+        self.path.write_bytes(self.raw + b'\n')
+        with self.assertRaisesRegex(ValueError, 'Параметры изменились'):
+            vm.prepare_qmp_port('test', self.data, self.raw, Mock())
+        self.path.write_bytes(self.raw)
+        stopped = Mock()
+        with patch.object(vm, 'qmp_bind_error', return_value=OSError(errno.ENETDOWN, 'network failed')):
+            with self.assertRaisesRegex(ValueError, 'Не удалось проверить'):
+                vm.prepare_qmp_port('test', self.data, self.raw, stopped)
+        stopped.assert_not_called()
+        self.assertEqual(self.path.read_bytes(), self.raw)
+
+    def test_bad_json_does_not_hide_other_machines(self):
+        (vm.ROOT / 'broken.json').write_text('[]', encoding='utf-8')
+        rows = self.service.list({})['rows']
+        self.assertEqual(len(rows), 2)
+        self.assertTrue(rows[0]['data']['_invalid'])
+
+    def test_save_copies_exact_bytes_and_preserves_custom_fields(self):
+        result = self.service.save(dict(name='test', hash=hashlib.sha256(self.raw).hexdigest(), updates={'label': 'Новое имя'}))
+        self.assertEqual(Path(result['backup']).read_bytes(), self.raw)
+        data = json.loads(self.path.read_bytes())
+        self.assertEqual(data['label'], 'Новое имя')
+        self.assertEqual(data['extra_args'], self.data['extra_args'])
+        self.assertEqual(data['custom'], self.data['custom'])
+
+    def test_stale_editor_cannot_overwrite_external_changes(self):
+        self.path.write_bytes(self.raw + b'\n')
+        with self.assertRaises(ValueError):
+            self.service.save(dict(name='test', hash=hashlib.sha256(self.raw).hexdigest(), updates={'cores': 4}))
+        self.assertEqual(self.path.read_bytes(), self.raw + b'\n')
+        self.assertEqual(len(list(vm.ROOT.iterdir())), 1)
+
+    def test_invalid_json_save_keeps_original(self):
+        with self.assertRaises(ValueError):
+            self.service.save(dict(name='test', hash=hashlib.sha256(self.raw).hexdigest(), raw='{bad'))
+        self.assertEqual(self.path.read_bytes(), self.raw)
+
+    def test_advanced_editor_can_repair_broken_config(self):
+        self.path.write_text('{bad', encoding='utf-8')
+        saved = self.service.get(dict(name='test'))
+        self.assertTrue(saved['error'])
+        self.service.save(dict(name='test', hash=saved['hash'], raw=json.dumps(self.data)))
+        self.assertEqual(vm.load('test')['label'], self.data['label'])
+
+    def test_create_keeps_existing_iso_and_does_not_start_qemu(self):
+        with patch.object(backend.subprocess, 'Popen') as start:
+            self.service.create(dict(name='new-vm', data=self.data))
+        start.assert_not_called()
+        self.assertEqual(self.iso.read_bytes(), b'ISO sentinel: do not boot')
+        self.assertTrue((vm.ROOT / 'new-vm.json').is_file())
+
+    def test_duplicate_name_cannot_overwrite(self):
+        with self.assertRaises(ValueError):
+            self.service.create(dict(name='test', data=self.data))
+        self.assertEqual(self.path.read_bytes(), self.raw)
+
+    def test_missing_extra_file_aborts_creation(self):
+        data = dict(self.data, extra_args=['-drive', 'file=' + str(self.root / 'missing.qcow2')])
+        with self.assertRaisesRegex(ValueError, 'Не найден'):
+            self.service.create(dict(name='new-vm', data=data))
+        self.assertFalse((vm.ROOT / 'new-vm.json').exists())
+
+    def test_create_from_template_replaces_primary_media_and_keeps_network(self):
+        folder = self.root / 'parameter-backups'
+        folder.mkdir()
+        old = str(self.root / 'old.iso')
+        parameters = dict(self.data, iso_path=old, extra_args=['-cdrom', old, '-netdev', 'user,id=lab'])
+        (folder / 'saved.json').write_text(json.dumps(dict(schema_version=1, backup_name='Копия', parameters=parameters)), encoding='utf-8')
+        self.service.create(dict(name='restored', template='saved.json', data={'iso_path': str(self.iso)}))
+        data = json.loads((vm.ROOT / 'restored.json').read_text(encoding='utf-8'))
+        self.assertNotIn(old, data['extra_args'])
+        self.assertIn(str(self.iso), data['extra_args'])
+        self.assertIn('user,id=lab', data['extra_args'])
+
+    def test_destructive_controls_require_matching_name_before_any_qmp(self):
+        for action in ('shutdown', 'reset', 'quit'):
+            with self.subTest(action=action), patch.object(self.service, 'query') as query, self.assertRaises(ValueError):
+                self.service.control(dict(name='test', action=action, confirm='other'))
+            query.assert_not_called()
+
+    def test_toggle_uses_existing_qmp_commands(self):
+        with patch.object(self.service, 'query', side_effect=[{'running': True}, {}]) as query:
+            self.service.control(dict(name='test', action='toggle'))
+        self.assertEqual(query.call_args_list[-1].args[2], 'stop')
+
+    def test_running_vm_is_reused_without_starting_again(self):
+        with patch.object(self.service, 'query', return_value={'running': True}), patch.object(backend.subprocess, 'Popen') as start:
+            self.assertTrue(self.service.start(dict(name='test'))['attached'])
+        start.assert_not_called()
+
+    def test_running_vm_cannot_be_silently_restored(self):
+        with patch.object(self.service, 'query', return_value={'running': True}), self.assertRaises(ValueError):
+            self.service.start(dict(name='test', snapshot={'name': 'old'}))
+
+    def test_failed_preflight_does_not_start_real_guest(self):
+        with patch.object(self.service, 'query', side_effect=TimeoutError()), patch.object(self.service, 'stopped'), \
+                patch.object(backend, 'choose', side_effect=ValueError('preflight failed')), \
+                patch.object(backend.subprocess, 'Popen') as start, self.assertRaisesRegex(ValueError, 'preflight'):
+            self.service.start(dict(name='test'))
+        start.assert_not_called()
+
+    def test_guest_and_helpers_are_launched_without_console(self):
+        process = Mock(pid=1234)
+        process.poll.return_value = None
+        with patch.object(self.service, 'query', side_effect=TimeoutError()), patch.object(self.service, 'stopped'), \
+                patch.object(backend, 'choose', return_value=('tcg', {'detail': 'ok'})), \
+                patch.object(backend.subprocess, 'Popen', return_value=process) as start:
+            value = self.service.start(dict(name='test'))
+        self.assertEqual(value['pid'], 1234)
+        self.assertTrue(start.call_args.kwargs['creationflags'] & subprocess.CREATE_NO_WINDOW)
+        self.assertEqual(start.call_args.args[0][0], self.qemu_path)
+        self.assertIs(start.call_args.kwargs['shell'], False)
+        self.service.close()
+        process.kill.assert_not_called()
+        process.terminate.assert_not_called()
+
+    def test_disk_boot_does_not_require_an_unused_installer_iso(self):
+        disk = self.root / 'placeholder.qcow2'
+        disk.write_bytes(b'never boot: mock Popen')
+        self.path.write_text(json.dumps(dict(self.data, disk_path=str(disk), iso_path=str(self.root / 'removed.iso'))), encoding='utf-8')
+        process = Mock(pid=1234)
+        process.poll.return_value = None
+        with patch.object(self.service, 'query', side_effect=TimeoutError()), patch.object(self.service, 'stopped'), \
+                patch.object(backend, 'choose', return_value=('tcg', {'detail': 'ok'})), \
+                patch.object(backend.subprocess, 'Popen', return_value=process) as start:
+            self.service.start(dict(name='test', boot='disk'))
+        self.assertNotIn('-cdrom', start.call_args.args[0])
+
+    def test_known_qemu_exit_is_observed_without_waiting_for_cim_cache(self):
+        process = Mock(returncode=0)
+        process.poll.return_value = 0
+        self.service.sessions['test'] = dict(process=process)
+        self.service.inventory_running = True
+        with patch.object(self.service, 'query', side_effect=TimeoutError()):
+            self.assertEqual(self.service.states({})['test'], 'stopped')
+
+    def test_known_failed_qemu_is_shown_as_an_error_with_logs_available(self):
+        process = Mock(returncode=1)
+        process.poll.return_value = 1
+        self.service.sessions['test'] = dict(process=process)
+        self.service.inventory_running = True
+        with patch.object(self.service, 'query', side_effect=TimeoutError()):
+            self.assertEqual(self.service.states({})['test'], 'error')
+
+    def test_logs_are_incremental_and_do_not_control_guest(self):
+        logs = self.root / 'logs'
+        logs.mkdir()
+        path = logs / 'test-20261018-120000-aabbcc.log'
+        path.write_bytes('Привет\n'.encode('utf-8'))
+        self.service.event('test', 'Событие')
+        with patch.object(self.service, 'query') as query:
+            first = self.service.logs(dict(name='test'))
+            second = self.service.logs(dict(name='test', file=first['file'], offset=first['offset'], event=1))
+        self.assertEqual(base64.b64decode(first['content']).decode('utf-8'), 'Привет\n')
+        self.assertEqual(second['content'], '')
+        self.assertEqual(second['events'], [])
+        query.assert_not_called()
+
+    def test_new_log_resets_the_offset(self):
+        logs = self.root / 'logs'
+        logs.mkdir()
+        path = logs / 'test-20261018-120000-aabbcc.log'
+        path.write_bytes(b'new log')
+        result = self.service.logs(dict(name='test', file='previous.log', offset=9000))
+        self.assertEqual(base64.b64decode(result['content']), b'new log')
+        self.assertEqual(result['offset'], 7)
+
+    def test_delete_preview_and_exact_confirmation_preserve_iso(self):
+        with patch.object(self.service, 'query', side_effect=TimeoutError()), \
+                patch.object(backend, 'qemu_processes', return_value=[]), patch.object(vm_storage, 'qemu_processes', return_value=[]):
+            plan = self.service.delete_plan(dict(name='test'))
+            with self.assertRaises(ValueError):
+                self.service.delete(dict(name='test', token=plan['token'], backup_name='Моя копия', confirm='wrong'))
+            self.assertTrue(self.path.exists())
+            result = self.service.delete(dict(name='test', token=plan['token'], backup_name='Моя копия', confirm='test'))
+        self.assertTrue(Path(result['backup']).exists())
+        self.assertFalse(self.path.exists())
+        self.assertEqual(self.iso.read_bytes(), b'ISO sentinel: do not boot')
+
+    def test_stale_delete_plan_cannot_be_used(self):
+        with self.assertRaises(ValueError):
+            self.service.delete(dict(name='test', token='stale', backup_name='x', confirm='test'))
+        self.assertTrue(self.path.exists())
+
+    def test_unregister_without_backup_touches_only_registration(self):
+        disk = self.root / 'private.qcow2'
+        disk.write_bytes(b'private disk sentinel')
+        log = self.root / 'logs' / 'test-20261021-120000-aabbcc.log'
+        log.parent.mkdir()
+        log.write_bytes(b'log sentinel')
+        old_copy = self.path.with_suffix('.json.bak')
+        old_copy.write_bytes(b'old config copy')
+        self.path.write_text(json.dumps(dict(self.data, disk_path=str(disk))), encoding='utf-8')
+        with patch.object(self.service, 'query', side_effect=TimeoutError()), \
+                patch.object(vm_storage, 'qemu_processes', return_value=[]), \
+                patch.object(vm, 'qemu_executable', side_effect=AssertionError('No QEMU dependency for unregister')):
+            plan = self.service.delete_plan(dict(name='test', remove_files=False))
+            self.assertEqual(plan['files'], [str(self.path)])
+            result = self.service.delete(dict(name='test', token=plan['token'], confirm='test', save_backup=False))
+        self.assertIsNone(result['backup'])
+        self.assertFalse(self.path.exists())
+        self.assertEqual(disk.read_bytes(), b'private disk sentinel')
+        self.assertEqual(log.read_bytes(), b'log sentinel')
+        self.assertEqual(old_copy.read_bytes(), b'old config copy')
+        self.assertEqual(self.iso.read_bytes(), b'ISO sentinel: do not boot')
+        self.assertFalse((self.root / 'parameter-backups').exists())
+
+    def test_delete_without_backup_and_stale_unregister_are_guarded(self):
+        with patch.object(self.service, 'query', side_effect=TimeoutError()), patch.object(vm_storage, 'qemu_processes', return_value=[]):
+            plan = self.service.delete_plan(dict(name='test', remove_files=False))
+            self.path.write_bytes(self.raw + b'\n')
+            with self.assertRaisesRegex(ValueError, 'изменились'):
+                self.service.delete(dict(name='test', token=plan['token'], confirm='test', save_backup=False))
+            self.assertTrue(self.path.exists())
+            plan = self.service.delete_plan(dict(name='test'))
+            result = self.service.delete(dict(name='test', token=plan['token'], confirm='test', save_backup=False))
+        self.assertIsNone(result['backup'])
+        self.assertFalse(self.path.exists())
+        self.assertFalse((self.root / 'parameter-backups').exists())
+
+    def test_unregister_running_vm_is_rejected(self):
+        with patch.object(self.service, 'query', return_value={'status': 'running'}):
+            with self.assertRaisesRegex(ValueError, 'выключи'):
+                self.service.delete_plan(dict(name='test', remove_files=False))
+        self.assertEqual(self.path.read_bytes(), self.raw)
+
+    def test_no_backup_does_not_disable_shared_disk_protection(self):
+        disk = self.root / 'shared.qcow2'
+        disk.write_bytes(b'shared disk sentinel')
+        data = dict(self.data, disk_path=str(disk))
+        self.path.write_text(json.dumps(data), encoding='utf-8')
+        peer = self.path.with_name('peer.json')
+        peer.write_text(json.dumps(data), encoding='utf-8')
+        with patch.object(self.service, 'query', side_effect=TimeoutError()), \
+                patch.object(vm_storage, 'qemu_processes', return_value=[]), \
+                patch.object(vm_storage, 'backing_chain', return_value=[disk]):
+            plan = self.service.delete_plan(dict(name='test', remove_files=True))
+            self.assertNotIn(str(disk), plan['files'])
+            self.service.delete(dict(name='test', token=plan['token'], confirm='test', save_backup=False))
+        self.assertEqual(disk.read_bytes(), b'shared disk sentinel')
+        self.assertTrue(peer.exists())
+
+    def test_full_delete_without_backup_removes_approved_private_disk(self):
+        disk = self.root / 'private.qcow2'
+        disk.write_bytes(b'private temporary disk')
+        self.path.write_text(json.dumps(dict(self.data, disk_path=str(disk))), encoding='utf-8')
+        with patch.object(self.service, 'query', side_effect=TimeoutError()), \
+                patch.object(vm_storage, 'qemu_processes', return_value=[]), \
+                patch.object(vm_storage, 'backing_chain', return_value=[disk]):
+            plan = self.service.delete_plan(dict(name='test', remove_files=True))
+            self.assertIn(str(disk), plan['files'])
+            self.service.delete(dict(name='test', token=plan['token'], confirm='test', save_backup=False))
+        self.assertFalse(disk.exists())
+        self.assertFalse(self.path.exists())
+        self.assertTrue(self.iso.exists())
+
+    def test_display_override_is_not_duplicated(self):
+        command = vm.build_args('test', dict(self.data, extra_args=['-display', 'gtk,clipboard=on']))
+        self.assertEqual(command.count('-display'), 1)
+        self.assertEqual(command[command.index('-display') + 1], 'gtk,clipboard=on')
+        command = vm.build_args('test', self.data)
+        self.assertEqual(command.count('-display'), 1)
+        with self.assertRaisesRegex(ValueError, 'один'):
+            vm.build_args('test', dict(self.data, extra_args=['-display', 'gtk', '-display', 'sdl']))
+
+    def test_mode_changes_only_explicitly(self):
+        self.assertEqual(self.service.list({})['mode'], 'normal')
+        self.assertFalse((self.root / 'manager-settings.json').exists())
+        self.service.mode(dict(value='snapshot'))
+        self.assertEqual(self.service.list({})['mode'], 'snapshot')
+
+    def test_invalid_names_do_not_escape_config_folder(self):
+        for name in ('../other', 'C:/secret', 'doctor', None, 123):
+            with self.subTest(name=name), self.assertRaises(ValueError):
+                self.service.get(dict(name=name))
+
+    def test_rpc_is_json_only_and_rejects_unrecognized_commands(self):
+        messages = [dict(id=1, command='ping'), dict(id=2, command='list'),
+                    dict(id=3, command='shell', args={'command': 'anything'}), [],
+                    dict(id=5, command='get', args={'name': 'test'})]
+        result = subprocess.run([sys.executable, '-B', '-X', 'utf8', str(APP / 'vm_backend.py'), '--root', str(self.root)],
+                                input=''.join(json.dumps(item) + '\n' for item in messages), capture_output=True,
+                                encoding='utf-8', timeout=15, creationflags=backend.HIDDEN)
+        self.assertEqual(result.returncode, 0, result.stderr)
+        replies = [json.loads(line) for line in result.stdout.splitlines()]
+        self.assertEqual(len(replies), 5)
+        self.assertEqual([item['ok'] for item in replies], [True, True, False, False, True])
+        self.assertEqual(replies[-1]['result']['data']['label'], self.data['label'])
+
+
+if __name__ == '__main__':
+    result = unittest.TextTestRunner(verbosity=2).run(unittest.defaultTestLoader.loadTestsFromModule(sys.modules[__name__]))
+    (HERE / 'unit-results.json').write_text(json.dumps(dict(tests=result.testsRun,
+        errors=[str(test) for test, _ in result.errors], failures=[str(test) for test, _ in result.failures]), indent=2), encoding='utf-8')
+    raise SystemExit(0 if result.wasSuccessful() else 1)

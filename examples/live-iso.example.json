@@ -1,0 +1,15 @@
+{
+  "label": "Example Live ISO",
+  "disk_path": "",
+  "iso_path": "C:/VMs/example.iso",
+  "ram_mb": 2048,
+  "cores": 2,
+  "launch_profile": "tcg",
+  "vga": "std",
+  "screen_width": 1280,
+  "screen_height": 720,
+  "extra_args": [],
+  "network_adapters": [
+    {"id": "net0", "type": "user", "model": "e1000e"}
+  ]
+}
