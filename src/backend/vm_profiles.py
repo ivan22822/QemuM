@@ -9,10 +9,12 @@ import tempfile
 import threading
 import time
 
-PROFILES = ('whpx', 'auto', 'tcg', 'whpx-compatible')
+PROFILES = ('whpx', 'auto', 'tcg', 'whpx-compatible', 'whpx-cpu-limited', 'whpx-qemu64')
 LABELS = {'whpx': 'WHPX · аппаратное ускорение', 'auto': 'Авто · проверить WHPX, иначе TCG',
           'tcg': 'TCG · программная эмуляция, медленнее',
-          'whpx-compatible': 'WHPX · совместимый (kernel-irqchip=off)'}
+          'whpx-compatible': 'WHPX · совместимый (kernel-irqchip=off)',
+          'whpx-cpu-limited': 'WHPX · без APX/MPX (экспериментальный)',
+          'whpx-qemu64': 'WHPX · qemu64 + SSE4/POPCNT'}
 
 
 def profile(data):
@@ -89,15 +91,25 @@ def accelerator_args(accelerator, settings=None):
             raise ValueError('Ускоритель не соответствует сохранённому профилю.')
         return ['-accel', accelerator + (',' + settings['options'] if settings['options'] else ''),
                 '-cpu', settings['cpu']]
-    if accelerator not in ('whpx', 'whpx-compatible', 'tcg'):
+    if accelerator not in ('whpx', 'whpx-compatible', 'whpx-cpu-limited', 'whpx-qemu64', 'tcg'):
         raise ValueError('Сначала выбери фактическое ускорение WHPX или TCG.')
-    value = {'whpx': 'whpx', 'whpx-compatible': 'whpx,kernel-irqchip=off',
+    value = {'whpx': 'whpx', 'whpx-compatible': 'whpx,kernel-irqchip=off', 'whpx-cpu-limited': 'whpx', 'whpx-qemu64': 'whpx',
              'tcg': 'tcg,thread=multi'}[accelerator]
-    return ['-accel', value, '-cpu', 'max' if accelerator == 'tcg' else 'host']
+    cpu = {'whpx-cpu-limited': 'host,mpx=off,apxf=off',
+           'whpx-qemu64': 'qemu64,+ssse3,+sse4.1,+sse4.2,+popcnt', 'tcg': 'max'}.get(accelerator, 'host')
+    return ['-accel', value, '-cpu', cpu]
 
 
 def failure_hint(message):
     value = message.lower()
+    if 'unexpected vp exit code 4' in value:
+        return ('whpx-vp-exception', 'WHPX сообщил невосстановимое исключение виртуального CPU (VP exit 4). '
+                'Это не означает, что виртуализация выключена. Сохрани команду запуска и лог. '
+                'Профиль без APX/MPX — экспериментальная проверка, не подтверждённое исправление; '
+                'для сравнения можно выбрать TCG. Автоматический перезапуск диска не выполняется.')
+    if 'this feature conflicts with apx' in value or 'this feature conflicts with mpx' in value:
+        return ('cpu-feature-conflict', 'В модели виртуального CPU одновременно запрошены APX и MPX. '
+                'Можно проверить профиль WHPX без APX/MPX. Устранение предупреждений не гарантирует исправление VP exit.')
     if 'nested virtualization' in value:
         return ('nested', 'QEMU не смог включить вложенную виртуализацию WHPX. '
                 'Нужна проверка совместимости QEMU, Windows и процессора; можно выбрать TCG.')
