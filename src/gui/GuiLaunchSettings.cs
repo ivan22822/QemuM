@@ -16,7 +16,8 @@ static class LaunchProfiles {
         J.O("id","whpx","label","WHPX","settings",J.O("accelerator","whpx","cpu","host","options","")),
         J.O("id","auto","label","Авто","settings",null),
         J.O("id","tcg","label","TCG","settings",J.O("accelerator","tcg","cpu","max","options","thread=multi")),
-        J.O("id","whpx-compatible","label","WHPX · совместимый","settings",J.O("accelerator","whpx","cpu","host","options","kernel-irqchip=off"))};}
+        J.O("id","whpx-compatible","label","WHPX · совместимый","settings",J.O("accelerator","whpx","cpu","host","options","kernel-irqchip=off")),
+        J.O("id","whpx-cpu-limited","label","WHPX · без APX/MPX (экспериментальный)","settings",J.O("accelerator","whpx","cpu","host,mpx=off,apxf=off","options",""))};}
     public static ThemedSelector Selector(){
         var selector=Theme.Combo();var state=new State{Rows=Defaults().ToList()};selector.Tag=state;
         Fill(selector,state.Rows);selector.SelectedIndexChanged+=(sender,args)=>{if(!state.Loading&&selector.SelectedIndex>=0)state.Current=state.Rows[selector.SelectedIndex];};return selector;

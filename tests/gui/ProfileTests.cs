@@ -16,6 +16,12 @@ static class ProfileTests {
         try{
             using(var backend=new Backend(args[0])){
                 backend.Open();string vmPath=Path.Combine(args[0],"machines","test.json");byte[] before=File.ReadAllBytes(vmPath);object selected;
+                using(var dialog=new LaunchProfileDialog(backend,"whpx-cpu-limited")){
+                    dialog.Show();Application.DoEvents();
+                    Check(Field<FieldInput>(dialog,"cpu").Text=="host,mpx=off,apxf=off","experimental preset masks APX and MPX");
+                    Check(Field<FieldInput>(dialog,"options").Text=="","CPU experiment does not change IRQ chip settings");
+                    dialog.Close();
+                }
                 using(var dialog=new LaunchProfileDialog(backend,"whpx-compatible")){
                     dialog.Show();Application.DoEvents();
                     Check(Field<FieldInput>(dialog,"options").Text=="kernel-irqchip=off","compatible preset loads its options");
@@ -42,7 +48,7 @@ static class ProfileTests {
                     dialog.Show();Application.DoEvents();Check(!Field<FieldInput>(dialog,"cpu").Enabled,"auto algorithm is read-only");dialog.Close();
                 }
             }
-            File.WriteAllText(Path.Combine(args[1],"profile-results.json"),"{\"passed\":6}");return 0;
+            File.WriteAllText(Path.Combine(args[1],"profile-results.json"),"{\"passed\":8}");return 0;
         }catch(Exception error){File.WriteAllText(Path.Combine(args[1],"profile-error.txt"),error.ToString());return 1;}
     }
 }
