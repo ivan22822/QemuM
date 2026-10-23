@@ -61,6 +61,7 @@ static class UpdateTests {
             foreach(string invalid in new[]{"../bad","1.0.0","01.0.0-alpha.1","1.0.0-alpha.9999999"})Reject(()=>Core.Version(invalid),"invalid version "+invalid);
             foreach(string path in new[]{"../outside","/root","a\\b","a/../b","NUL.txt","a:file","a.","a//b"})Reject(()=>Core.Relative(path),"unsafe path "+path);
             string data=Path.Combine(root,"data");Directory.CreateDirectory(data);File.WriteAllText(Path.Combine(data,"sentinel.txt"),"KEEP USER DATA");
+            string stands=Path.Combine(data,"stands");Directory.CreateDirectory(stands);string stand=Path.Combine(stands,"fixture.json");File.WriteAllText(stand,"KEEP LOGICAL STAND");
             string snapshotState=Path.Combine(data,"snapshot-state","test-fixture");Directory.CreateDirectory(snapshotState);string snapshotCatalog=Path.Combine(snapshotState,"catalog.json"),snapshotJournal=Path.Combine(snapshotState,"operation.json");File.WriteAllText(snapshotCatalog,"KEEP SNAPSHOT CATALOG");File.WriteAllText(snapshotJournal,"KEEP PENDING SNAPSHOT JOURNAL");
             string first=Make(root,"0.1.0-alpha.1");
             Reject(()=>Core.Stage(first,new string('0',64),root),"bad download hash");
@@ -83,6 +84,7 @@ static class UpdateTests {
             Check(File.ReadAllText(Path.Combine(data,"sentinel.txt"))=="KEEP USER DATA"&&File.ReadAllText(snapshotJournal)=="KEEP PENDING SNAPSHOT JOURNAL","repair preserves data and snapshot recovery journal");
             Check(Core.RecoverRepair(root),"new package remains pending until health acknowledgement");
             Check(Core.Rollback(root,one.version),"failed startup restores prior build with the SAME version");
+            Check(File.ReadAllText(stand)=="KEEP LOGICAL STAND","same-version repair and rollback preserve stand definitions");
             Check(Core.Hash(Path.Combine(root,"versions",one.version,"App.exe"))==one.files["App.exe"],"exact prior build returned");
             Core.RepairSameVersion(root,revised,Core.Hash(revised));
             var interrupted=Core.Read<RepairIntent>(Path.Combine(root,"repair.json"));
@@ -100,6 +102,7 @@ static class UpdateTests {
             Check(Core.Current(root).previous==one.version,"previous pointer retained");
             Check(Core.Rollback(root,two.version),"rollback available");
             Check(Core.Current(root).current==one.version,"rollback selects previous");
+            Check(File.ReadAllText(stand)=="KEEP LOGICAL STAND","ordinary upgrade and rollback preserve stand definitions");
             Check(File.ReadAllText(Path.Combine(data,"sentinel.txt"))=="KEEP USER DATA","data preserved");
             Check(File.ReadAllText(snapshotCatalog)=="KEEP SNAPSHOT CATALOG"&&File.ReadAllText(snapshotJournal)=="KEEP PENDING SNAPSHOT JOURNAL","snapshot metadata survives version activation and rollback");
             Check(Directory.Exists(Path.Combine(root,"versions",two.version)),"old/new code retained");

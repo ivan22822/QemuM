@@ -5,6 +5,8 @@
 **/parameter-backups/
 **/runtime/
 **/snapshot-state/
+**/stands/
+**/stand-library-ui.json
 **/.qemum-stage-*/
 **/visual-assets/custom/
 **/appearance.json*

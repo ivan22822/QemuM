@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 APP = ROOT / 'build' / 'app'
 GUI = ROOT / 'src' / 'gui'
 SOURCES = [GUI / name for name in ('VMManager.cs', 'GuiLaunchSettings.cs', 'PolarTheme.cs',
-    'WorkspaceView.cs', 'EditorControls.cs', 'DistroAppearance.cs', 'SupportWindow.cs', 'SnapshotsUi.cs')]
+    'WorkspaceView.cs', 'EditorControls.cs', 'DistroAppearance.cs', 'SupportWindow.cs', 'SnapshotsUi.cs', 'StandsUi.cs')]
 REFERENCES = ['/reference:System.Windows.Forms.dll', '/reference:System.Drawing.dll',
               '/reference:System.Web.Extensions.dll']
 HIDDEN = getattr(subprocess, 'CREATE_NO_WINDOW', 0)

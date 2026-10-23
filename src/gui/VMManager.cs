@@ -111,7 +111,7 @@ sealed class BufferedFlowLayoutPanel : FlowLayoutPanel {
     public BufferedFlowLayoutPanel(){DoubleBuffered=true;ResizeRedraw=true;}
 }
 
-sealed class MainWindow : Form {
+sealed partial class MainWindow : Form {
     public Backend Backend; public bool Busy; internal int SnapshotJobs; public string RootPath; internal Exception TestError; readonly bool demo;
     List<object> rows=new List<object>(); Dictionary<string,string> states=new Dictionary<string,string>();
     string selected,mode="normal"; bool updatingMode,polling,closing; readonly string python;
@@ -144,9 +144,7 @@ sealed class MainWindow : Form {
         top.Height=64;top.Controls.Add(brand);top.Controls.Add(support);
         var bottom=new Panel { Dock=DockStyle.Bottom,Height=32,Padding=new Padding(20,7,16,0) };
         footer.Dock=DockStyle.Fill;bottom.Controls.Add(footer);bottom.Controls.Add(progress);
-        var content=new TableLayoutPanel { Dock=DockStyle.Fill,ColumnCount=2,Margin=Padding.Empty };
-        content.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,256));
-        content.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));
+        var content=new SplitContainer { Dock=DockStyle.Fill,Size=new Size(1000,600),SplitterWidth=7,BackColor=Theme.Panel,Panel1MinSize=220,Panel2MinSize=420,SplitterDistance=256 };
         var left=new BufferedPanel { Dock=DockStyle.Fill,Padding=new Padding(14,22,12,12),BackColor=Theme.Panel };
         var libraryHeader=new Panel { Dock=DockStyle.Top,Height=137,BackColor=Theme.Panel };
         var category=Theme.Label("БИБЛИОТЕКА",8,Theme.Muted);category.Location=new Point(9,0);
@@ -160,7 +158,7 @@ sealed class MainWindow : Form {
         libraryScroll=new ScrollSurface(cards) { BackColor=Theme.Panel };
         cards.SizeChanged+=(sender,args)=>{foreach(Control card in cards.Controls)card.Width=cards.Width;};
         var tools=Theme.Flow(true);tools.Dock=DockStyle.Bottom;tools.BackColor=Theme.Panel;tools.Padding=new Padding(9,20,0,0);
-        var add=Theme.Button("＋  Новая машина",CreateVm);add.AutoSize=false;add.Width=208;tools.Controls.Add(add);
+        var add=Theme.Button("＋  Новая машина",()=>{if(!standMode)CreateVm();});add.AutoSize=false;add.Width=208;tools.Controls.Add(add);
         var doctor=Theme.Button("VM Doctor",()=>RunDoctor(null));doctor.BackColor=Theme.Panel;doctor.ForeColor=Theme.Muted;doctor.AutoSize=false;doctor.Width=208;doctor.Height=34;doctor.MinimumSize=Size.Empty;tools.Controls.Add(doctor);
         left.Controls.Add(libraryScroll);left.Controls.Add(libraryHeader);left.Controls.Add(tools);
         detail.Dock=DockStyle.Fill;detail.Padding=new Padding(32,24,30,14);detail.BackColor=Theme.Bg;
@@ -195,7 +193,8 @@ sealed class MainWindow : Form {
         workspace.SelectionChanged+=(sender,args)=>{if(workspace.SelectedIndex==3)ReadLogPreview();};
         workspace.Margin=Padding.Empty;actions.Controls.Add(workspace);detailStack.Controls.Add(actions);
         var note=Theme.Label("Локальная библиотека",9,Theme.Muted);note.Margin=new Padding(0,22,0,0);detailStack.Controls.Add(note);
-        detail.Controls.Add(new ScrollSurface(detailStack) { BackColor=Theme.Bg });content.Controls.Add(left,0,0);content.Controls.Add(detail,1,0);
+        detail.Controls.Add(new ScrollSurface(detailStack) { BackColor=Theme.Bg });content.Panel1.Controls.Add(left);content.Panel2.Controls.Add(detail);
+        InitStands(content,libraryHeader,library,add,more);
         Controls.Add(content);Controls.Add(top);Controls.Add(bottom);
         launchMode.SelectedIndexChanged+=(sender,args)=>{
             if(updatingMode||Backend==null)return;
@@ -254,11 +253,12 @@ sealed class MainWindow : Form {
         Task.Run(()=>{try {object result=operation();Post(()=>{Busy=false;progress.Visible=false;actions.Enabled=selected!=null;launchMode.Enabled=true;footer.Text="Готово";if(done!=null)done(result);});}
             catch(Exception error){Post(()=>{Busy=false;progress.Visible=false;actions.Enabled=selected!=null;launchMode.Enabled=true;footer.Text="Действие не выполнено";if(notifyError){if(Program.TestMode)TestError=error;else MessageBox.Show(this,error.Message,"VM Manager",MessageBoxButtons.OK,MessageBoxIcon.Warning);}if(failed!=null)failed(error);});}});
     }
-    void Fill(object result) { rows=J.A(J.V(result,"rows")).ToList();mode=J.S(result,"mode","normal");updatingMode=true;launchMode.SelectedIndex=mode=="snapshot"?1:0;updatingMode=false;if(selected==null || !rows.Any(row=>J.S(row,"name")==selected))selected=rows.Count>0?J.S(rows[0],"name"):null;RenderCards();SelectVm(selected);footer.Text="Машин: "+rows.Count+" · все действия доступны в интерфейсе"; }
+    void Fill(object result) { rows=J.A(J.V(result,"rows")).ToList();mode=J.S(result,"mode","normal");updatingMode=true;launchMode.SelectedIndex=mode=="snapshot"?1:0;updatingMode=false;if(selected==null || !rows.Any(row=>J.S(row,"name")==selected))selected=rows.Count>0?J.S(rows[0],"name"):null;RenderCards();SelectVm(selected);if(standMode)LoadStands();footer.Text="Машин: "+rows.Count+" · все действия доступны в интерфейсе"; }
     public void Reload() { if(Backend!=null)Run("Обновляю список…",()=>Backend.Call("list"),Fill); }
     public object Row(string name) { return rows.FirstOrDefault(row=>J.S(row,"name")==name); }
     public string State(string name) { string result;return name!=null && states.TryGetValue(name,out result)?result:"checking"; }
     void RenderCards() {
+        if(standMode){RenderStands();return;}
         int scroll=libraryScroll.ScrollOffset;
         cards.SuspendLayout();foreach(Control child in cards.Controls.Cast<Control>().ToArray())child.Dispose();cards.Controls.Clear();
         foreach(object row in rows) {
@@ -287,6 +287,7 @@ sealed class MainWindow : Form {
         });
     }
     void SelectVm(string name) {
+        if(standMode && selectedStand!=null)return;
         bool changed=selected!=name;selected=name;var row=Row(name);object data=J.V(row,"data");
         RefreshEmblem(name,data);
         heading.Text=row==null?"Выбери виртуальную машину":J.S(data,"label",name);heading.ForeColor=Theme.Text;
@@ -317,7 +318,7 @@ sealed class MainWindow : Form {
             if(value==State(name))continue;
             var libraryCard=card as LibraryCard;if(libraryCard!=null)libraryCard.SetStatus(value);
         }
-        states=next;SelectVm(selected);foreach(var panel in panels.Values.ToArray())panel.RefreshState();
+        states=next;SelectVm(selected);UpdateStandStatus();foreach(var panel in panels.Values.ToArray())panel.RefreshState();
     }
     public void OpenPanel(string name) { if(name==null)return;VmWindow panel;if(panels.TryGetValue(name,out panel)&&!panel.IsDisposed){panel.Activate();return;}panel=new VmWindow(this,name);panels[name]=panel;panel.FormClosed+=(sender,args)=>panels.Remove(name);panel.Show(); }
     public void OpenLogs(string name) { if(name==null)return;LogsWindow window;if(logs.TryGetValue(name,out window)&&!window.IsDisposed){window.Activate();return;}window=new LogsWindow(this,name);logs[name]=window;window.FormClosed+=(sender,args)=>logs.Remove(name);window.Show(); }
@@ -363,7 +364,7 @@ sealed class MainWindow : Form {
         if(disposing){uiComponents.Dispose();Visuals.Dispose();}
         base.Dispose(disposing);
     }
-    public void Demo() {rows=new List<object>{J.O("name","ubuntu-desktop","data",J.O("label","Ubuntu Desktop","ram_mb",8192,"cores",4,"launch_profile","auto","ui_color","#79B8FF")),J.O("name","ubuntu-server","data",J.O("label","Ubuntu Server","ram_mb",4096,"cores",2,"ui_color","#F4BD62")),J.O("name","kali","data",J.O("label","Kali Linux","ram_mb",4096,"cores",4,"ui_color","#C4A2FF")),J.O("name","tails","data",J.O("label","Tails","ram_mb",4000,"cores",4,"ui_color","#61D6C3"))};states=new Dictionary<string,string>{{"ubuntu-desktop","running"},{"ubuntu-server","stopped"},{"kali","paused"},{"tails","stopped"}};selected="ubuntu-desktop";RenderCards();SelectVm(selected);footer.Text="Машин: 4 · интерфейс приложения";}
+    public void Demo() {rows=new List<object>{J.O("name","ubuntu-desktop","data",J.O("label","Ubuntu Desktop","ram_mb",8192,"cores",4,"launch_profile","auto","ui_color","#79B8FF")),J.O("name","ubuntu-server","data",J.O("label","Ubuntu Server","ram_mb",4096,"cores",2,"ui_color","#F4BD62")),J.O("name","kali","data",J.O("label","Kali Linux","ram_mb",4096,"cores",4,"ui_color","#C4A2FF")),J.O("name","tails","data",J.O("label","Tails","ram_mb",4000,"cores",4,"ui_color","#61D6C3"))};states=new Dictionary<string,string>{{"ubuntu-desktop","running"},{"ubuntu-server","stopped"},{"kali","paused"},{"tails","stopped"}};selected="ubuntu-desktop";RenderCards();SelectVm(selected);if(standMode)LoadStands();footer.Text="Машин: 4 · интерфейс приложения";}
 }
 
 sealed class ChoiceDialog : Form {

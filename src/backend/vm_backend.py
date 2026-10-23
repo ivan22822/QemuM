@@ -76,6 +76,21 @@ def normalized(data):
 
 
 class Service:
+    def stand_list(self, args):
+        from vm_stands import Store
+        return Store(self.root).list()
+
+    def stand_save(self, args):
+        from vm_stands import Store, validate
+        row = args.get('stand')
+        if not isinstance(row, dict):
+            raise ValueError('Нужен объект стенда.')
+        validate(row)
+        available = {path.stem for path in vm.ROOT.glob('*.json')}
+        if any(name not in available for name in row.get('members', [])):
+            raise ValueError('Одна из выбранных VM отсутствует. Обнови библиотеку.')
+        return Store(self.root).save(row, args.get('revision'))
+
     def profile_list(self, args):
         from vm_profile_store import read
         return read(self.root)
@@ -712,6 +727,9 @@ class Service:
 
 COMMANDS = {'snapshot_export_plan','snapshot_job_start','snapshot_job_status','snapshot_cancel','profile_list', 'profile_save', 'profile_delete', 'ping', 'list', 'states', 'get', 'save', 'template_list', 'network_import', 'network_validate', 'create', 'start', 'control',
             'snapshots', 'snapshot_plan', 'snapshot_offline_plan', 'snapshot_operation_plan', 'snapshot_execute', 'snapshot_recover', 'snapshot_adopt', 'snapshot_metadata', 'snapshot_schedule', 'snapshot_chain_plan', 'snapshot_ram_restore', 'delete_plan', 'delete', 'mode', 'doctor', 'report_save', 'logs', 'support_export'}
+
+
+COMMANDS |= {'stand_list', 'stand_save'}
 
 
 def serve(root=None):
