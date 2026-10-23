@@ -18,7 +18,7 @@ from vm_stand_lifecycle import reconcile,duplicate,remove,report,save_report
 
 class StandLifecycleTests(unittest.TestCase):
     def setUp(self):
-        self.temp=tempfile.TemporaryDirectory();self.root=Path(self.temp.name);self.host=FakeHost();self.runtime=Runtime(self.root,self.host)
+        self.temp=tempfile.TemporaryDirectory();self.root=Path(self.temp.name).resolve();self.host=FakeHost();self.runtime=Runtime(self.root,self.host)
         self.row=Store(self.root).save(upgrade(create('Лаборатория',['a','b'])),0)
     def tearDown(self):
         self.runtime.close()
