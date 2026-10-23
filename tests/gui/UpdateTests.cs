@@ -70,6 +70,15 @@ static class UpdateTests {
             string bootstrap=Path.Combine(root,"bootstrap-source.exe"),bootstrapTarget=Path.Combine(root,"QemuM.exe");File.WriteAllText(bootstrap,"NEW BOOTSTRAP");File.WriteAllText(bootstrapTarget,"OLD BOOTSTRAP");Core.RefreshBootstrap(root,bootstrap);
             Check(File.ReadAllText(bootstrapTarget)=="NEW BOOTSTRAP"&&Directory.GetFiles(Path.Combine(root,"launcher-backups")).Any(path=>File.ReadAllText(path)=="OLD BOOTSTRAP"),"atomic bootstrap refresh retains previous loader");
             byte[] activeBefore=File.ReadAllBytes(Path.Combine(root,"active.json"));
+            string standRuntime=Path.Combine(data,"stand-runtime",new string('1',32)+".json");Directory.CreateDirectory(Path.GetDirectoryName(standRuntime));File.WriteAllText(standRuntime,"KEEP STAND JOURNAL");
+            string standMarker=Path.Combine(data,"stand-runtime","active",new string('2',32)+".lock");Directory.CreateDirectory(Path.GetDirectoryName(standMarker));
+            using(var lease=new FileStream(standMarker,FileMode.Create,FileAccess.ReadWrite,FileShare.ReadWrite)){
+                lease.WriteByte(1);lease.Flush();
+                Reject(()=>Core.AssertNoStandOperations(root),"running stand worker blocks updating even after the frontend exits");
+                Reject(()=>Core.RepairSameVersion(root,first,Core.Hash(first)),"repair refuses an active stand operation before changing code");
+                Reject(()=>Core.Rollback(root,one.version),"rollback also refuses an active stand operation");
+            }
+            Core.AssertNoStandOperations(root);File.Delete(standMarker);
             Check(!Core.RepairSameVersion(root,first,Core.Hash(first)),"identical package does not replace the current version");
             string wrongBuild=Make(root,one.version,body:"wrong build",build:1);patchFeed.version=one.version;patchFeed.url="https://github.com/ivan22822/QemuM/releases/download/v"+one.version+"/patch.zip";
             Reject(()=>Core.RepairSameVersion(root,wrongBuild,Core.Hash(wrongBuild),expectedFeed:patchFeed),"build mismatch rejected before replacing installed application");
@@ -103,6 +112,7 @@ static class UpdateTests {
             Check(Core.Rollback(root,two.version),"rollback available");
             Check(Core.Current(root).current==one.version,"rollback selects previous");
             Check(File.ReadAllText(stand)=="KEEP LOGICAL STAND","ordinary upgrade and rollback preserve stand definitions");
+            Check(File.ReadAllText(standRuntime)=="KEEP STAND JOURNAL","upgrade, same-version repair and rollback preserve stand runtime journals");
             Check(File.ReadAllText(Path.Combine(data,"sentinel.txt"))=="KEEP USER DATA","data preserved");
             Check(File.ReadAllText(snapshotCatalog)=="KEEP SNAPSHOT CATALOG"&&File.ReadAllText(snapshotJournal)=="KEEP PENDING SNAPSHOT JOURNAL","snapshot metadata survives version activation and rollback");
             Check(Directory.Exists(Path.Combine(root,"versions",two.version)),"old/new code retained");

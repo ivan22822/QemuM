@@ -4,10 +4,24 @@ import os
 from pathlib import Path
 import re
 import tempfile
+import time
 import uuid
 from vm_runtime import vm_lock
 
 MAX_BYTES = 1024 * 1024
+
+
+def replace_file(source,target,safe):
+    """Windows scanners can briefly deny replacement with 5 as well as 32/33.
+
+    Retry the same atomic rename only. Never remove the destination or change ACLs.
+    """
+    for attempt in range(6):
+        safe(target)
+        try:os.replace(source,target);return
+        except OSError as error:
+            if getattr(error,'winerror',None) not in (5,32,33) or attempt==5:raise
+            time.sleep(.02*(attempt+1))
 
 
 def identifier(value):
@@ -18,7 +32,7 @@ def identifier(value):
 
 def validate(row):
     required = {'schema_version', 'id', 'revision', 'name', 'description', 'members', 'links', 'order'}
-    if not isinstance(row, dict) or set(row) != required or type(row['schema_version']) is not int or row['schema_version'] != 1:
+    if not isinstance(row, dict) or type(row.get('schema_version')) is not int or row['schema_version'] not in (1, 2) or set(row) != (required | ({'startup'} if row['schema_version']==2 else set())):
         raise ValueError('Неизвестная схема стенда.')
     identifier(row['id'])
     if type(row['revision']) is not int or row['revision'] < 0:
@@ -38,8 +52,11 @@ def validate(row):
         raise ValueError('Повторяющиеся VM.')
     if not isinstance(row['order'], list) or any(not isinstance(m, str) for m in row['order']) or len(row['order']) != len(members) or set(row['order']) != set(members):
         raise ValueError('Порядок должен включать каждую VM ровно один раз.')
-    if row['links'] != []:
-        raise ValueError('Редактор сетей относится к следующему этапу.')
+    if row['schema_version']==1 and row['links'] != []:
+        raise ValueError('Для связей нужна схема стенда 2.')
+    if row['schema_version']==2:
+        from vm_stand_plan import validate_topology
+        validate_topology(row)
     return row
 
 
@@ -74,7 +91,7 @@ class Store:
                     rows.append(self.read(path.stem))
                 except (ValueError, OSError) as error:
                     errors.append(dict(file=path.name, error=str(error)))
-        return dict(rows=rows, errors=errors, schema_version=1)
+        return dict(rows=rows, errors=errors, schema_version=2)
 
     def save(self, incoming, expected):
         row = validate(dict(incoming))
@@ -101,12 +118,18 @@ class Store:
                     stream.write(content)
                     stream.flush()
                     os.fsync(stream.fileno())
-                self.safe(path)
-                os.replace(temporary, path)
+                replace_file(temporary,path,self.safe)
             finally:
                 if temporary is not None and temporary.exists():
                     temporary.unlink()
             return row
+
+    def remove(self,key,expected):
+        with vm_lock(self.root,'stand-'+identifier(key)):
+            row=self.read(key)
+            if type(expected) is not int or row['revision']!=expected:raise ValueError('Стенд изменился. Обнови список.')
+            path=self.folder/(key+'.json');self.safe(path);path.unlink()
+            return dict(removed=key,vm_files_changed=False,runtime_preserved=True)
 
 
 def create(name, members):

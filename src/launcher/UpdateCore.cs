@@ -152,6 +152,7 @@ namespace QemuM.Update {
             foreach(string path in Directory.EnumerateDirectories(directory))Inventory(root,path,files);
         }
         public static Package Stage(string zip,string expectedHash,string root,Action<int,int> progress=null,string preparedId=null){
+            AssertNoStandOperations(root);
             Guid preparedGuid;if(preparedId!=null&&!Guid.TryParseExact(preparedId,"N",out preparedGuid))throw new IOException("Некорректный ID подготовки.");
             NoLinks(root);CheckHash(Hash(zip),expectedHash);
             string stage=Path.Combine(root,"staging",Guid.NewGuid().ToString("N"));
@@ -222,6 +223,7 @@ namespace QemuM.Update {
             VerifyManifest(backup,state.old_manifest);Directory.Move(backup,target);FinishRepair(root,state);return false;
         }
         public static bool RepairSameVersion(string root,string zip,string expectedHash,Action<int,int> progress=null,Feed expectedFeed=null){
+            AssertNoStandOperations(root);
             RecoverRepair(root);
             if(File.Exists(Path.Combine(root,"repair.json")))throw new IOException("Сначала запусти и проверь уже переустановленную версию.");
             var active=Current(root);if(active==null)throw new IOException("Установка не найдена.");
@@ -252,13 +254,25 @@ namespace QemuM.Update {
         }
         public static void CompleteRepair(string root,string version){var state=RepairState(root);if(state!=null&&state.version==version){VerifyManifest(Path.Combine(root,"versions",version),state.new_manifest);FinishRepair(root,state);}}
         public static void Activate(string root,Package package){
+            AssertNoStandOperations(root);
             if(File.Exists(Path.Combine(root,"repair.json")))throw new IOException("Сначала заверши проверку переустановки текущей версии.");
             Validate(package);var previous=Current(root);
             if(previous!=null&&Compare(package.version,previous.current)<=0)throw new IOException("Обычное обновление не понижает версию.");
             VerifyDirectory(Path.Combine(root,"versions",package.version));
             AtomicJson(Path.Combine(root,"active.json"),new Active{schema=1,current=package.version,previous=previous==null?null:previous.current});
         }
+        public static void AssertNoStandOperations(string root){
+            string active=Path.Combine(root,"data","stand-runtime","active");NoLinks(active);
+            if(!Directory.Exists(active))return;
+            foreach(string path in Directory.EnumerateFiles(active,"*.lock")){
+                NoLinks(path);
+                try{using(var probe=new FileStream(path,FileMode.Open,FileAccess.ReadWrite,FileShare.None)){} }
+                catch(FileNotFoundException){} // The worker completed between enumeration and open.
+                catch(IOException error){throw new IOException("Выполняется операция стенда. Дождись её завершения или отмены перед обновлением.",error);}
+            }
+        }
         public static bool Rollback(string root,string failed){
+            AssertNoStandOperations(root);
             var repair=RepairState(root);
             if(repair!=null&&repair.version==failed){
                 string target=Path.Combine(root,"versions",failed),backup=RepairBackup(root,repair),rejected=Path.Combine(root,"repairs",repair.id,"rejected");

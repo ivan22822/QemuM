@@ -76,6 +76,52 @@ def normalized(data):
 
 
 class Service:
+    def stand_remove(self,args):
+        from vm_stand_lifecycle import remove
+        return remove(self.stand_runtime,args.get('id'),args.get('revision'),args.get('confirm'))
+
+    def stand_duplicate(self,args):
+        from vm_stand_lifecycle import duplicate
+        return duplicate(self.stand_runtime,args.get('id'),args.get('revision'),args.get('name'))
+
+    def stand_reconcile(self,args):
+        from vm_stand_lifecycle import reconcile
+        return reconcile(self.stand_runtime,args.get('id'),args.get('revision'),args.get('confirm'))
+
+    def stand_report_preview(self,args):
+        from vm_stand_lifecycle import report
+        text=report(self.stand_runtime,args.get('id'))
+        with self.stand_runtime.guard:
+            self.stand_runtime._cleanup()
+            if len(self.stand_runtime.exports)>=16:raise ValueError('Закрой старые предпросмотры или дождись их истечения.')
+            token=uuid.uuid4().hex;self.stand_runtime.exports[token]=dict(text=text,expires=time.monotonic()+120)
+        return dict(id=token,text=text,sha256=hashlib.sha256(text.encode('utf-8')).hexdigest())
+
+    def stand_report_save(self,args):
+        from vm_stand_lifecycle import save_report
+        return save_report(self.stand_runtime,args.get('id'),args.get('path'),args.get('sha256'))
+
+    def stand_plan(self,args):
+        return self.stand_runtime.make_plan(args.get('id'),args.get('action','start'),args.get('include_existing',False),args.get('force',False))
+
+    def stand_execute(self,args):
+        return self.stand_runtime.execute(args.get('plan_id'),args.get('confirm'))
+
+    def stand_status(self,args):
+        return self.stand_runtime.status(args.get('operation_id'))
+
+    def stand_cancel(self,args):
+        return self.stand_runtime.cancel(args.get('operation_id'))
+
+    def stand_overview(self,args):
+        return self.stand_runtime.overview(args.get('id'))
+
+    def stand_discard(self,args):
+        return self.stand_runtime.discard(args.get('plan_id'))
+
+    def stand_activity(self,args):
+        return self.stand_runtime.activity()
+
     def stand_list(self, args):
         from vm_stands import Store
         return Store(self.root).list()
@@ -86,9 +132,20 @@ class Service:
         if not isinstance(row, dict):
             raise ValueError('Нужен объект стенда.')
         validate(row)
+        with vm_lock(self.root,'stand-execution-'+row['id']):
+            return self._stand_save(args,row)
+
+    def _stand_save(self,args,row):
+        from vm_stands import Store
         available = {path.stem for path in vm.ROOT.glob('*.json')}
         if any(name not in available for name in row.get('members', [])):
             raise ValueError('Одна из выбранных VM отсутствует. Обнови библиотеку.')
+        if row['schema_version']==2:
+            from vm_stand_plan import effective
+            configs={name:vm.load(name) for name in row['members']}
+            effective(row,configs,{link['id']:20000+index for index,link in enumerate(row['links'])})
+            for name,data in configs.items():
+                self.stopped(name,data)
         return Store(self.root).save(row, args.get('revision'))
 
     def profile_list(self, args):
@@ -121,6 +178,8 @@ class Service:
         self.inventory_running = False
         self.pool = ThreadPoolExecutor(max_workers=4)
         self.schedule_stop=threading.Event()
+        from vm_stand_runtime import Runtime,Host
+        self.stand_runtime=Runtime(self.root,Host(self))
 
     def start_schedules(self):
         def work():
@@ -348,13 +407,15 @@ class Service:
             self.event(name, 'VM создана')
             return dict(name=name)
 
-    def start(self, args):
+    def start(self, args, *, stand_data=None, expected_hash=None):
         name = self.name(args)
         with vm_lock(vm.ROOT, name):
             from vm_snapshot_store import assert_can_start
             assert_can_start(vm.ROOT, name)
             data = vm.load(name)
             before = vm.config_path(name).read_bytes()
+            if stand_data is not None and hashlib.sha256(before).hexdigest()!=expected_hash:
+                raise ValueError('Параметры VM изменились после плана стенда.')
             try:
                 self.query(name, data)
             except (ConnectionRefusedError, TimeoutError):
@@ -381,7 +442,16 @@ class Service:
                 raise ValueError('Параметры изменились во время подготовки запуска.')
             old_port = vm.qmp_port(name, data)
             old_data = data
-            data, before, port, backup = vm.prepare_qmp_port(name, data, before, lambda: self.stopped(name, old_data))
+            if stand_data is None:
+                data, before, port, backup = vm.prepare_qmp_port(name, data, before, lambda: self.stopped(name, old_data))
+            else:
+                # A confirmed stand never rewrites standalone configuration to assign ports/network.
+                port=vm.checked_qmp_port(name,data);backup=None
+                if vm.qmp_bind_error(port):raise ValueError('QMP-порт занят после проверки стенда.')
+                from copy import deepcopy
+                candidate=deepcopy(data)
+                if 'network_adapters' in stand_data:candidate['network_adapters']=stand_data['network_adapters']
+                validate_network(candidate);data=candidate
             if backup:
                 self.event(name, 'QMP-порт {} недоступен; выбран {}. Копия: {}'.format(old_port, port, backup.name))
             if selected:
@@ -714,6 +784,7 @@ class Service:
                     events=[item for item in self.events.get(name, []) if item['id'] > since])
 
     def close(self):
+        self.stand_runtime.close()
         # Closing the frontend never terminates detached guest processes.
         self.schedule_stop.set()
         self.pool.shutdown(wait=False)
@@ -729,7 +800,8 @@ COMMANDS = {'snapshot_export_plan','snapshot_job_start','snapshot_job_status','s
             'snapshots', 'snapshot_plan', 'snapshot_offline_plan', 'snapshot_operation_plan', 'snapshot_execute', 'snapshot_recover', 'snapshot_adopt', 'snapshot_metadata', 'snapshot_schedule', 'snapshot_chain_plan', 'snapshot_ram_restore', 'delete_plan', 'delete', 'mode', 'doctor', 'report_save', 'logs', 'support_export'}
 
 
-COMMANDS |= {'stand_list', 'stand_save'}
+COMMANDS |= {'stand_list', 'stand_save','stand_plan','stand_execute','stand_status','stand_cancel','stand_overview','stand_discard','stand_activity'}
+COMMANDS |= {'stand_remove','stand_duplicate','stand_reconcile','stand_report_preview','stand_report_save'}
 
 
 def serve(root=None):

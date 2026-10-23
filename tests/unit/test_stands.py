@@ -12,6 +12,15 @@ from vm_stands import Store, create, validate
 
 
 class StandTests(unittest.TestCase):
+    def test_transient_windows_replace_denial_does_not_remove_old_file(self):
+        from vm_stands import replace_file
+        denied=PermissionError('temporary sharing conflict');denied.winerror=5
+        with patch('vm_stands.os.replace',side_effect=[denied,None]) as rename,patch('vm_stands.time.sleep'):
+            replace_file('private-source','private-destination',lambda p:None)
+            self.assertEqual(rename.call_count,2)
+        with patch('vm_stands.os.replace',side_effect=denied) as rename,patch('vm_stands.time.sleep'):
+            with self.assertRaises(PermissionError):replace_file('private-source','private-destination',lambda p:None)
+            self.assertEqual(rename.call_count,6)
     def setUp(self):
         self.temporary = tempfile.TemporaryDirectory()
         self.addCleanup(self.temporary.cleanup)

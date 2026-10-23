@@ -63,6 +63,7 @@ bin/
 htmlcov/
 
 # Credentials and local overrides
+**/stand-runtime/
 .env
 .env.*
 !.env.example

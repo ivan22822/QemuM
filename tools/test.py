@@ -43,7 +43,7 @@ def gui_tests(include_qemu=False,only=None):
     compile_launcher(bootstrap, 'BootstrapTests', [ROOT / 'tests/gui/BootstrapTests.cs', ROOT / 'src/launcher/Setup.cs', ROOT / 'src/launcher/Launcher.cs'])
     subprocess.run([str(bootstrap), str(output), str(output)], timeout=60, creationflags=HIDDEN, check=True)
     print('BootstrapTests: passed')
-    names = ['EditorTests', 'MenuTests', 'SelectorTests', 'InputStyleTests', 'AppearanceTests', 'SupportTests', 'ProfileTests', 'SnapshotUiTests', 'StandsTests']
+    names = ['EditorTests', 'MenuTests', 'SelectorTests', 'InputStyleTests', 'AppearanceTests', 'SupportTests', 'ProfileTests', 'SnapshotUiTests', 'StandsTests','StandsScaleTests']
     if include_qemu:
         names.append('GuiTests')
         names.append('SnapshotRpcTests')
@@ -56,7 +56,7 @@ def gui_tests(include_qemu=False,only=None):
             iso, sentinel = fixture(root)
             if name == 'SupportTests':
                 args = [str(output), str(root)]
-            elif name in ('AppearanceTests', 'ProfileTests', 'StandsTests'):
+            elif name in ('AppearanceTests', 'ProfileTests', 'StandsTests','StandsScaleTests'):
                 args = [str(root), str(output)]
             elif name in ('GuiTests','SnapshotRpcTests'):
                 args = [str(output), str(root), sys.executable]
@@ -78,7 +78,7 @@ def gui_tests(include_qemu=False,only=None):
                 args = [str(output / 'menu-results.json'), str(root)]
             else:
                 args = [str(output)]
-            subprocess.run([str(exe), *args], timeout=180 if name in ('GuiTests','SnapshotRpcTests') else 60,
+            subprocess.run([str(exe), *args], timeout=180 if name in ('GuiTests','SnapshotRpcTests','StandsScaleTests') else 60,
                            creationflags=HIDDEN, check=True)
             assert iso.read_bytes() == sentinel, 'Test altered its placeholder ISO'
         print(name + ': passed')
@@ -100,6 +100,7 @@ def main():
     if args.gui or args.qemu:
         gui_tests(args.qemu)
     if args.qemu:
+        subprocess.run([sys.executable, str(ROOT / 'tools/test_stands.py'), '--qemu'], check=True)
         subprocess.run([sys.executable, str(ROOT / 'tools' / 'test_vdi.py')], check=True)
         subprocess.run([sys.executable, str(ROOT / 'tools' / 'test_snapshots.py')], check=True)
         subprocess.run([sys.executable, str(ROOT / 'tools' / 'test_snapshot_offline_transactions.py')], check=True)

@@ -9,7 +9,7 @@ ROOT = Path(__file__).resolve().parents[1]
 FORBIDDEN_SUFFIXES = {'.exe', '.dll', '.pdb', '.iso', '.img', '.qcow', '.qcow2', '.vdi', '.vmdk',
     '.vhd', '.vhdx', '.raw', '.nvram', '.zip', '.7z', '.bak', '.log', '.pem', '.key', '.pfx', '.kdbx'}
 FORBIDDEN_PARTS = {'machines', 'logs', 'backups', 'parameter-backups', 'runtime', 'snapshot-state', 'stands', 'build', 'dist',
-                   'releases', '__pycache__', 'node_modules', '.venv', 'sources',
+    'releases', '__pycache__', 'node_modules', '.venv', 'sources', 'stand-runtime',
                    'data', 'downloads', 'staging', 'health', 'versions'}
 SECRETS = [
     re.compile(rb'-----BEGIN (?:RSA |EC |OPENSSH |DSA )?PRIVATE KEY-----'),

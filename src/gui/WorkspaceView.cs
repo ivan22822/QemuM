@@ -125,8 +125,12 @@ sealed class ScrollSurface : BufferedPanel {
         try {
             int width=Math.Max(1,ClientSize.Width-Padding.Horizontal-bar.Width);
             content.MinimumSize=new Size(width,0); content.MaximumSize=new Size(width,0);
-            content.Width=width; content.PerformLayout();
-            int height=content.GetPreferredSize(new Size(width,0)).Height;
+            content.Width=width;
+            // Measure from an unconstrained height; a previously stretched table
+            // must not hide rows below its old viewport height.
+            content.Height=1;content.PerformLayout();
+            int children=content.Controls.Cast<Control>().Where(c=>c.Visible).Select(c=>c.Bottom+c.Margin.Bottom).DefaultIfEmpty(0).Max()+content.Padding.Bottom;
+            int height=Math.Max(children,content.GetPreferredSize(new Size(width,0)).Height);
             content.Height=height;
             bar.SetRange(height,Math.Max(0,ClientSize.Height-Padding.Vertical));
             bar.Visible=bar.Maximum>0;

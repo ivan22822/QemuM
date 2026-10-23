@@ -255,12 +255,19 @@ sealed partial class MainWindow : Form {
     }
     void Fill(object result) { rows=J.A(J.V(result,"rows")).ToList();mode=J.S(result,"mode","normal");updatingMode=true;launchMode.SelectedIndex=mode=="snapshot"?1:0;updatingMode=false;if(selected==null || !rows.Any(row=>J.S(row,"name")==selected))selected=rows.Count>0?J.S(rows[0],"name"):null;RenderCards();SelectVm(selected);if(standMode)LoadStands();footer.Text="Машин: "+rows.Count+" · все действия доступны в интерфейсе"; }
     public void Reload() { if(Backend!=null)Run("Обновляю список…",()=>Backend.Call("list"),Fill); }
-    public object Row(string name) { return rows.FirstOrDefault(row=>J.S(row,"name")==name); }
+    List<object> indexedRows;readonly Dictionary<string,object> rowIndex=new Dictionary<string,object>(StringComparer.Ordinal);
+    public object Row(string name) {
+        if(String.IsNullOrEmpty(name))return null;
+        if(!Object.ReferenceEquals(indexedRows,rows)||rowIndex.Count!=rows.Count){
+            rowIndex.Clear();foreach(var row in rows){string key=J.S(row,"name");if(!rowIndex.ContainsKey(key))rowIndex[key]=row;}indexedRows=rows;
+        }
+        object value;return rowIndex.TryGetValue(name,out value)?value:null;
+    }
     public string State(string name) { string result;return name!=null && states.TryGetValue(name,out result)?result:"checking"; }
     void RenderCards() {
         if(standMode){RenderStands();return;}
         int scroll=libraryScroll.ScrollOffset;
-        cards.SuspendLayout();foreach(Control child in cards.Controls.Cast<Control>().ToArray())child.Dispose();cards.Controls.Clear();
+        libraryScroll.SuspendLayout();cards.SuspendLayout();foreach(Control child in cards.Controls.Cast<Control>().ToArray())child.Dispose();cards.Controls.Clear();
         foreach(object row in rows) {
             string name=J.S(row,"name");object data=J.V(row,"data");string label=J.S(data,"label",name);
             if((name+" "+label).IndexOf(search.Text,StringComparison.OrdinalIgnoreCase)<0)continue;
@@ -271,7 +278,7 @@ sealed partial class MainWindow : Form {
             cards.Controls.Add(card);
         }
         if(rows.Count==0)cards.Controls.Add(Theme.Label("Виртуальных машин пока нет.\r\nНажми «Добавить VM».",10,Theme.Muted));
-        cards.ResumeLayout();libraryScroll.PerformLayout();libraryScroll.ScrollOffset=scroll;
+        cards.ResumeLayout();libraryScroll.ResumeLayout(true);libraryScroll.PerformLayout();libraryScroll.ScrollOffset=scroll;
     }
     internal void SaveAppearanceAfterOperation(string name,string choice){
         try{Visuals.SaveChoice(name,choice);}catch(Exception error){
@@ -288,6 +295,7 @@ sealed partial class MainWindow : Form {
     }
     void SelectVm(string name) {
         if(standMode && selectedStand!=null)return;
+        foreach(Control sibling in detail.Controls)sibling.Visible=!Object.ReferenceEquals(sibling,standDetail);
         bool changed=selected!=name;selected=name;var row=Row(name);object data=J.V(row,"data");
         RefreshEmblem(name,data);
         heading.Text=row==null?"Выбери виртуальную машину":J.S(data,"label",name);heading.ForeColor=Theme.Text;
@@ -355,7 +363,7 @@ sealed partial class MainWindow : Form {
     public void RunDoctor(string name) {if(Backend==null)return;Run("VM Doctor · выполняю проверки…",()=>Backend.Call("doctor",name==null?J.O():J.O("name",name)),result=>{var dialog=new DoctorWindow(this,result);dialog.Show(this);});}
     void OnClosing(object sender,FormClosingEventArgs args) {
         if(demo)return;
-        if(Busy||SnapshotJobs>0){args.Cancel=true;if(!Program.TestMode)MessageBox.Show(this,"Дождись завершения текущей операции, чтобы не прервать работу с дисками.","VM Manager");return;}
+        if(Busy||SnapshotJobs>0||StandJobs>0){args.Cancel=true;if(!Program.TestMode)MessageBox.Show(this,"Дождись завершения операции. Для стенда можно отменить будущие этапы в окне его состояния, затем закрыть менеджер.","VM Manager");return;}
         bool running=rows.Any(row=>State(J.S(row,"name"))!="stopped"&&State(J.S(row,"name"))!="error");
         if(!Program.TestMode && !closing && running && MessageBox.Show(this,"Закрыть менеджер? Работающие VM продолжат работу. Если статус неизвестен, VM также может быть запущена.","Закрытие менеджера",MessageBoxButtons.YesNo,MessageBoxIcon.Information)!=DialogResult.Yes){args.Cancel=true;return;}
         closing=true;timer.Stop();foreach(var window in panels.Values.Cast<Form>().Concat(logs.Values).ToArray())window.Close();if(Backend!=null)Backend.Dispose();
