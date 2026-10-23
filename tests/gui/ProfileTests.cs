@@ -16,6 +16,17 @@ static class ProfileTests {
         try{
             using(var backend=new Backend(args[0])){
                 backend.Open();string vmPath=Path.Combine(args[0],"machines","test.json");byte[] before=File.ReadAllBytes(vmPath);object selected;
+                using(var dialog=new LaunchProfileDialog(backend,"whpx-qemu64")){
+                    dialog.Show();Application.DoEvents();
+                    Check(Field<FieldInput>(dialog,"cpu").Text=="qemu64,+ssse3,+sse4.1,+sse4.2,+popcnt","qemu64 preset preserves the reported CPU features");
+                    Check(Field<FieldInput>(dialog,"options").Text=="","qemu64 preset uses ordinary WHPX");
+                    Click(dialog,"Выбрать");
+                    using(var selector=LaunchProfiles.Selector()){
+                        var row=dialog.Selected;LaunchProfiles.Load(selector,J.O("launch_profile",J.S(row,"id"),"launch_profile_settings",J.V(row,"settings")));
+                        var snapshot=J.O();LaunchProfiles.Apply(selector,snapshot);
+                        Check(J.S(J.V(snapshot,"launch_profile_settings"),"cpu")=="qemu64,+ssse3,+sse4.1,+sse4.2,+popcnt","qemu64 selection saves its CPU settings into VM parameters");
+                    }
+                }
                 using(var dialog=new LaunchProfileDialog(backend,"whpx-cpu-limited")){
                     dialog.Show();Application.DoEvents();
                     Check(Field<FieldInput>(dialog,"cpu").Text=="host,mpx=off,apxf=off","experimental preset masks APX and MPX");
@@ -48,7 +59,7 @@ static class ProfileTests {
                     dialog.Show();Application.DoEvents();Check(!Field<FieldInput>(dialog,"cpu").Enabled,"auto algorithm is read-only");dialog.Close();
                 }
             }
-            File.WriteAllText(Path.Combine(args[1],"profile-results.json"),"{\"passed\":8}");return 0;
+            File.WriteAllText(Path.Combine(args[1],"profile-results.json"),"{\"passed\":11}");return 0;
         }catch(Exception error){File.WriteAllText(Path.Combine(args[1],"profile-error.txt"),error.ToString());return 1;}
     }
 }

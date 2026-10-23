@@ -9,6 +9,16 @@ from vm_profile_store import defaults
 
 
 class CpuCompatibilityTests(unittest.TestCase):
+    def test_qemu64_profile_matches_reported_cpu_and_saved_settings(self):
+        preset = next(row for row in defaults() if row['id']=='whpx-qemu64')
+        expected = ['-accel','whpx','-cpu','qemu64,+ssse3,+sse4.1,+sse4.2,+popcnt']
+        self.assertEqual(profiles.accelerator_args('whpx-qemu64'), expected)
+        self.assertEqual(profiles.accelerator_args('whpx',preset['settings']), expected)
+        check=Mock(return_value={'state':'ok','detail':'paused probe ready'})
+        data={'launch_profile':'whpx-qemu64','launch_profile_settings':preset['settings']}
+        self.assertEqual(profiles.choose('qemu',data,check)[0],'whpx')
+        check.assert_called_once_with('qemu','whpx',settings=preset['settings'])
+
     def test_opt_in_mask_is_used_by_both_paths(self):
         preset = next(row for row in defaults() if row['id']=='whpx-cpu-limited')
         expected = ['-accel','whpx','-cpu','host,mpx=off,apxf=off']

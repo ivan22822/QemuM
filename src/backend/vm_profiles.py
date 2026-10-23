@@ -9,11 +9,12 @@ import tempfile
 import threading
 import time
 
-PROFILES = ('whpx', 'auto', 'tcg', 'whpx-compatible', 'whpx-cpu-limited')
+PROFILES = ('whpx', 'auto', 'tcg', 'whpx-compatible', 'whpx-cpu-limited', 'whpx-qemu64')
 LABELS = {'whpx': 'WHPX · аппаратное ускорение', 'auto': 'Авто · проверить WHPX, иначе TCG',
           'tcg': 'TCG · программная эмуляция, медленнее',
           'whpx-compatible': 'WHPX · совместимый (kernel-irqchip=off)',
-          'whpx-cpu-limited': 'WHPX · без APX/MPX (экспериментальный)'}
+          'whpx-cpu-limited': 'WHPX · без APX/MPX (экспериментальный)',
+          'whpx-qemu64': 'WHPX · qemu64 + SSE4/POPCNT'}
 
 
 def profile(data):
@@ -90,11 +91,12 @@ def accelerator_args(accelerator, settings=None):
             raise ValueError('Ускоритель не соответствует сохранённому профилю.')
         return ['-accel', accelerator + (',' + settings['options'] if settings['options'] else ''),
                 '-cpu', settings['cpu']]
-    if accelerator not in ('whpx', 'whpx-compatible', 'whpx-cpu-limited', 'tcg'):
+    if accelerator not in ('whpx', 'whpx-compatible', 'whpx-cpu-limited', 'whpx-qemu64', 'tcg'):
         raise ValueError('Сначала выбери фактическое ускорение WHPX или TCG.')
-    value = {'whpx': 'whpx', 'whpx-compatible': 'whpx,kernel-irqchip=off', 'whpx-cpu-limited': 'whpx',
+    value = {'whpx': 'whpx', 'whpx-compatible': 'whpx,kernel-irqchip=off', 'whpx-cpu-limited': 'whpx', 'whpx-qemu64': 'whpx',
              'tcg': 'tcg,thread=multi'}[accelerator]
-    cpu = 'host,mpx=off,apxf=off' if accelerator == 'whpx-cpu-limited' else 'max' if accelerator == 'tcg' else 'host'
+    cpu = {'whpx-cpu-limited': 'host,mpx=off,apxf=off',
+           'whpx-qemu64': 'qemu64,+ssse3,+sse4.1,+sse4.2,+popcnt', 'tcg': 'max'}.get(accelerator, 'host')
     return ['-accel', value, '-cpu', cpu]
 
 
