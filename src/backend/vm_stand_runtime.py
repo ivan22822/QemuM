@@ -3,7 +3,7 @@
 No shells and no automatic rollback/kill. Cancellation leaves started guests alive.
 Socket listeners are inspected through the OS owner table, never probed by connecting.
 """
-from contextlib import ExitStack
+from contextlib import ExitStack,contextmanager,nullcontext
 from copy import deepcopy
 import hashlib
 import json
@@ -40,7 +40,33 @@ def reserve(port=0):
 
 
 class Host:
-    def __init__(self,service):self.service=service
+    def __init__(self,service):self.service=service;self._planning=threading.local()
+    @contextmanager
+    def planning(self):
+        # Preview-only, request-local and thread-local. Execution must always
+        # perform fresh process/QMP/storage checks, including after confirmation.
+        previous=getattr(self._planning,'checks',None)
+        self._planning.checks=dict(identities={},stopped=set(),probes={})
+        try:yield
+        finally:self._planning.checks=previous
+    def _checks(self):return getattr(self._planning,'checks',None)
+    def _processes(self):
+        from vm_backend import qemu_processes
+        checks=self._checks()
+        if checks is None:return qemu_processes()
+        if 'processes' not in checks:checks['processes']=qemu_processes()
+        return checks['processes']
+    def _stopped(self,name,data,qmp_checked=False):
+        checks=self._checks()
+        if checks is None:return self.service.stopped(name,data)
+        key=(name,fingerprint(data))
+        if key in checks['stopped']:return
+        from vm_storage import assert_stopped,media
+        def query():
+            if qmp_checked:raise ConnectionRefusedError()
+            return self.service.query(name,data,timeout=.4)
+        assert_stopped(name,media(data),query,self._processes)
+        checks['stopped'].add(key)
     def config(self,name):
         import vm
         return vm.load(name)
@@ -51,6 +77,11 @@ class Host:
         import vm
         return vm_lock(vm.ROOT,name)
     def identity(self,name,data):
+        checks=self._checks();key=(name,fingerprint(data))
+        if checks is None:return self._identity(name,data)
+        if key not in checks['identities']:checks['identities'][key]=self._identity(name,data)
+        return deepcopy(checks['identities'][key])
+    def _identity(self,name,data):
         import vm
         # QMP validates the VM's name, OS handle anchors PID and creation time.
         try:
@@ -59,7 +90,7 @@ class Host:
         except (ConnectionRefusedError,TimeoutError):
             # Windows may time out instead of refusing an unused loopback port.
             # Only a complete process/media inventory may prove the guest stopped.
-            self.service.stopped(name,data)
+            self._stopped(name,data,qmp_checked=True)
             return None
         except (OSError,ValueError) as error:raise Unknown('Не удалось подтвердить QMP '+name+': '+str(error)) from error
         with ExitStack() as stack:
@@ -99,9 +130,14 @@ class Host:
             if kind=='iso' and data.get('disk_path'):continue
             if not path.is_file():raise ValueError('Отсутствует образ '+name+': '+str(path))
         if not running:
-            self.service.stopped(name,data)
+            self._stopped(name,data)
             if vm.qmp_bind_error(vm.qmp_port(name,data)):raise Conflict('QMP-порт недоступен: '+name)
-            accelerator,_=choose(exe,data)
+            checks=self._checks();stat=Path(exe).stat()
+            key=(str(Path(exe).resolve()),stat.st_size,stat.st_mtime_ns,fingerprint({k:data.get(k) for k in ('launch_profile','launch_profile_settings')}))
+            if checks is not None and key in checks['probes']:accelerator=checks['probes'][key]
+            else:
+                accelerator,_=choose(exe,data)
+                if checks is not None:checks['probes'][key]=accelerator
             vm.build_args(name,data,accelerator=accelerator)
     def ports(self,check_names=None):
         import vm
@@ -134,9 +170,16 @@ class Host:
         self.service.stopped(name,self.config(name))
     def capacity(self):
         import vm
-        running=[]
+        running=[];estimated=self._checks() is not None
+        records=self._processes() if estimated else None
         for name in vm.entries():
             data=vm.load(name)
+            if estimated:
+                from vm_library import process_state
+                # Resource totals are estimates, never proof of ownership or
+                # permission to launch/stop a VM. Count uncertain rows conservatively.
+                if process_state(name,data,records)!='stopped':running.append(data)
+                continue
             try:
                 if self.identity(name,data):running.append(data)
             except Unknown:pass
@@ -147,7 +190,7 @@ class Host:
                 _fields_=[('length',ctypes.c_ulong),('load',ctypes.c_ulong)]+[(n,ctypes.c_ulonglong) for n in ('total','available','page_total','page_available','virtual_total','virtual_available','extended')]
             memory=Memory();memory.length=ctypes.sizeof(Memory)
             if ctypes.windll.kernel32.GlobalMemoryStatusEx(ctypes.byref(memory)):available=memory.available//(1024*1024)
-        return dict(host_cores=os.cpu_count(),available_ram_mb=available,running_ram_mb=sum(d.get('ram_mb',0) for d in running),running_cores=sum(d.get('cores',0) for d in running))
+        return dict(host_cores=os.cpu_count(),available_ram_mb=available,running_ram_mb=sum(d.get('ram_mb',0) for d in running),running_cores=sum(d.get('cores',0) for d in running),estimated=estimated)
 
 
 class Runtime:
@@ -185,7 +228,7 @@ class Runtime:
             self.jobs.pop(key,None);self.plans.pop(key,None)
     def make_plan(self,key,action='start',include_existing=False,force=False):
         if action not in ('start','stop') or type(include_existing) is not bool or type(force) is not bool:raise ValueError('Некорректное действие стенда.')
-        with self.guard:
+        with self.guard,(self.host.planning() if hasattr(self.host,'planning') else nullcontext()):
             self._cleanup()
             if self.closed:raise Conflict('Сервис закрывается.')
             if len(self.plans)>=32:raise Conflict('Слишком много планов. Дождись истечения старых планов.')

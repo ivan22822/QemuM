@@ -156,7 +156,7 @@ sealed partial class MainWindow : Form {
         libraryHeader.Controls.Add(category);libraryHeader.Controls.Add(library);libraryHeader.Controls.Add(libraryCount);libraryHeader.Controls.Add(search);libraryHeader.Controls.Add(more);
         cards.WrapContents=false;cards.BackColor=Theme.Panel;
         libraryScroll=new ScrollSurface(cards) { BackColor=Theme.Panel };
-        cards.SizeChanged+=(sender,args)=>{foreach(Control card in cards.Controls)card.Width=cards.Width;};
+        cards.SizeChanged+=(sender,args)=>{foreach(Control card in cards.Controls){int width=Math.Max(1,cards.Width-card.Margin.Horizontal);if(standMode&&card is Button&&card.MaximumSize.Width!=width)card.MaximumSize=new Size(width,0);if(card.Width!=width)card.Width=width;}};
         var tools=Theme.Flow(true);tools.Dock=DockStyle.Bottom;tools.BackColor=Theme.Panel;tools.Padding=new Padding(9,20,0,0);
         var add=Theme.Button("＋  Новая машина",()=>{if(!standMode)CreateVm();});add.AutoSize=false;add.Width=208;tools.Controls.Add(add);
         var doctor=Theme.Button("VM Doctor",()=>RunDoctor(null));doctor.BackColor=Theme.Panel;doctor.ForeColor=Theme.Muted;doctor.AutoSize=false;doctor.Width=208;doctor.Height=34;doctor.MinimumSize=Size.Empty;tools.Controls.Add(doctor);
@@ -301,6 +301,8 @@ sealed partial class MainWindow : Form {
         heading.Text=row==null?"Выбери виртуальную машину":J.S(data,"label",name);heading.ForeColor=Theme.Text;
         description.Text=row==null?"Добавь машину или выбери её в списке.":"Твоя лаборатория. Всё под контролем.";resources.ShowData(data,row!=null);
         breadcrumb.Text=row==null?"Виртуальные машины":"Виртуальные машины   /   "+name;
+        var standOwner=standMode&&standSelectedVm==name?stands.FirstOrDefault(item=>J.S(item,"id")==standSelectedParent):null;
+        if(standOwner!=null)breadcrumb.Text="Стенды / "+J.S(standOwner,"name")+" / "+name;
         libraryCount.Text="Всего машин: "+rows.Count;
         var adapters=J.A(J.V(J.V(row,"network_view"),"adapters"));
         if(adapters.Length==0&&J.D(data).ContainsKey("network_adapters"))adapters=J.A(J.V(data,"network_adapters"));
@@ -309,10 +311,11 @@ sealed partial class MainWindow : Form {
         if(row==null)logPreview.Text="Выбери виртуальную машину.";
         else if(changed){logPreview.Text="Журнал машины: "+name;if(workspace.SelectedIndex==3&&!Busy)ReadLogPreview();}
         status.Text=row==null?"":Theme.State(State(name));status.ForeColor=Theme.StateColor(State(name));actions.Enabled=row!=null && !Busy;
-        foreach(Control card in cards.Controls) {
+        if(!standMode)foreach(Control card in cards.Controls) {
             Color color=Object.Equals(card.Tag,name)?Theme.Card:Theme.Panel;
             if(card.BackColor!=color)card.BackColor=color;
         }
+        else PaintStandStatus();
     }
     void Poll() {
         if(Backend==null || Busy || polling || closing)return;polling=true;

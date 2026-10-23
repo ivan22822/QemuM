@@ -15,6 +15,7 @@ def main():
                         help='official python-3.14.8-embed-amd64.zip; hash is checked')
     parser.add_argument('--previous-package',type=Path,help='previous released app ZIP for an isolated upgrade test')
     parser.add_argument('--launcher',type=Path,help='previously released launcher for compatibility testing')
+    parser.add_argument('--patch', action='store_true', help='test a patch package without building an installer')
     args = parser.parse_args()
     output = ROOT / 'build' / 'test-results'
     output.mkdir(parents=True, exist_ok=True)
@@ -40,7 +41,7 @@ def main():
     subprocess.run([str(exe), str(output), str(OUT / f'QemuM-{VERSION}-app.zip'),
                     str(args.launcher.resolve()) if args.launcher else str(OUT / 'QemuM.exe'), str(args.python_archive.resolve()), '', str(future_zip),
                     str(args.previous_package.resolve()) if args.previous_package else '',str(same_zip),
-                    str(OUT/f'QemuM-{VERSION}-Setup.exe'),str(OUT/'QemuM.exe')],
+                    '' if args.patch else str(OUT/f'QemuM-{VERSION}-Setup.exe'),str(OUT/'QemuM.exe')],
                    timeout=75, creationflags=HIDDEN, check=True)
     print('Release install/startup test passed; existing installations untouched.')
 

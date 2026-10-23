@@ -142,7 +142,13 @@ class PolarButton : Button {
         e.Graphics.Clear(Parent==null?Theme.Bg:Parent.BackColor);e.Graphics.SmoothingMode=SmoothingMode.AntiAlias;
         var bounds=new Rectangle(0,0,Math.Max(1,Width-1),Math.Max(1,Height-1));Color fill=Enabled?BackColor:Theme.Panel;if(Enabled&&hover)fill=ControlPaint.Light(fill,pressed?.05F:.12F);
         using(var path=new GraphicsPath()){const int diameter=14;path.AddArc(bounds.Left,bounds.Top,diameter,diameter,180,90);path.AddArc(bounds.Right-diameter,bounds.Top,diameter,diameter,270,90);path.AddArc(bounds.Right-diameter,bounds.Bottom-diameter,diameter,diameter,0,90);path.AddArc(bounds.Left,bounds.Bottom-diameter,diameter,diameter,90,90);path.CloseFigure();using(var brush=new SolidBrush(fill))e.Graphics.FillPath(brush,path);}
-        TextRenderer.DrawText(e.Graphics,Text,Font,Rectangle.Inflate(bounds,-6,-4),Enabled?ForeColor:Theme.Muted,TextFormatFlags.HorizontalCenter|TextFormatFlags.VerticalCenter|TextFormatFlags.WordBreak);
+        var textBounds=new Rectangle(bounds.Left+Padding.Left,bounds.Top+Padding.Top,Math.Max(1,bounds.Width-Padding.Horizontal),Math.Max(1,bounds.Height-Padding.Vertical));
+        var flags=TextFormatFlags.WordBreak;
+        if(TextAlign==ContentAlignment.TopCenter||TextAlign==ContentAlignment.MiddleCenter||TextAlign==ContentAlignment.BottomCenter)flags|=TextFormatFlags.HorizontalCenter;
+        else if(TextAlign==ContentAlignment.TopRight||TextAlign==ContentAlignment.MiddleRight||TextAlign==ContentAlignment.BottomRight)flags|=TextFormatFlags.Right;
+        if(TextAlign==ContentAlignment.MiddleLeft||TextAlign==ContentAlignment.MiddleCenter||TextAlign==ContentAlignment.MiddleRight)flags|=TextFormatFlags.VerticalCenter;
+        else if(TextAlign==ContentAlignment.BottomLeft||TextAlign==ContentAlignment.BottomCenter||TextAlign==ContentAlignment.BottomRight)flags|=TextFormatFlags.Bottom;
+        TextRenderer.DrawText(e.Graphics,Text,Font,textBounds,Enabled?ForeColor:Theme.Muted,flags);
         if(Focused&&ShowFocusCues)ControlPaint.DrawFocusRectangle(e.Graphics,Rectangle.Inflate(bounds,-5,-5),ForeColor,fill);
     }
 }

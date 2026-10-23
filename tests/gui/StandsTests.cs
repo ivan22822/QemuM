@@ -69,6 +69,9 @@ static class StandsTests {
                 var folders=cards.Controls.OfType<Button>().Where(b=>b.Tag!=null).ToArray();
                 folders[0].PerformClick();Application.DoEvents();
                 Check(cards.Controls.OfType<Button>().Count(b=>b.AccessibleDescription=="stand-member")==1,"expanding one folder adds its member only");
+                var memberButton=cards.Controls.OfType<StandMemberButton>().Single();
+                Check(memberButton.Left>=folders[0].Left+20&&memberButton.Right<=folders[0].Right,"stand member is visibly indented and remains inside the group width");
+                Check(memberButton.TextAlign==ContentAlignment.MiddleLeft&&memberButton.Padding.Left>=34,"member names align after a dedicated tree branch gutter");
                 var untouched=folders[1];folders[0].PerformClick();Application.DoEvents();
                 Check(!untouched.IsDisposed&&cards.Controls.Contains(untouched)&&cards.Controls.OfType<Button>().All(b=>b.AccessibleDescription!="stand-member"),"collapse retains unrelated folder controls and removes only children");
                 folders[0].PerformClick();Application.DoEvents();

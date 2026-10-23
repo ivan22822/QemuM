@@ -29,9 +29,12 @@ static class InstallTests {
         Process launcher=null,app=null;
         try{
             Directory.CreateDirectory(root);
+            bool setupVerified=!String.IsNullOrEmpty(args[8]);
+            if(setupVerified){
             var installer=System.Reflection.Assembly.LoadFile(Path.GetFullPath(args[8]));
             Check(ResourceHash(installer,"app.zip")==Core.Hash(args[1]),"published Setup embeds the exact checked app package");
             Check(ResourceHash(installer,"QemuM.exe")==Core.Hash(args[9]),"published Setup embeds the new root launcher");
+            }
             SetupCore.ExtractPython(args[3],Path.Combine(root,"runtime","python"));
             if(args.Length>6&&!String.IsNullOrEmpty(args[6])){var previous=Core.Stage(args[6],Core.Hash(args[6]),root);Core.Activate(root,previous);}
             string userData=Path.Combine(root,"data");Directory.CreateDirectory(userData);
@@ -105,7 +108,7 @@ static class InstallTests {
             Check(File.ReadAllText(Path.Combine(root,"data","future-frontend.txt"))=="protocol-1","different frontend works without Python");
             Check(Core.Current(root).current==future.version,"replacement frontend acknowledged readiness");
             Check(Core.Current(root).previous==package.version,"previous implementation retained");
-            File.WriteAllText(Path.Combine(args[0],"install-results.json"),"{\"passed\":19,\"existing_installation_touched\":false,\"pending_journal_preserved\":true,\"setup_payload_verified\":true,\"same_version_patch_discovered\":true}");
+            File.WriteAllText(Path.Combine(args[0],"install-results.json"),"{\"passed\":"+(setupVerified?19:17)+",\"existing_installation_touched\":false,\"pending_journal_preserved\":true,\"setup_payload_verified\":"+(setupVerified?"true":"false")+",\"same_version_patch_discovered\":true}");
             return 0;
         }catch(Exception error){File.WriteAllText(Path.Combine(args[0],"install-error.txt"),error.ToString());return 1;}
         finally{
