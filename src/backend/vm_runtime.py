@@ -74,6 +74,33 @@ class ProcessWatcher:
             self.kernel.CloseHandle(self.handle)
             self.handle = None
 
+def loopback_connection(port, listener_pid, connector_pid):
+    """Confirm both established ends; a QMP-ready NIC may still be disconnected."""
+    api=ctypes.WinDLL('iphlpapi',use_last_error=True)
+    api.GetExtendedTcpTable.argtypes=[wintypes.LPVOID,ctypes.POINTER(wintypes.DWORD),wintypes.BOOL,wintypes.ULONG,ctypes.c_int,wintypes.ULONG]
+    api.GetExtendedTcpTable.restype=wintypes.DWORD
+    size=wintypes.DWORD()
+    result=api.GetExtendedTcpTable(None,ctypes.byref(size),False,socket.AF_INET,5,0)
+    if result not in (0,122):raise OSError(result,'Не удалось проверить TCP-связь стенда.')
+    class Row(ctypes.Structure):
+        _fields_=[(name,wintypes.DWORD) for name in ('state','local_addr','local_port','remote_addr','remote_port','pid')]
+    local=int.from_bytes(socket.inet_aton('127.0.0.1'),'little')
+    for attempt in range(3):
+        if not 4<=size.value<=16*1024*1024:raise ValueError('Недопустимый размер таблицы TCP.')
+        buffer=ctypes.create_string_buffer(size.value)
+        result=api.GetExtendedTcpTable(buffer,ctypes.byref(size),False,socket.AF_INET,5,0)
+        if result==122:continue
+        if result:raise OSError(result,'Не удалось прочитать TCP-связи стенда.')
+        rows=[];count=wintypes.DWORD.from_buffer_copy(buffer).value
+        if count>(len(buffer)-4)//ctypes.sizeof(Row):raise ValueError('Повреждена таблица TCP.')
+        for index in range(count):
+            row=Row.from_buffer_copy(buffer,4+index*ctypes.sizeof(Row))
+            if row.state==5 and row.local_addr==local and row.remote_addr==local:
+                rows.append((row.pid,socket.ntohs(row.local_port&0xffff),socket.ntohs(row.remote_port&0xffff)))
+        return any(pid==connector_pid and remote==port and (listener_pid,port,own) in rows for pid,own,remote in rows)
+    raise OSError('Таблица TCP менялась во время проверки. Повтори сверку.')
+
+
 def watch_qmp_process(port):
     """Identify the owner of the loopback QMP listener, then keep its process handle."""
     if os.name != 'nt':

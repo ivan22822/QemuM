@@ -36,6 +36,7 @@ static class SelectorTests {
                 Theme.Form(form,480,250);selector.Dock=DockStyle.Top;form.Controls.Add(selector);form.Show();Application.DoEvents();
                 var popup=Field<ToolStripDropDown>(selector,"popup");var list=Field<ThemedList>(selector,"choices");
                 Check(selector.SelectedIndex==0&&selector.Text=="NAT · Интернет","selector initializes its chosen text");
+                selector.Focus();Application.DoEvents();
                 SendMessage(selector.Handle,0x100,new IntPtr((int)Keys.Down),IntPtr.Zero);
                 Check(selector.SelectedIndex==1,"closed selector supports arrow-key selection");
                 for(int i=0;i<15;i++){

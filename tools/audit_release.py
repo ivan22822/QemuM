@@ -13,7 +13,7 @@ def main(patch=False):
                 if path.suffix in ('.py', '.cmd')}
     expected.update({'visual-assets/' + path.name: path
                      for path in (ROOT / 'assets' / 'visual-assets').iterdir() if path.is_file()})
-    for name in ('ALPHA-GUIDE.md', 'UPDATE-PROTOCOL.md','SNAPSHOTS.md'):
+    for name in ('ALPHA-GUIDE.md', 'UPDATE-PROTOCOL.md','SNAPSHOTS.md','STANDS.md','CORE-ULTRA-WHPX.md'):
         expected[name] = ROOT / 'docs' / name
     findings = []
     with zipfile.ZipFile(package) as archive:
@@ -21,6 +21,8 @@ def main(patch=False):
         if len(names) != len(set(names)) or set(names) != set(expected) | {'VMManager.exe', 'QemuM.Update.exe', 'package.json'}:
             findings.append('Unexpected package file list')
         manifest = json.loads(archive.read('package.json'))
+        if archive.read('QemuM.Update.exe') != (OUT/'QemuM.exe').read_bytes():
+            findings.append('Bundled updater does not match the new root launcher')
         if manifest['version'] != VERSION or manifest.get('build',0)!=BUILD_NUMBER or set(manifest['files']) != set(expected) | {'VMManager.exe', 'QemuM.Update.exe'}:
             findings.append('Unexpected manifest')
         for name in names:

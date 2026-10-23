@@ -36,8 +36,11 @@ static class ProfileTests {
                 using(var dialog=new LaunchProfileDialog(backend,"whpx-compatible")){
                     dialog.Show();Application.DoEvents();
                     Check(Field<FieldInput>(dialog,"options").Text=="kernel-irqchip=off","compatible preset loads its options");
+                    Check(Field<ThemedEditor>(dialog,"description").Text.Contains("kernel-irqchip=off"),"preset explains its purpose");
                     Click(dialog,"Создать свой");Field<FieldInput>(dialog,"title").Text="My Intel profile";
+                    Field<ThemedEditor>(dialog,"description").Text="Для лаборатории\r\nПроверка совместимости";
                     Field<FieldInput>(dialog,"cpu").Text="host,vmx=off";Click(dialog,"Сохранить профиль");
+                    Check(Field<ThemedEditor>(dialog,"description").Text.Contains("Для лаборатории"),"custom description reloads after save");
                     Check(J.A(J.V(backend.Call("profile_list",J.O()),"profiles")).Any(row=>J.S(row,"label")=="My Intel profile"),"new profile persists through RPC");
                     using(var image=new Bitmap(dialog.Width,dialog.Height)){dialog.DrawToBitmap(image,dialog.ClientRectangle);image.Save(Path.Combine(args[1],"launch-profiles.png"));}
                     Click(dialog,"Выбрать");selected=dialog.Selected;
@@ -59,7 +62,7 @@ static class ProfileTests {
                     dialog.Show();Application.DoEvents();Check(!Field<FieldInput>(dialog,"cpu").Enabled,"auto algorithm is read-only");dialog.Close();
                 }
             }
-            File.WriteAllText(Path.Combine(args[1],"profile-results.json"),"{\"passed\":11}");return 0;
+            File.WriteAllText(Path.Combine(args[1],"profile-results.json"),"{\"passed\":13}");return 0;
         }catch(Exception error){File.WriteAllText(Path.Combine(args[1],"profile-error.txt"),error.ToString());return 1;}
     }
 }

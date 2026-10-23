@@ -58,6 +58,7 @@ static class LaunchProfiles {
 sealed class LaunchProfileDialog : Form {
     readonly Backend backend;readonly ThemedSelector presets=Theme.Combo(),accelerator=Theme.Combo("WHPX","TCG");
     readonly FieldInput title=Theme.Input(),cpu=Theme.Input(),options=Theme.Input();
+    readonly ThemedEditor description=new ThemedEditor();
     readonly Label hint=Theme.Label("",10,Theme.Muted);object catalog;object[] rows;string editing;
     public object Selected {get;private set;}
     public LaunchProfileDialog(Backend backend,string selected){
@@ -65,10 +66,12 @@ sealed class LaunchProfileDialog : Form {
         var fields=Theme.Fields();Theme.Row(fields,"Сохранённый профиль",presets,true);Theme.Row(fields,"Название",title,true);
         Theme.Row(fields,"Ускоритель",accelerator);Theme.Row(fields,"Модель и опции CPU",cpu);
         Theme.Row(fields,"Опции ускорителя",options,true);
+        description.Height=130;description.Input.MaxLength=2000;description.AccessibleName="Описание профиля";
+        Theme.Row(fields,"Описание — назначение и ограничения профиля",description,true);
         Theme.Row(fields,"",Theme.Label("WHPX: kernel-irqchip=off или nested=off,kernel-irqchip=off\r\nTCG: thread=multi. CPU: host, max или модель с опциями.\r\nБез -accel и -cpu. Доступные опции зависят от сборки QEMU.",10,Theme.Muted),true);
-        var actions=Theme.Flow();actions.Controls.Add(Theme.Button("Создать свой",()=>{editing=null;title.Text="Мой профиль";EnableFields(true);hint.Text="Заполни параметры и нажми «Сохранить профиль».";}));
+        var actions=Theme.Flow();actions.Controls.Add(Theme.Button("Создать свой",()=>{editing=null;title.Text="Мой профиль";description.Text="";EnableFields(true);hint.Text="Заполни параметры и описание, затем нажми «Сохранить профиль».";}));
         actions.Controls.Add(Theme.Button("Сохранить профиль",()=>Safe(()=>{
-            var result=backend.Call("profile_save",J.O("hash",J.S(catalog,"hash"),"profile",J.O("id",editing,"label",title.Text.Trim(),"settings",J.O("accelerator",accelerator.SelectedIndex==0?"whpx":"tcg","cpu",cpu.Text.Trim(),"options",options.Text.Trim()))));
+            var result=backend.Call("profile_save",J.O("hash",J.S(catalog,"hash"),"profile",J.O("id",editing,"label",title.Text.Trim(),"description",description.Text.Trim(),"settings",J.O("accelerator",accelerator.SelectedIndex==0?"whpx":"tcg","cpu",cpu.Text.Trim(),"options",options.Text.Trim()))));
             Reload(J.S(result,"selected_id"));
         }),true));
         actions.Controls.Add(Theme.Button("Удалить свой",()=>Safe(()=>{
@@ -83,9 +86,9 @@ sealed class LaunchProfileDialog : Form {
         presets.SelectedIndexChanged+=(sender,args)=>ShowSelected();Reload(selected);
     }
     void Safe(Action action){try{action();}catch(Exception error){MessageBox.Show(this,error.Message,"Профили запуска",MessageBoxButtons.OK,MessageBoxIcon.Warning);}}
-    void EnableFields(bool enabled){title.Enabled=cpu.Enabled=options.Enabled=accelerator.Enabled=enabled;}
+    void EnableFields(bool enabled){title.Enabled=cpu.Enabled=options.Enabled=accelerator.Enabled=enabled;description.ReadOnly=!enabled;}
     void Reload(string id){catalog=backend.Call("profile_list",J.O());rows=J.A(J.V(catalog,"profiles")).ToArray();presets.Items.Clear();foreach(var row in rows)presets.Items.Add(J.S(row,"label"));presets.SelectedIndex=Math.Max(0,Array.FindIndex(rows,row=>J.S(row,"id")==id));ShowSelected();}
-    void ShowSelected(){if(rows==null||presets.SelectedIndex<0||presets.SelectedIndex>=rows.Length)return;var row=rows[presets.SelectedIndex];editing=J.S(row,"id");title.Text=J.S(row,"label");var settings=J.V(row,"settings");cpu.Text=J.S(settings,"cpu");options.Text=J.S(settings,"options");accelerator.SelectedIndex=J.S(settings,"accelerator")=="tcg"?1:0;EnableFields(editing!="auto");hint.Text=editing=="auto"?"«Авто» проверяет обычный WHPX, затем TCG; алгоритм не редактируется.":"Изменения каталога не переписывают параметры существующих VM.";}
+    void ShowSelected(){if(rows==null||presets.SelectedIndex<0||presets.SelectedIndex>=rows.Length)return;var row=rows[presets.SelectedIndex];editing=J.S(row,"id");title.Text=J.S(row,"label");description.Text=J.S(row,"description");var settings=J.V(row,"settings");cpu.Text=J.S(settings,"cpu");options.Text=J.S(settings,"options");accelerator.SelectedIndex=J.S(settings,"accelerator")=="tcg"?1:0;EnableFields(editing!="auto");hint.Text=editing=="auto"?"«Авто» проверяет обычный WHPX, затем TCG; алгоритм не редактируется.":"Изменения каталога не переписывают параметры существующих VM.";}
 }
 
 static class ArgText {

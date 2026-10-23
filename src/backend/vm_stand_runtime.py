@@ -83,6 +83,9 @@ class Host:
             try:return watcher.pid==identity['pid'] and watcher.creation_time==identity['created'] and watcher.poll() is None
             finally:watcher.close()
         except (ValueError,OSError):return False
+    def connected(self,port,listener,connector):
+        from vm_runtime import loopback_connection
+        return self.alive(listener) and self.alive(connector) and loopback_connection(port,listener['pid'],connector['pid']) and self.alive(listener) and self.alive(connector)
     def preflight(self,name,data,running):
         import vm
         from vm_backend import normalized
@@ -328,7 +331,8 @@ class Runtime:
                         job['steps'][name]='stopping';self.host.stop(name,value['force'])
                         self._wait(job,lambda:not self.host.alive(identity),step['timeout'],'VM не завершилась: '+name)
                         confirmed.pop(name,None);journal['owned'].pop(name,None);self._journal(key,journal);job['steps'][name]='stopped';continue
-                    if name in confirmed:job['steps'][name]='already-running';continue
+                    if name in confirmed:
+                        self._connections(value,job,name,confirmed,step['timeout']);job['steps'][name]='already-running';continue
                     self._event(job,'Задержка перед запуском (не готовность ОС)',name)
                     if job['cancel'].wait(step['delay']):raise Cancelled()
                     self._check_cancel(job)
@@ -369,6 +373,7 @@ class Runtime:
                     confirmed[name]=dict(observed)
                     journal['owned'][name]=dict(identity=dict(observed),config_hash=value['hashes'][name]);journal.pop('pending',None);self._journal(key,journal)
                     job['steps'][name]='qmp-ready'
+                    self._connections(value,job,name,confirmed,step['timeout'])
                     if step['ready']=='tcp':
                         self._event(job,'Ожидание TCP-сервиса (не всей ОС)',name)
                         def tcp():
@@ -396,6 +401,17 @@ class Runtime:
                 lease[0].close()
                 try:lease[1].unlink(missing_ok=True)
                 except OSError:pass  # Unlocked stale marker is safe for the updater.
+    def _connections(self,value,job,name,confirmed,timeout):
+        for link in value['row']['links']:
+            if link['connect']['vm']!=name:continue
+            listener=confirmed.get(link['listen']['vm']);connector=confirmed.get(name)
+            if not listener or not connector:raise Unknown('Не подтверждены участники сети: '+name)
+            self._event(job,'Проверка установленного соединения QEMU (не IP гостя)',name)
+            def ready():
+                if not self.host.alive(listener) or not self.host.alive(connector):raise Unknown('Участник сетевого соединения завершился: '+name)
+                return self.host.connected(value['ports'][link['id']],listener,connector)
+            self._wait(job,ready,timeout,'Соединение QEMU не установлено: '+name)
+            job['steps'][name]='network-ready'
     def status(self,operation):
         with self.guard:
             job=self.jobs.get(identifier(operation))

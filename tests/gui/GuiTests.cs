@@ -57,7 +57,7 @@ static class GuiTests {
                 Check(!surface.ScrollBar.Visible&&surface.ScrollOffset==0,"scrollbar disappears and clamps position when all VMs fit");scrollForm.Close();
             }
             using(var deck=new PageDeck()){
-                var first=new PageView("Первая");var second=new PageView("Вторая");var input=Theme.TextBox("Несохранённое значение");first.Controls.Add(input);deck.Pages.Add(first);deck.Pages.Add(second);
+                var first=new PageView("Первая");var second=new PageView("Вторая");var input=Theme.Input("Несохранённое значение");first.Controls.Add(input);deck.Pages.Add(first);deck.Pages.Add(second);
                 EventHandler<PageSelectingEventArgs> cancel=(sender,eventArgs)=>eventArgs.Cancel=true;deck.Selecting+=cancel;deck.SelectedPage=second;
                 Check(deck.SelectedPage==first&&input.Text=="Несохранённое значение","navigation cancellation preserves the active page and unsaved input");
                 deck.Selecting-=cancel;deck.SelectedPage=second;deck.SelectedPage=first;

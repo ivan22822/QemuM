@@ -29,6 +29,9 @@ static class InstallTests {
         Process launcher=null,app=null;
         try{
             Directory.CreateDirectory(root);
+            var installer=System.Reflection.Assembly.LoadFile(Path.GetFullPath(args[8]));
+            Check(ResourceHash(installer,"app.zip")==Core.Hash(args[1]),"published Setup embeds the exact checked app package");
+            Check(ResourceHash(installer,"QemuM.exe")==Core.Hash(args[9]),"published Setup embeds the new root launcher");
             SetupCore.ExtractPython(args[3],Path.Combine(root,"runtime","python"));
             if(args.Length>6&&!String.IsNullOrEmpty(args[6])){var previous=Core.Stage(args[6],Core.Hash(args[6]),root);Core.Activate(root,previous);}
             string userData=Path.Combine(root,"data");Directory.CreateDirectory(userData);
@@ -77,6 +80,9 @@ static class InstallTests {
             var inspect=new ProcessStartInfo(Path.Combine(root,"runtime","python","python.exe"),"-B -X utf8 -u "+Quote(Path.Combine(root,"versions",package.version,"vm_backend.py"))+" --root "+Quote(userData)){UseShellExecute=false,CreateNoWindow=true,RedirectStandardInput=true,RedirectStandardOutput=true,RedirectStandardError=true};
             using(var backend=Process.Start(inspect)){backend.StandardInput.WriteLine("{\"id\":1,\"command\":\"list\"}");string reply=backend.StandardOutput.ReadLine();backend.StandardInput.Close();Check(backend.WaitForExit(10000)&&reply!=null&&reply.Contains("\"snapshot_recovery\": true"),"upgraded backend detects the preserved unfinished journal");}
             Core.VerifyDirectory(Path.Combine(root,"versions",package.version));
+            var patch=new Feed{schema=1,min_launcher_protocol=1,version=package.version,build=package.build+1,channel="alpha",url="https://github.com/ivan22822/QemuM/releases/download/v"+package.version+"/fixture-patch.zip",sha256=new string('a',64)};
+            var next=Core.Latest(root,(url,path,limit)=>File.WriteAllText(path,url==Core.Api?"[]":new System.Web.Script.Serialization.JavaScriptSerializer().Serialize(patch)));
+            Check(Core.CompareBuild(next.version,next.build,package.version,package.build)>0,"clean/upgraded installation detects a later build of the same alpha version");
             Check(!Directory.Exists(Path.Combine(root,"versions",package.version,"machines")),"no user state in app version");
             bool locked=false;try{using(Core.Lock(root,"running.lock")){}}catch(IOException){locked=true;}
             Check(locked,"running frontend blocks update");
@@ -99,7 +105,7 @@ static class InstallTests {
             Check(File.ReadAllText(Path.Combine(root,"data","future-frontend.txt"))=="protocol-1","different frontend works without Python");
             Check(Core.Current(root).current==future.version,"replacement frontend acknowledged readiness");
             Check(Core.Current(root).previous==package.version,"previous implementation retained");
-            File.WriteAllText(Path.Combine(args[0],"install-results.json"),"{\"passed\":16,\"existing_installation_touched\":false,\"pending_journal_preserved\":true}");
+            File.WriteAllText(Path.Combine(args[0],"install-results.json"),"{\"passed\":19,\"existing_installation_touched\":false,\"pending_journal_preserved\":true,\"setup_payload_verified\":true,\"same_version_patch_discovered\":true}");
             return 0;
         }catch(Exception error){File.WriteAllText(Path.Combine(args[0],"install-error.txt"),error.ToString());return 1;}
         finally{
@@ -108,6 +114,12 @@ static class InstallTests {
         }
     }
     static string Quote(string value){return "\""+value.Replace("\"","\\\"")+"\"";}
+    static string ResourceHash(System.Reflection.Assembly assembly,string name){
+        using(var input=assembly.GetManifestResourceStream(name))using(var hash=System.Security.Cryptography.SHA256.Create()){
+            if(input==null)throw new Exception("Missing installer resource: "+name);
+            return BitConverter.ToString(hash.ComputeHash(input)).Replace("-","").ToLowerInvariant();
+        }
+    }
     static string ManifestFromZip(string zip,string root){
         string path=Path.Combine(root,"incoming-manifest.json");
         using(var archive=System.IO.Compression.ZipFile.OpenRead(zip))using(var input=archive.GetEntry("package.json").Open())using(var output=File.Create(path))input.CopyTo(output);

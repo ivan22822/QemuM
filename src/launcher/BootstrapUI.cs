@@ -41,11 +41,18 @@ static class BootstrapUI {
 sealed class BootstrapPathField : UserControl {
     readonly TextBox input=new TextBox{BorderStyle=BorderStyle.None,BackColor=BootstrapUI.Panel,ForeColor=BootstrapUI.Text};
     public override string Text{get{return input==null?base.Text:input.Text;}set{if(input!=null)input.Text=value;}}
-    public BootstrapPathField(){Height=40;BackColor=BootstrapUI.Bg;Controls.Add(input);DoubleBuffered=true;}
+    public BootstrapPathField(){Height=40;BackColor=BootstrapUI.Bg;Font=new Font("Segoe UI",10F);input.Font=Font;Controls.Add(input);DoubleBuffered=true;input.GotFocus+=(sender,args)=>Invalidate();input.LostFocus+=(sender,args)=>Invalidate();}
+    protected override void OnFontChanged(EventArgs e){base.OnFontChanged(e);if(input!=null)input.Font=Font;PerformLayout();}
     protected override void OnLayout(LayoutEventArgs e){base.OnLayout(e);if(input!=null)input.SetBounds(12,(Height-input.PreferredHeight)/2,Math.Max(1,Width-24),input.PreferredHeight);}
     protected override void OnPaint(PaintEventArgs e){
-        e.Graphics.Clear(BackColor);using(var fill=new SolidBrush(BootstrapUI.Panel))e.Graphics.FillRectangle(fill,0,0,Width,Height);
-        using(var pen=new Pen(ContainsFocus?BootstrapUI.Accent:BootstrapUI.Card))e.Graphics.DrawRectangle(pen,0,0,Width-1,Height-1);
+        e.Graphics.Clear(BackColor);e.Graphics.SmoothingMode=SmoothingMode.AntiAlias;
+        int diameter=Math.Min(16,Math.Min(Width-1,Height-1));if(diameter<1)return;
+        using(var path=new GraphicsPath()){
+            path.AddArc(0,0,diameter,diameter,180,90);path.AddArc(Width-1-diameter,0,diameter,diameter,270,90);
+            path.AddArc(Width-1-diameter,Height-1-diameter,diameter,diameter,0,90);path.AddArc(0,Height-1-diameter,diameter,diameter,90,90);path.CloseFigure();
+            using(var fill=new SolidBrush(BootstrapUI.Panel))e.Graphics.FillPath(fill,path);
+            using(var pen=new Pen(ContainsFocus?BootstrapUI.Accent:BootstrapUI.Card))e.Graphics.DrawPath(pen,path);
+        }
     }
 }
 

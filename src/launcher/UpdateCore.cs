@@ -240,10 +240,10 @@ namespace QemuM.Update {
             catch{RecoverRepair(root);throw;}
             return true;
         }
-        public static void RefreshBootstrap(string root,string source){
+        public static void RefreshBootstrap(string root,string source,string expectedHash=null){
             string target=Path.Combine(root,"QemuM.exe");NoLinks(source);NoLinks(target);
             if(String.Equals(Path.GetFullPath(source),Path.GetFullPath(target),StringComparison.OrdinalIgnoreCase))return;
-            string expected=Hash(source);if(File.Exists(target)&&Hash(target)==expected)return;
+            string expected=expectedHash??Hash(source);CheckHash(Hash(source),expected);if(File.Exists(target)&&Hash(target)==expected)return;
             string backups=Path.Combine(root,"launcher-backups");NoLinks(backups);Directory.CreateDirectory(backups);
             string temporary=target+"."+Guid.NewGuid().ToString("N")+".tmp";NoLinks(temporary);
             try{

@@ -8,7 +8,7 @@ using System.Threading.Tasks;
 using System.Windows.Forms;
 
 static class AlphaIntegration {
-    public const string Version="0.1.0-alpha.4";
+    public const string Version="0.1.0-alpha.5";
     public const string Issues="https://github.com/ivan22822/QemuM/issues/new/choose";
     public static string AppRoot(string fallback) { return Environment.GetEnvironmentVariable("QEMUM_APP_DIR") ?? fallback; }
     public static void OpenIssues() { Process.Start(new ProcessStartInfo(Issues){UseShellExecute=true}); }

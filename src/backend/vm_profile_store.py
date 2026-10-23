@@ -6,7 +6,7 @@ import re
 import tempfile
 import uuid
 
-from vm_profiles import PROFILES, LABELS, accelerator_args, validate_settings
+from vm_profiles import PROFILES, LABELS, DESCRIPTIONS, accelerator_args, validate_settings
 from vm_runtime import vm_lock
 
 
@@ -18,7 +18,7 @@ def defaults():
             args = accelerator_args(key)
             accelerator, _, options = args[1].partition(',')
             settings = dict(accelerator=accelerator, options=options, cpu=args[3])
-        rows.append(dict(id=key, label=LABELS[key], settings=settings, builtin=True))
+        rows.append(dict(id=key, label=LABELS[key], description=DESCRIPTIONS[key], settings=settings, builtin=True))
     return rows
 
 
@@ -33,7 +33,7 @@ def read(root):
         validate_row(row)
         if row['id'] == 'auto':
             raise ValueError('Автоматический выбор ускорителя не редактируется.')
-        rows[row['id']] = dict(row, builtin=row['id'] in PROFILES)
+        rows[row['id']] = dict(row, description=row.get('description', DESCRIPTIONS.get(row['id'], '')), builtin=row['id'] in PROFILES)
     return dict(profiles=list(rows.values()), hash=hashlib.sha256(raw).hexdigest())
 
 
@@ -46,6 +46,9 @@ def validate_row(row):
             or any(ord(char) < 32 or ord(char) == 127 for char in row['label'])):
         raise ValueError('Название профиля: от 1 до 80 символов.')
     validate_settings(row.get('settings'))
+    description = row.get('description', '')
+    if not isinstance(description, str) or len(description) > 2000 or any(ord(char)<32 and char not in '\r\n\t' for char in description):
+        raise ValueError('Описание профиля: до 2000 символов, без управляющих символов.')
 
 
 def change(root, expected, row=None, remove=None):
@@ -67,7 +70,7 @@ def change(root, expected, row=None, remove=None):
             validate_row(row)
             if row['id'] == 'auto':
                 raise ValueError('Автоматический выбор ускорителя не редактируется.')
-            rows[row['id']] = dict(id=row['id'], label=row['label'].strip(), settings=row['settings'])
+            rows[row['id']] = dict(id=row['id'], label=row['label'].strip(), description=row.get('description', '').strip(), settings=row['settings'])
         # Persist only overrides and custom presets. No VM files are touched.
         saved = [item for item in rows.values() if item['id'] != 'auto']
         temporary = None

@@ -101,6 +101,7 @@ def main():
         gui_tests(args.qemu)
     if args.qemu:
         subprocess.run([sys.executable, str(ROOT / 'tools/test_stands.py'), '--qemu'], check=True)
+        subprocess.run([sys.executable, str(ROOT / 'tools/test_stand_faults.py'), '--qemu'], check=True)
         subprocess.run([sys.executable, str(ROOT / 'tools' / 'test_vdi.py')], check=True)
         subprocess.run([sys.executable, str(ROOT / 'tools' / 'test_snapshots.py')], check=True)
         subprocess.run([sys.executable, str(ROOT / 'tools' / 'test_snapshot_offline_transactions.py')], check=True)

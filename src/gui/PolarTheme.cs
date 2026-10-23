@@ -35,7 +35,6 @@ static class Theme {
     public static Icon Icon(Color color){using(var bitmap=new Bitmap(32,32)){using(var graphics=Graphics.FromImage(bitmap))using(var fill=new SolidBrush(color))using(var ink=new SolidBrush(Bg))using(var font=new Font("Segoe UI",17F,FontStyle.Bold)){graphics.Clear(Color.Transparent);graphics.FillEllipse(fill,2,2,28,28);graphics.DrawString("Q",font,ink,4,1);}IntPtr handle=bitmap.GetHicon();try{return (Icon)System.Drawing.Icon.FromHandle(handle).Clone();}finally{DestroyIcon(handle);}}}
     public static Label Label(string text,int size=10,Color? color=null,bool bold=false){return new Label{Text=text,AutoSize=true,ForeColor=color??Text,Font=new Font("Segoe UI",size,bold?FontStyle.Bold:FontStyle.Regular),Margin=new Padding(0,0,0,8),BackColor=Color.Transparent};}
     public static Button Button(string text,Action action,bool primary=false,bool danger=false){var button=new PolarButton{Text=text,AutoSize=true,MinimumSize=new Size(118,40),Padding=new Padding(15,8,15,8),BackColor=primary?Accent:Card,ForeColor=primary?Bg:danger?Red:Text,Margin=new Padding(0,0,10,10)};button.Click+=(sender,args)=>action();return button;}
-    public static TextBox TextBox(string value="",bool multiline=false){return new TextBox{Text=value,BackColor=Field,ForeColor=Text,BorderStyle=BorderStyle.FixedSingle,Multiline=multiline,Font=new Font("Segoe UI",10F),Dock=DockStyle.Fill};}
     public static FieldInput Input(string value=""){return new FieldInput{Text=value};}
     public static ThemedSelector Combo(params string[] items){var box=new ThemedSelector();box.Items.AddRange(items);if(items.Length>0)box.SelectedIndex=0;return box;}
     public static NumberInput Number(int value,int min,int max){return new NumberInput(value,min,max);}
@@ -233,14 +232,14 @@ sealed class PageDeck : UserControl {
         BackColor=Theme.Bg;
         Pages=new PageCollection(this);
         navigation=Theme.Flow(true);
-        navigation.Dock=DockStyle.Left;
-        navigation.AutoSize=false;
-        navigation.Width=186;
+        navigation.Dock=DockStyle.None;
+        navigation.AutoSize=true;
         navigation.BackColor=Theme.Panel;
         navigation.Padding=new Padding(12,20,8,12);
-        navigation.AutoScroll=true;
+        navigation.AutoScroll=false;
+        var navigationScroll=new ScrollSurface(navigation){Dock=DockStyle.Left,Width=186,BackColor=Theme.Panel};
         Controls.Add(content);
-        Controls.Add(navigation);
+        Controls.Add(navigationScroll);
     }
     void AddPage(PageView page) {
         page.Visible=false;
@@ -248,7 +247,7 @@ sealed class PageDeck : UserControl {
         var button=Theme.Button(page.Text,()=>SelectedPage=page);
         button.Tag=page;
         button.AutoSize=false;
-        button.Size=new Size(160,46);
+        button.Size=new Size(148,46);
         button.MinimumSize=Size.Empty;
         button.Margin=new Padding(0,0,0,6);
         button.BackColor=Theme.Panel;

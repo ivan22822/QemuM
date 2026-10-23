@@ -123,7 +123,7 @@ sealed partial class MainWindow : Form {
     readonly ScrollSurface libraryScroll;
     readonly WorkspaceTabs workspace=new WorkspaceTabs();
     readonly Label libraryCount=Theme.Label("0",9,Theme.Muted),breadcrumb=Theme.Label("Виртуальные машины",9,Theme.Muted);
-    readonly TextBox networkPreview=Theme.TextBox("",true),extraPreview=Theme.TextBox("",true),logPreview=Theme.TextBox("",true);
+    readonly ThemedEditor networkPreview=Theme.Editor(),extraPreview=Theme.Editor(),logPreview=Theme.Editor();
     readonly ProgressBar progress=new ProgressBar { Style=ProgressBarStyle.Marquee,Dock=DockStyle.Bottom,Height=3,Visible=false };
     readonly System.Windows.Forms.Timer timer=new System.Windows.Forms.Timer { Interval=2500 };
     readonly Dictionary<string,VmWindow> panels=new Dictionary<string,VmWindow>(); readonly Dictionary<string,LogsWindow> logs=new Dictionary<string,LogsWindow>();
@@ -218,10 +218,10 @@ sealed partial class MainWindow : Form {
         Shown+=(sender,args)=>{if(!demo&&autoStart)Run("Открываю библиотеку…",()=>{Backend=new Backend(root,python);Backend.Open();return Backend.Call("list");},result=>{Fill(result);timer.Start();Poll();AlphaIntegration.Ready();});};
         SelectVm(null);
     }
-    Panel PreviewPage(TextBox preview,string buttonTitle,Action action) {
+    Panel PreviewPage(ThemedEditor preview,string buttonTitle,Action action) {
         var page=new Panel { Padding=new Padding(0,20,0,0),BackColor=Theme.Bg };
-        preview.ReadOnly=true;preview.BorderStyle=BorderStyle.None;preview.BackColor=Theme.Bg;
-        preview.Font=new Font("Consolas",10F);preview.WordWrap=true;preview.ScrollBars=ScrollBars.None;
+        preview.ReadOnly=true;preview.BorderVisible=false;preview.BackColor=Theme.Bg;
+        preview.Font=new Font("Consolas",10F);
         var buttons=Theme.Flow();buttons.Dock=DockStyle.Bottom;buttons.Controls.Add(Theme.Button(buttonTitle,action));
         page.Controls.Add(preview);page.Controls.Add(buttons);return page;
     }
@@ -391,14 +391,14 @@ sealed class VmWindow : Form {
     public VmWindow(MainWindow main,string name) {
         this.main=main;this.name=name;object row=main.Row(name);object data=J.V(row,"data");
         Text=J.S(data,"label",name)+" | "+name+" | QEMU";Theme.Form(this,760,570);Icon=Theme.Icon(Theme.VmColor(row));
-        var content=Theme.Flow(true);content.Dock=DockStyle.Fill;content.Padding=new Padding(26);content.BackColor=Theme.Bg;content.AutoScroll=true;
+        var content=Theme.Flow(true);content.Padding=new Padding(26);content.BackColor=Theme.Bg;content.AutoScroll=false;
         content.Controls.Add(status);var summary=new ResourceSummary();summary.ShowData(data,true);summary.Width=670;content.Controls.Add(summary);
         actions.MaximumSize=new Size(580,0);actions.Margin=new Padding(0,16,0,0);
         actions.Controls.Add(Theme.Button("▶ Запустить",()=>main.StartVm(name),true));actions.Controls.Add(Theme.Button("Пауза / продолжить",()=>main.ControlVm(name,"toggle")));
         actions.Controls.Add(Theme.Button("Выключить",()=>main.ControlVm(name,"shutdown")));actions.Controls.Add(Theme.Button("Снимки дисков",()=>main.Snapshots(name)));
         actions.Controls.Add(Theme.Button("Живые логи",()=>main.OpenLogs(name)));actions.Controls.Add(Theme.Button("Диагностика",()=>main.RunDoctor(name)));
         actions.Controls.Add(Theme.Button("Перезагрузка",()=>main.ControlVm(name,"reset")));actions.Controls.Add(Theme.Button("Остановить QEMU",()=>main.ControlVm(name,"quit"),false,true));
-        content.Controls.Add(actions);content.Controls.Add(Theme.Label("Закрытие этой панели оставляет VM работать.",9,Theme.Muted));Controls.Add(content);Controls.Add(Theme.Header(J.S(data,"label",name),name,"ПАНЕЛЬ МАШИНЫ"));RefreshState();
+        content.Controls.Add(actions);content.Controls.Add(Theme.Label("Закрытие этой панели оставляет VM работать.",9,Theme.Muted));Controls.Add(new ScrollSurface(content){BackColor=Theme.Bg});Controls.Add(Theme.Header(J.S(data,"label",name),name,"ПАНЕЛЬ МАШИНЫ"));RefreshState();
     }
     public void RefreshState() {
         string value=main.State(name);status.Text=Theme.State(value);status.ForeColor=Theme.StateColor(value);actions.Enabled=!main.Busy;

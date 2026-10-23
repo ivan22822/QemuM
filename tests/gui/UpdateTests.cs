@@ -69,6 +69,7 @@ static class UpdateTests {
             Check(Core.Current(root).current==one.version,"first activation");
             string bootstrap=Path.Combine(root,"bootstrap-source.exe"),bootstrapTarget=Path.Combine(root,"QemuM.exe");File.WriteAllText(bootstrap,"NEW BOOTSTRAP");File.WriteAllText(bootstrapTarget,"OLD BOOTSTRAP");Core.RefreshBootstrap(root,bootstrap);
             Check(File.ReadAllText(bootstrapTarget)=="NEW BOOTSTRAP"&&Directory.GetFiles(Path.Combine(root,"launcher-backups")).Any(path=>File.ReadAllText(path)=="OLD BOOTSTRAP"),"atomic bootstrap refresh retains previous loader");
+            Reject(()=>Core.RefreshBootstrap(root,bootstrap,new string('0',64)),"bootstrap refresh checks the pinned package hash before replacing code");
             byte[] activeBefore=File.ReadAllBytes(Path.Combine(root,"active.json"));
             string standRuntime=Path.Combine(data,"stand-runtime",new string('1',32)+".json");Directory.CreateDirectory(Path.GetDirectoryName(standRuntime));File.WriteAllText(standRuntime,"KEEP STAND JOURNAL");
             string standMarker=Path.Combine(data,"stand-runtime","active",new string('2',32)+".lock");Directory.CreateDirectory(Path.GetDirectoryName(standMarker));

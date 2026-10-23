@@ -123,6 +123,8 @@ sealed class UpdateWindow : Form {
                     if(current!=null&&current.current==feed.version){Core.RefreshBootstrap(root,Application.ExecutablePath);Core.RepairSameVersion(root,zip,feed.sha256,(done,total)=>reporter.Report(new InstallProgress("QemuM","Установка сборки",done,total)),feed);return;}
                     var package=Core.Stage(zip,feed.sha256,root,(done,total)=>reporter.Report(new InstallProgress("QemuM","Распаковка",done,total)));
                     Core.MatchFeed(package,feed);
+                    string bootstrapHash;
+                    if(package.files.TryGetValue("QemuM.Update.exe",out bootstrapHash))Core.RefreshBootstrap(root,Path.Combine(root,"versions",package.version,"QemuM.Update.exe"),bootstrapHash);
                     Core.Activate(root,package);
                 });
             }

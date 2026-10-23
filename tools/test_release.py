@@ -39,7 +39,8 @@ def main():
         archive.writestr('package.json',json.dumps(dict(schema=1,min_launcher_protocol=1,channel='alpha',version=VERSION,entrypoint='Future.exe',requires_python=False,files={'Future.exe':hash_file(future)})))
     subprocess.run([str(exe), str(output), str(OUT / f'QemuM-{VERSION}-app.zip'),
                     str(args.launcher.resolve()) if args.launcher else str(OUT / 'QemuM.exe'), str(args.python_archive.resolve()), '', str(future_zip),
-                    str(args.previous_package.resolve()) if args.previous_package else '',str(same_zip)],
+                    str(args.previous_package.resolve()) if args.previous_package else '',str(same_zip),
+                    str(OUT/f'QemuM-{VERSION}-Setup.exe'),str(OUT/'QemuM.exe')],
                    timeout=75, creationflags=HIDDEN, check=True)
     print('Release install/startup test passed; existing installations untouched.')
 

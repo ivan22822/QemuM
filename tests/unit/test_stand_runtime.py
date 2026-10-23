@@ -21,6 +21,7 @@ class FakeHost:
     def lock(self,n):return nullcontext()
     def alive(self,i):return i in self.active.values()
     def listener(self,port,i):return self.listeners and self.alive(i)
+    def connected(self,port,listener,connector):return self.listeners and self.alive(listener) and self.alive(connector)
     def ports(self):return {2222,4444}
     def preflight(self,n,data,running):pass
     def assert_stopped(self,n):
@@ -92,6 +93,23 @@ class StandRuntimeTests(unittest.TestCase):
         self.row['startup']['b']['timeout']=1;self.row=Store(self.temp.name).save(self.row,self.row['revision']);self.host.listeners=False
         result=self.run_plan(self.plan());self.assertEqual(result['category'],'timeout',result)
         self.assertEqual([n for n,d in self.host.starts],['a']);self.assertEqual(self.host.stops,[])
+    def test_qmp_ready_does_not_hide_failed_socket_connection_or_skip_retry_check(self):
+        self.row['startup']['b']['timeout']=1;self.row=Store(self.temp.name).save(self.row,self.row['revision'])
+        self.host.connected=lambda *args:False
+        first=self.run_plan(self.plan());self.assertEqual(first['category'],'timeout');self.assertEqual(len(self.host.starts),2)
+        retry=self.run_plan(self.plan());self.assertEqual(retry['category'],'timeout');self.assertEqual(len(self.host.starts),2)
+        self.host.connected=lambda *args:True;self.run_ok(self.plan());self.assertEqual(len(self.host.starts),2)
+    def test_windows_tcp_table_requires_both_established_ends(self):
+        import os,socket
+        from vm_runtime import loopback_connection
+        with socket.socket() as listener:
+            listener.bind(('127.0.0.1',0));port=listener.getsockname()[1]
+            self.assertFalse(loopback_connection(port,os.getpid(),os.getpid()));listener.listen(1)
+            with socket.create_connection(('127.0.0.1',port)) as connector:
+                accepted,_=listener.accept()
+                with accepted:
+                    self.assertTrue(loopback_connection(port,os.getpid(),os.getpid()))
+                    self.assertFalse(loopback_connection(port,os.getpid()+100000,os.getpid()))
     def test_two_stands_allocate_distinct_ports(self):
         first=self.plan();other=deepcopy(self.row);other.update(id='2'*32,revision=0,members=['c','d'],order=['c','d'],startup={n:dict(delay=0,timeout=5,ready='qmp') for n in ['c','d']})
         other['links'][0]['listen']['vm']='c';other['links'][0]['connect']['vm']='d';Store(self.temp.name).save(other,0)

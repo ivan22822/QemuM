@@ -56,6 +56,8 @@ def release(patch=False):
         shutil.copy2(ROOT / 'docs' / 'ALPHA-GUIDE.md', stage / 'ALPHA-GUIDE.md')
         shutil.copy2(ROOT / 'docs' / 'UPDATE-PROTOCOL.md', stage / 'UPDATE-PROTOCOL.md')
         shutil.copy2(ROOT / 'docs' / 'SNAPSHOTS.md', stage / 'SNAPSHOTS.md')
+        shutil.copy2(ROOT / 'docs' / 'STANDS.md', stage / 'STANDS.md')
+        shutil.copy2(ROOT / 'docs' / 'CORE-ULTRA-WHPX.md', stage / 'CORE-ULTRA-WHPX.md')
         files = {path.relative_to(stage).as_posix(): hash_file(path)
                  for path in sorted(stage.rglob('*')) if path.is_file()}
         manifest = dict(schema=1, min_launcher_protocol=1, version=VERSION, build=BUILD_NUMBER, channel='alpha',
