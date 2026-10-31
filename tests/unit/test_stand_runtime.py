@@ -1,4 +1,5 @@
 import sys
+import os
 from pathlib import Path
 from contextlib import nullcontext
 from copy import deepcopy
@@ -41,6 +42,17 @@ class StandRuntimeTests(unittest.TestCase):
         self.row=upgrade(create('Lab',['a','b']));self.row['links']=[dict(id='1'*32,listen=dict(vm='a',nic='lan'),connect=dict(vm='b',nic='lan'))]
         self.row=Store(self.temp.name).save(self.row,0)
     def tearDown(self):self.runtime.close();self.temp.cleanup()
+    @unittest.skipUnless(os.name=='nt','Windows file sharing semantics')
+    def test_journal_read_retries_transient_windows_denial(self):
+        self.runtime._journal(self.row['id'],dict(owned={},ports={}))
+        original=Path.read_text;attempts=[]
+        def transient(path,*args,**kwargs):
+            attempts.append(path)
+            if len(attempts)==1:raise PermissionError(13,'temporarily denied')
+            return original(path,*args,**kwargs)
+        with patch.object(Path,'read_text',transient):
+            self.assertEqual(self.runtime._journal(self.row['id'])['owned'],{})
+        self.assertEqual(len(attempts),2)
     def run_plan(self,p):
         self.runtime.execute(p['id'],p['id']);self.runtime.jobs[p['id']]['thread'].join(5)
         result=self.runtime.status(p['id']);self.assertNotIn(result['state'],('queued','running'));return result

@@ -202,9 +202,9 @@ static class GuiTests {
             // Reopen and attach. A duplicate Start must not launch a second guest.
             backend=new Backend(root,python);backend.Open();Check(J.B(backend.Call("start",J.O("name",guestName)),"attached"),"new manager attaches without duplicate QEMU");
             var reopened=new MainWindow(root,python,false,false);reopened.Backend=backend;reopened.Show();reopened.Reload();Wait(reopened);reopened.ApplyStates(backend.Call("states"));reopened.OpenPanel(guestName);Application.DoEvents();
-            Check(Application.OpenForms.OfType<VmWindow>().Count()==1,"GUI reopens one panel for the running VM");
+            Check(!Application.OpenForms.Cast<Form>().Any(form=>form!=reopened&&form.Text.Contains(guestName)),"reopening a running VM keeps control in the main workspace");
             backend.Call("control",J.O("name",guestName,"action","quit","confirm",guestName));Check(ownedGuest.WaitForExit(10000),"force quit targets the exact temporary QEMU");guest=0;
-            reopened.ApplyStates(backend.Call("states"));Application.DoEvents();Check(Application.OpenForms.OfType<VmWindow>().Count()==1&&Application.OpenForms.OfType<VmWindow>().Single().Text.Contains(Theme.State("stopped")),"VM exit keeps its panel open with the stopped state");reopened.Close();Application.DoEvents();
+            reopened.ApplyStates(backend.Call("states"));Application.DoEvents();Check(reopened.Visible&&Field<Label>(reopened,"status").Text==Theme.State("stopped")&&!Application.OpenForms.Cast<Form>().Any(form=>form!=reopened&&form.Text.Contains(guestName)),"VM exit leaves the main workspace open with the stopped state");reopened.Close();Application.DoEvents();
             // Root has no poll timer, so closing cannot act on a guest.
             if(!live.IsDisposed){live.Backend=null;live.Close();}Application.DoEvents();
             File.WriteAllText(Path.Combine(output,"gui-results.json"),J.Json().Serialize(J.O("passed",checks,"checks",names,"working_vms_touched",false)),new UTF8Encoding(false));return 0;

@@ -15,6 +15,8 @@ def main(patch=False):
                      for path in (ROOT / 'assets' / 'visual-assets').iterdir() if path.is_file()})
     for name in ('ALPHA-GUIDE.md', 'UPDATE-PROTOCOL.md','SNAPSHOTS.md','STANDS.md','CORE-ULTRA-WHPX.md'):
         expected[name] = ROOT / 'docs' / name
+    expected.update({'QemuM.Switch.exe':None,'switch-manifest.json':None,
+                     'VMManager.exe.config':ROOT / 'src' / 'gui' / 'VMManager.exe.config'})
     findings = []
     with zipfile.ZipFile(package) as archive:
         names = archive.namelist()
@@ -27,7 +29,7 @@ def main(patch=False):
             findings.append('Unexpected manifest')
         for name in names:
             content = archive.read(name)
-            if name in expected and content != expected[name].read_bytes():
+            if name in expected and expected[name] is not None and content != expected[name].read_bytes():
                 findings.append('Source mismatch: ' + name)
             if name != 'package.json' and hashlib.sha256(content).hexdigest() != manifest['files'].get(name):
                 findings.append('Hash mismatch: ' + name)
@@ -38,6 +40,9 @@ def main(patch=False):
                 variants.append(content.decode('utf-16-le', 'ignore').encode('utf-8'))
             if any(pattern.search(value) for pattern in [PERSONAL_PATHS, *SECRETS] for value in variants):
                 findings.append('Possible private material: ' + name)
+        switch=json.loads(archive.read('switch-manifest.json'))
+        sources={p.name:hashlib.sha256(p.read_bytes()).hexdigest() for p in (ROOT/'src/switch').glob('*.cs')}
+        if switch.get('protocol')!=1 or switch.get('sha256')!=hashlib.sha256(archive.read('QemuM.Switch.exe')).hexdigest() or switch.get('sources')!=sources:findings.append('Switch manifest/source mismatch')
     for name in ([] if patch else [f'QemuM-{VERSION}-Setup.exe'])+['QemuM.exe','QemuM-Refresh.exe']:
         content = (OUT / name).read_bytes()
         variants = [content, content.decode('utf-16-le', 'ignore').encode('utf-8')]

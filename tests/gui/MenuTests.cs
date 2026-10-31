@@ -2,6 +2,7 @@ using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
+using System.Linq;
 using System.Reflection;
 using System.Runtime.InteropServices;
 using System.Windows.Forms;
@@ -53,12 +54,12 @@ static class MenuTests {
                     }
                 }
                 var mode=(LaunchModeSelector)typeof(MainWindow).GetField("launchMode",BindingFlags.Instance|BindingFlags.NonPublic).GetValue(main);
-                var modeMenu=(ContextMenuStrip)typeof(LaunchModeSelector).GetField("menu",BindingFlags.Instance|BindingFlags.NonPublic).GetValue(mode);
-                Check(!modeMenu.ShowImageMargin&&!modeMenu.ShowCheckMargin,"launch mode shares the menu style without a system checkbox gutter");
-                Show(modeMenu,main);using(var image=new Bitmap(modeMenu.Width,modeMenu.Height)){modeMenu.DrawToBitmap(image,modeMenu.ClientRectangle);image.Save(Path.Combine(Path.GetDirectoryName(args[0]),"launch-mode-menu.png"));}modeMenu.Close();
+                var choices=mode.Controls.OfType<Button>().ToArray();
+                Check(choices.Length==2&&choices.All(button=>button.Visible),"launch modes are directly visible without a dropdown");
+                using(var image=new Bitmap(mode.Width,mode.Height)){mode.DrawToBitmap(image,mode.ClientRectangle);image.Save(Path.Combine(Path.GetDirectoryName(args[0]),"launch-mode-choices.png"));}
                 for(int index=0;index<6;index++) {
-                    Show(modeMenu,main);Select(modeMenu,index%2);
-                    Check(mode.SelectedIndex==index%2&&!modeMenu.IsDisposed,"launch mode can be selected and reopened");
+                    choices[index%2].PerformClick();
+                    Check(mode.SelectedIndex==index%2,"launch mode changes with one click");
                 }
                 main.Close();
             }

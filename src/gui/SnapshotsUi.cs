@@ -299,6 +299,7 @@ sealed class SnapshotsWindow : Form {
     readonly ISnapshotUiService service;readonly string name;readonly bool boot;object catalog;
     readonly SnapshotUiList list=new SnapshotUiList();readonly FieldInput search=new FieldInput{SearchIcon=true,Placeholder="Найти снимок…"};
     readonly ThemedSelector filter=Theme.Combo("Все типы","Только диски","С RAM","Внешние"),sort=Theme.Combo("Сначала новые","Сначала старые","По названию");
+    readonly ChoiceStrip filterChoices=new ChoiceStrip(4,"Все","Диски","RAM","Внешние"),sortChoices=new ChoiceStrip(3,"Новые","Старые","По имени");
     readonly Label note=Theme.Label("",10,Theme.Muted),summary=Theme.Label("",9,Theme.Muted),state=Theme.Label("",10,Theme.Accent);
     readonly ThemedEditor detail=Theme.Editor();readonly Button create,restore,remove,refresh,more,cancel;
     readonly Label empty=Theme.Label("",11,Theme.Muted);
@@ -306,11 +307,11 @@ sealed class SnapshotsWindow : Form {
     bool busy,closing,loading,failed;string operationId;SnapshotUiEntry selected;readonly FlowLayoutPanel buttons=Theme.Flow();
     internal SnapshotsWindow(ISnapshotUiService service,string name,object initial=null,bool boot=false){
         this.service=service;this.name=name;this.boot=boot;catalog=initial;Text="Снимки | "+name;Theme.Form(this,1100,800);
+        filterChoices.Bind(filter);sortChoices.Bind(sort);
         var content=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=1,RowCount=4,Padding=new Padding(24,8,24,0)};
-        content.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));content.RowStyles.Add(new RowStyle(SizeType.AutoSize));content.RowStyles.Add(new RowStyle(SizeType.Absolute,66));content.RowStyles.Add(new RowStyle(SizeType.Percent,100));content.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        content.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));content.RowStyles.Add(new RowStyle(SizeType.AutoSize));content.RowStyles.Add(new RowStyle(SizeType.Absolute,105));content.RowStyles.Add(new RowStyle(SizeType.Percent,100));content.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         var heading=Theme.Flow(true);heading.Dock=DockStyle.Fill;heading.Controls.Add(state);heading.Controls.Add(summary);content.Controls.Add(heading,0,0);
-        var toolbar=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=3,Margin=Padding.Empty};toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,162));toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,178));toolbar.Controls.Add(search,0,0);toolbar.Controls.Add(filter,1,0);toolbar.Controls.Add(sort,2,0);search.Margin=new Padding(0,0,12,0);filter.Margin=new Padding(0,0,12,0);content.Controls.Add(toolbar,0,1);
-        foreach(Control input in new Control[]{search,filter,sort}){input.Dock=DockStyle.Top;input.Height=42;}
+        var toolbar=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=2,RowCount=2,Margin=Padding.Empty};toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,52));toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,48));toolbar.RowStyles.Add(new RowStyle(SizeType.Absolute,44));toolbar.RowStyles.Add(new RowStyle(SizeType.Absolute,52));toolbar.Controls.Add(search,0,0);toolbar.SetColumnSpan(search,2);toolbar.Controls.Add(filterChoices,0,1);toolbar.Controls.Add(sortChoices,1,1);search.Margin=new Padding(0,0,0,4);search.Dock=DockStyle.Top;search.Height=40;filterChoices.Dock=sortChoices.Dock=DockStyle.Fill;content.Controls.Add(toolbar,0,1);
         var body=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=2,Margin=Padding.Empty};body.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,44));body.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,56));var listPanel=new Panel{Dock=DockStyle.Fill,Margin=new Padding(0,0,20,0),BackColor=Theme.Panel};list.Margin=Padding.Empty;listPanel.Controls.Add(list);empty.AutoSize=false;empty.Dock=DockStyle.Fill;empty.TextAlign=ContentAlignment.MiddleCenter;empty.Padding=new Padding(20);listPanel.Controls.Add(empty);body.Controls.Add(listPanel,0,0);detail.ReadOnly=true;detail.Font=new Font("Segoe UI",11F);detail.Margin=Padding.Empty;body.Controls.Add(detail,1,0);content.Controls.Add(body,0,2);
         note.Margin=new Padding(0,14,0,8);content.Controls.Add(note,0,3);
         create=Theme.Button("Создать снимок",()=>OpenOperation("create"));refresh=Theme.Button("Обновить",async()=>await Reload());restore=Theme.Button("Загрузить снимок",()=>OpenOperation("restore"),true);remove=Theme.Button("Удалить",()=>OpenOperation("delete"),false,true);

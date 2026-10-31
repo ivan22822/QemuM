@@ -126,3 +126,12 @@ The application package may include QemuM.Update.exe: a refreshed update UI
 using the same protocol/core. It accepts --check-updates --install-root <root>.
 The permanent launcher remains independent; no replacement of the running
 launcher is needed for UI changes.
+
+
+Local L2 switch helpers retain an exclusive-operation lease under
+`data/stand-runtime/active/*.lock` independently of the frontend/backend.
+The existing updater operation guard rejects replacement while the lease
+cannot be opened exclusively. Stop network participants and finish stand
+operations first; never replace or kill the live helper to bypass the guard.
+A stale unlocked marker does not block updates. The switch executable and
+its protocol/SHA256 manifest are included in the app payload and its file hashes.

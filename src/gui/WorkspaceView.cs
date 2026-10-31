@@ -44,7 +44,7 @@ sealed class SlimScrollBar : Control {
         base.OnPaint(e);
         if(Maximum==0) return;
         var thumb=Thumb;
-        using(var pen=new Pen(hover||dragging?Theme.Accent:ColorTranslator.FromHtml("#405F80"),4)) {
+        using(var pen=new Pen(hover||dragging?Theme.Accent:Theme.Line,4)) {
             pen.StartCap=pen.EndCap=LineCap.Round;
             e.Graphics.SmoothingMode=SmoothingMode.AntiAlias;
             e.Graphics.DrawLine(pen,thumb.Left+2,thumb.Top+2,thumb.Left+2,thumb.Bottom-2);
@@ -195,7 +195,7 @@ sealed class MonitorEmblem : Control {
     protected override void OnPaint(PaintEventArgs e) {
         e.Graphics.SmoothingMode=SmoothingMode.AntiAlias;
         using(var path=Drawing.Rounded(new Rectangle(0,0,Width-1,Height-1),16))
-        using(var fill=new LinearGradientBrush(ClientRectangle,ColorTranslator.FromHtml("#163E64"),Theme.Card,45))e.Graphics.FillPath(fill,path);
+        using(var fill=new LinearGradientBrush(ClientRectangle,Theme.Panel,Theme.Card,45))e.Graphics.FillPath(fill,path);
         if(logo!=null){
             e.Graphics.InterpolationMode=InterpolationMode.HighQualityBicubic;float scale=Math.Min((Width-20F)/logo.Width,(Height-20F)/logo.Height);
             int width=Math.Max(1,(int)(logo.Width*scale)),height=Math.Max(1,(int)(logo.Height*scale));e.Graphics.DrawImage(logo,new Rectangle((Width-width)/2,(Height-height)/2,width,height));return;
@@ -227,15 +227,19 @@ sealed class WorkspaceTabs : UserControl {
     }
     public WorkspaceTabs() {
         Height=260;BackColor=Theme.Bg;navigation.Height=48;navigation.AutoSize=false;navigation.Dock=DockStyle.Top;
-        Controls.Add(body);Controls.Add(navigation);
+        Controls.Add(body);Controls.Add(navigation);Resize+=(sender,args)=>UpdateNavigationHeight();
+    }
+    void UpdateNavigationHeight(){int width=Math.Max(150,ClientSize.Width),line=0,rows=1;
+        foreach(var item in buttons){int needed=item.PreferredSize.Width+item.Margin.Horizontal;if(line>0&&line+needed>width){rows++;line=0;}line+=needed;}
+        int height=rows*48;if(navigation.Height!=height)navigation.Height=height;
     }
     public void Add(string title,Control page) {
         int index=pages.Count;pages.Add(page);page.Dock=DockStyle.Fill;page.Visible=false;body.Controls.Add(page);
-        var button=new Button { Text=title,AutoSize=true,MinimumSize=new Size(0,44),FlatStyle=FlatStyle.Flat,BackColor=Theme.Bg,ForeColor=Theme.Muted,Padding=new Padding(0,8,0,10),Margin=new Padding(0,0,27,0),Cursor=Cursors.Hand };
+        var button=new Button { Text=title,AutoSize=true,MinimumSize=new Size(0,44),FlatStyle=FlatStyle.Flat,BackColor=Theme.Bg,ForeColor=Theme.Muted,Padding=new Padding(0,8,0,10),Margin=new Padding(0,0,12,0),Cursor=Cursors.Hand };
         button.FlatAppearance.BorderSize=0;button.FlatAppearance.MouseOverBackColor=Theme.Bg;button.FlatAppearance.MouseDownBackColor=Theme.Bg;
         button.Paint+=(sender,args)=>{if(selected==index)using(var pen=new Pen(Theme.Accent,2))args.Graphics.DrawLine(pen,0,button.Height-2,button.Width,button.Height-2);};
         button.Click+=(sender,args)=>SelectedIndex=index;buttons.Add(button);navigation.Controls.Add(button);
-        if(selected<0)SelectedIndex=0;
+        if(selected<0)SelectedIndex=0;UpdateNavigationHeight();
     }
 }
 
@@ -270,8 +274,8 @@ sealed class NightMenuRenderer : ToolStripProfessionalRenderer {
     public static ToolStripItem Add(ContextMenuStrip menu,string text,EventHandler click){var item=menu.Items.Add(text,null,click);item.Padding=new Padding(16,10,16,10);return item;}
 }
 
-sealed class LaunchModeSelector : PolarButton {
-    readonly ContextMenuStrip menu;
+sealed class LaunchModeSelector : UserControl {
+    readonly Button[] choices;
     int selected=-1;
     public event EventHandler SelectedIndexChanged;
     public int SelectedIndex {
@@ -279,18 +283,45 @@ sealed class LaunchModeSelector : PolarButton {
         set {
             if(value<0||value>1)throw new ArgumentOutOfRangeException("value");
             if(value==selected)return;
-            selected=value;Text=(value==0?"Обычный запуск":"Выбор снимка")+"  ▾";
-            for(int index=0;index<menu.Items.Count;index++)((ToolStripMenuItem)menu.Items[index]).Checked=index==value;
+            selected=value;
+            for(int index=0;index<choices.Length;index++){choices[index].BackColor=index==value?Theme.Accent:Theme.Card;choices[index].ForeColor=index==value?Theme.Bg:Theme.Text;choices[index].AccessibleDescription=index==value?"Выбрано":"Не выбрано";}
             if(SelectedIndexChanged!=null)SelectedIndexChanged(this,EventArgs.Empty);
         }
     }
     public LaunchModeSelector() {
-        menu=NightMenuRenderer.Create();
-        NightMenuRenderer.Add(menu,"Обычный запуск",(sender,args)=>SelectedIndex=0);
-        NightMenuRenderer.Add(menu,"Выбор снимка",(sender,args)=>SelectedIndex=1);
-        BackColor=Theme.Bg;ForeColor=Theme.Muted;Font=new Font("Segoe UI",9F);
-        AutoSize=true;MinimumSize=new Size(0,34);Padding=new Padding(0,5,0,5);SelectedIndex=0;
-        Click+=(sender,args)=>menu.Show(this,new Point(0,Height));
+        AutoSize=false;Size=new Size(295,36);BackColor=Theme.Bg;AccessibleName="Режим запуска VM";
+        choices=new[]{Theme.Button("Обычный запуск",()=>SelectedIndex=0),Theme.Button("Из снимка",()=>SelectedIndex=1)};
+        for(int index=0;index<choices.Length;index++){choices[index].AutoSize=false;choices[index].MinimumSize=System.Drawing.Size.Empty;choices[index].SetBounds(index*148,0,142,34);choices[index].Margin=Padding.Empty;Controls.Add(choices[index]);}
+        SelectedIndex=0;
     }
-    protected override void Dispose(bool disposing) { if(disposing)menu.Dispose();base.Dispose(disposing); }
+}
+
+// Common fixed choices are visible at once. The optional bound selector keeps
+// existing form logic and keyboard/programmatic selection behavior intact.
+sealed class ChoiceStrip : UserControl {
+    readonly Button[] choices;int selected=-1;
+    public event EventHandler SelectedIndexChanged;
+    public int SelectedIndex {
+        get{return selected;}
+        set{if(value<0||value>=choices.Length)throw new ArgumentOutOfRangeException("value");if(value==selected)return;selected=value;
+            for(int i=0;i<choices.Length;i++){choices[i].BackColor=i==value?Theme.Accent:Theme.Card;choices[i].ForeColor=i==value?Theme.Bg:Theme.Text;choices[i].AccessibleDescription=i==value?"Выбрано":"Не выбрано";}
+            if(SelectedIndexChanged!=null)SelectedIndexChanged(this,EventArgs.Empty);
+        }
+    }
+    public ChoiceStrip(int columns,params string[] labels){
+        int count=Math.Max(1,Math.Min(columns,labels.Length)),rows=(labels.Length+count-1)/count;
+        Height=rows*48;Width=count*245;BackColor=Theme.Bg;AccessibleName="Варианты выбора";
+        var table=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=count,RowCount=rows,BackColor=Theme.Bg};
+        for(int i=0;i<count;i++)table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100F/count));
+        for(int i=0;i<rows;i++)table.RowStyles.Add(new RowStyle(SizeType.Absolute,48));
+        choices=new Button[labels.Length];
+        for(int i=0;i<labels.Length;i++){int index=i;var button=Theme.Button(labels[i],()=>SelectedIndex=index);button.AutoSize=false;button.MinimumSize=System.Drawing.Size.Empty;button.Dock=DockStyle.Fill;button.Margin=new Padding(0,0,8,6);button.AccessibleName=labels[i];choices[i]=button;table.Controls.Add(button,i%count,i/count);}
+        Controls.Add(table);if(labels.Length>0)SelectedIndex=0;
+    }
+    public void Bind(ThemedSelector selector){
+        selector.Dock=DockStyle.None;selector.Size=new Size(1,1);selector.Visible=false;Controls.Add(selector);
+        selector.SelectedIndexChanged+=(s,e)=>{if(selector.SelectedIndex>=0)SelectedIndex=selector.SelectedIndex;};
+        SelectedIndexChanged+=(s,e)=>{if(selector.SelectedIndex!=SelectedIndex)selector.SelectedIndex=SelectedIndex;};
+        if(selector.SelectedIndex>=0)SelectedIndex=selector.SelectedIndex;
+    }
 }

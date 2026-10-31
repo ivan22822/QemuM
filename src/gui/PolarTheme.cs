@@ -11,9 +11,9 @@ using System.Windows.Forms;
 
 // Presentation only. No VM operations, persistence, process discovery or timers.
 static class Theme {
-    public static readonly Color Bg=Hex("#050E25"), Panel=Hex("#0B1B36"), Card=Hex("#102746"), Field=Hex("#091A33"),
-        Text=Hex("#F9F2F5"), Muted=Hex("#9CB4CF"), Accent=Hex("#65C7FF"), Line=Hex("#213650"),
-        Green=Hex("#A3D9C4"), Red=Hex("#EE97B0"), Yellow=Hex("#EBC8A4");
+    public static readonly Color Bg=Hex("#14181E"), Panel=Hex("#222A32"), Card=Hex("#36434B"), Field=Hex("#1C232A"),
+        Text=Hex("#F8F5EE"), Muted=Hex("#BCC9CE"), Accent=Hex("#75D6D1"), Line=Hex("#596A70"),
+        Green=Hex("#96E1AC"), Red=Hex("#FF9DA1"), Yellow=Hex("#FFD27D");
     static Color Hex(string value){return ColorTranslator.FromHtml(value);}
     public static Color VmColor(object row){try{return ColorTranslator.FromHtml(J.S(J.V(row,"data"),"ui_color","#65C7FF"));}catch(ArgumentException){return Accent;}}
     public static string State(string value){switch(value){case "recovery-required":return "Нужна проверка снимков";case "running":return "Работает";case "paused":return "Пауза";case "prelaunch":return "Ожидает запуска";case "stopped":return "Выключена";case "no-qmp":return "Запущена · нет QMP";case "shutdown":return "Завершается";case "checking":return "Проверка…";case "error":return "Ошибка QEMU · открой логи";default:return "Состояние неизвестно";}}

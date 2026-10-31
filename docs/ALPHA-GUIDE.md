@@ -1,6 +1,6 @@
 # QemuM Alpha
 
-Скачай `QemuM-0.1.0-alpha.5-Setup.exe` из Releases проекта и запусти его.
+Скачай `QemuM-0.1.0-alpha.6-Setup.exe` из Releases проекта и запусти его.
 
 ## Стенды
 

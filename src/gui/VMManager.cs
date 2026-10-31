@@ -118,6 +118,8 @@ sealed partial class MainWindow : Form {
     readonly FlowLayoutPanel cards=Theme.Flow(true), actions=Theme.Flow(); readonly Panel detail=new Panel();
     readonly Label heading=Theme.Label("Выбери виртуальную машину",25,null,true), description=Theme.Label("",10,Theme.Muted), status=Theme.Label("",10), footer=Theme.Label("Загрузка…",9,Theme.Muted);
     readonly ResourceSummary resources=new ResourceSummary();
+    readonly Label mediaSummary=Theme.Label("",10,Theme.Muted);
+    readonly Button startButton,pauseButton,shutdownButton;
     internal readonly AppearanceStore Visuals;readonly MonitorEmblem emblem=new MonitorEmblem();string visualKey;int visualRequest;
     readonly FieldInput search=new FieldInput{SearchIcon=true,Placeholder="Найти машину…"}; readonly LaunchModeSelector launchMode=new LaunchModeSelector();
     readonly ScrollSurface libraryScroll;
@@ -126,7 +128,7 @@ sealed partial class MainWindow : Form {
     readonly ThemedEditor networkPreview=Theme.Editor(),extraPreview=Theme.Editor(),logPreview=Theme.Editor();
     readonly ProgressBar progress=new ProgressBar { Style=ProgressBarStyle.Marquee,Dock=DockStyle.Bottom,Height=3,Visible=false };
     readonly System.Windows.Forms.Timer timer=new System.Windows.Forms.Timer { Interval=2500 };
-    readonly Dictionary<string,VmWindow> panels=new Dictionary<string,VmWindow>(); readonly Dictionary<string,LogsWindow> logs=new Dictionary<string,LogsWindow>();
+    readonly Dictionary<string,LogsWindow> logs=new Dictionary<string,LogsWindow>();
     readonly System.ComponentModel.IContainer uiComponents=new System.ComponentModel.Container();
     readonly ContextMenuStrip libraryMenu,machineMenu;
     public List<object> Rows { get { return rows; } }
@@ -134,7 +136,7 @@ sealed partial class MainWindow : Form {
         RootPath=root;this.python=python;this.demo=demo;Visuals=new AppearanceStore(root);
         Visuals.Changed+=(sender,args)=>{visualKey=null;RefreshEmblem(selected,J.V(Row(selected),"data"));};
         libraryMenu=BuildMenu("Из копии параметров",(Action)(()=>CreateVm(true)),"Обновить список",(Action)Reload);
-        machineMenu=BuildMenu("Панель VM",(Action)(()=>OpenPanel(selected)),"Диагностика VM",(Action)(()=>RunDoctor(selected)),"Перезагрузка",(Action)(()=>ControlVm(selected,"reset")),"Остановить QEMU",(Action)(()=>ControlVm(selected,"quit")),"Удалить VM",(Action)(()=>DeleteVm(selected)));
+        machineMenu=BuildMenu("Диагностика VM",(Action)(()=>RunDoctor(selected)),"Перезагрузка",(Action)(()=>ControlVm(selected,"reset")),"Остановить QEMU",(Action)(()=>ControlVm(selected,"quit")),"Удалить VM",(Action)(()=>DeleteVm(selected)));
         Text="QEMU VM Manager";Theme.Form(this,1040,760);MinimumSize=new Size(920,680);
         var top=new BufferedPanel { Dock=DockStyle.Top,Height=43,Padding=new Padding(20,9,20,7) };
         var brand=Theme.Label("QEMU   /   VM Manager",11,null,true);brand.Dock=DockStyle.Left;
@@ -174,18 +176,19 @@ sealed partial class MainWindow : Form {
         detailStack.Controls.Add(hero);
         actions.FlowDirection=FlowDirection.TopDown;actions.WrapContents=false;actions.Width=680;
         var primary=Theme.Flow();
-        primary.Controls.Add(Theme.Button("▶ Запустить",()=>StartVm(selected),true));
+        startButton=Theme.Button("▶ Запустить",()=>StartVm(selected),true);primary.Controls.Add(startButton);
         primary.Controls.Add(Theme.Button("Снимки дисков",()=>Snapshots(selected)));
         primary.Controls.Add(Theme.Button("Параметры",()=>EditVm(selected)));
         actions.Controls.Add(primary);
-        launchMode.AutoSize=false;launchMode.Size=new Size(200,32);launchMode.Margin=new Padding(0,0,0,8);actions.Controls.Add(launchMode);
-        var overview=new Panel { Padding=new Padding(0,18,0,0) };
+        launchMode.AutoSize=false;launchMode.Size=new Size(295,36);launchMode.Margin=new Padding(0,0,0,8);actions.Controls.Add(launchMode);
+        var overview=new Panel { Padding=new Padding(0,18,0,0) };workspace.Height=310;
         resources.Dock=DockStyle.Top;resources.Height=83;
+        mediaSummary.Dock=DockStyle.Top;mediaSummary.AutoSize=false;mediaSummary.Height=66;mediaSummary.AutoEllipsis=true;
         var power=Theme.Flow();power.Dock=DockStyle.Top;power.Padding=new Padding(0,20,0,0);
-        power.Controls.Add(Theme.Button("Пауза / продолжить",()=>ControlVm(selected,"toggle")));
-        power.Controls.Add(Theme.Button("Выключить",()=>ControlVm(selected,"shutdown")));
+        pauseButton=Theme.Button("Пауза / продолжить",()=>ControlVm(selected,"toggle"));power.Controls.Add(pauseButton);
+        shutdownButton=Theme.Button("Выключить",()=>ControlVm(selected,"shutdown"));power.Controls.Add(shutdownButton);
         power.Controls.Add(Theme.Button("Ещё действия",()=>ShowMachineMenu(power)));
-        overview.Controls.Add(power);overview.Controls.Add(resources);
+        overview.Controls.Add(power);overview.Controls.Add(mediaSummary);overview.Controls.Add(resources);
         workspace.Add("Обзор",overview);
         workspace.Add("Сеть",PreviewPage(networkPreview,"Настроить адаптеры",()=>EditVm(selected,"network")));
         workspace.Add("Extra args",PreviewPage(extraPreview,"Открыть редактор",()=>EditVm(selected,"extra")));
@@ -273,11 +276,11 @@ sealed partial class MainWindow : Form {
             if((name+" "+label).IndexOf(search.Text,StringComparison.OrdinalIgnoreCase)<0)continue;
             var card=new LibraryCard(name,label,Theme.VmColor(row)) { Width=Math.Max(170,cards.Width),BackColor=name==selected?Theme.Card:Theme.Panel };
             card.SetStatus(State(name));
-            EventHandler select=(sender,args)=>SelectVm(name);card.Click+=select;card.DoubleClick+=(sender,args)=>OpenPanel(name);
-            foreach(Control control in card.Controls){control.Click+=select;control.DoubleClick+=(sender,args)=>OpenPanel(name);}
+            EventHandler select=(sender,args)=>SelectVm(name);card.Click+=select;card.DoubleClick+=select;
+            foreach(Control control in card.Controls){control.Click+=select;control.DoubleClick+=select;}
             cards.Controls.Add(card);
         }
-        if(rows.Count==0)cards.Controls.Add(Theme.Label("Виртуальных машин пока нет.\r\nНажми «Добавить VM».",10,Theme.Muted));
+        if(cards.Controls.Count==0)cards.Controls.Add(Theme.Label(rows.Count==0?"Виртуальных машин пока нет.\r\nНажми «Новая машина».":"По запросу ничего не найдено. Измени поиск или очисти поле.",10,Theme.Muted));
         cards.ResumeLayout();libraryScroll.ResumeLayout(true);libraryScroll.PerformLayout();libraryScroll.ScrollOffset=scroll;
     }
     internal void SaveAppearanceAfterOperation(string name,string choice){
@@ -306,11 +309,19 @@ sealed partial class MainWindow : Form {
         libraryCount.Text="Всего машин: "+rows.Count;
         var adapters=J.A(J.V(J.V(row,"network_view"),"adapters"));
         if(adapters.Length==0&&J.D(data).ContainsKey("network_adapters"))adapters=J.A(J.V(data,"network_adapters"));
+        string disk=J.S(data,"disk_path"),iso=J.S(data,"iso_path");
+        mediaSummary.Text=row==null?"":"Диск: "+(disk.Length==0?"не задан":System.IO.Path.GetFileName(disk)+" · "+J.S(data,"disk_format","авто"))+"\nISO: "+(iso.Length==0?"не подключён":System.IO.Path.GetFileName(iso))+" · Сеть: "+adapters.Length+" адапт.";
+        mediaSummary.AccessibleDescription=row==null?"":("Диск: "+disk+"; ISO: "+iso+"; сетевых адаптеров: "+adapters.Length);
         networkPreview.Text=adapters.Length==0?"Нет распознанных сетевых адаптеров. Открой настройки сети для подробностей.":String.Join(Environment.NewLine,adapters.Select(item=>J.S(item,"id")+"   ·   "+J.S(item,"type")+"   ·   "+J.S(item,"model")));
         string extra=ArgText.Format(J.A(J.V(data,"extra_args")));extraPreview.Text=String.IsNullOrEmpty(extra)?"Дополнительные аргументы не заданы.":extra;
         if(row==null)logPreview.Text="Выбери виртуальную машину.";
         else if(changed){logPreview.Text="Журнал машины: "+name;if(workspace.SelectedIndex==3&&!Busy)ReadLogPreview();}
-        status.Text=row==null?"":Theme.State(State(name));status.ForeColor=Theme.StateColor(State(name));actions.Enabled=row!=null && !Busy;
+        string vmState=State(name);
+        status.Text=row==null?"":Theme.State(vmState);status.ForeColor=Theme.StateColor(vmState);actions.Enabled=row!=null && !Busy;
+        bool running=vmState=="running"||vmState=="paused";
+        startButton.Enabled=row!=null&&!Busy&&!running&&vmState!="shutdown"&&vmState!="prelaunch";
+        pauseButton.Enabled=shutdownButton.Enabled=row!=null&&!Busy&&running;
+        pauseButton.Text=vmState=="paused"?"Продолжить":"Пауза";
         if(!standMode)foreach(Control card in cards.Controls) {
             Color color=Object.Equals(card.Tag,name)?Theme.Card:Theme.Panel;
             if(card.BackColor!=color)card.BackColor=color;
@@ -329,9 +340,18 @@ sealed partial class MainWindow : Form {
             if(value==State(name))continue;
             var libraryCard=card as LibraryCard;if(libraryCard!=null)libraryCard.SetStatus(value);
         }
-        states=next;SelectVm(selected);UpdateStandStatus();foreach(var panel in panels.Values.ToArray())panel.RefreshState();
+        states=next;SelectVm(selected);UpdateStandStatus();
     }
-    public void OpenPanel(string name) { if(name==null)return;VmWindow panel;if(panels.TryGetValue(name,out panel)&&!panel.IsDisposed){panel.Activate();return;}panel=new VmWindow(this,name);panels[name]=panel;panel.FormClosed+=(sender,args)=>panels.Remove(name);panel.Show(); }
+    public void OpenPanel(string name) {
+        if(name==null)return;
+        if(standMode){
+            var owner=stands.FirstOrDefault(stand=>J.A(J.V(stand,"members")).Any(member=>Convert.ToString(member)==name));
+            standSelectedParent=J.S(owner,"id");standSelectedVm=name;selectedStand=null;standDetail.Visible=false;
+        }
+        SelectVm(name);
+        if(WindowState==FormWindowState.Minimized)WindowState=FormWindowState.Normal;
+        Activate();
+    }
     public void OpenLogs(string name) { if(name==null)return;LogsWindow window;if(logs.TryGetValue(name,out window)&&!window.IsDisposed){window.Activate();return;}window=new LogsWindow(this,name);logs[name]=window;window.FormClosed+=(sender,args)=>logs.Remove(name);window.Show(); }
     public void StartVm(string name,object snapshot=null) {
         if(name==null||Backend==null)return;
@@ -340,7 +360,7 @@ sealed partial class MainWindow : Form {
         bool iso=!String.IsNullOrEmpty(J.S(data,"iso_path",J.S(data,"kind")=="iso"?J.S(data,"path"):""));
         if(snapshot==null && boot=="disk" && iso) { using(var choice=new ChoiceDialog("Источник загрузки",new[]{"Виртуальный диск","Установочный / Live ISO"})) {if(choice.ShowDialog(this)!=DialogResult.OK)return;boot=choice.Selected==0?"disk":"iso";} }
         if(snapshot!=null)boot="disk";
-        Run("Подготавливаю запуск…",()=>Backend.Call("start",J.O("name",name,"boot",boot,"snapshot",snapshot)),result=>{footer.Text=J.B(result,"attached")?"VM уже работает · панель подключена":"QEMU запущен · "+J.S(result,"accelerator").ToUpperInvariant();OpenPanel(name);Poll();});
+        Run("Подготавливаю запуск…",()=>Backend.Call("start",J.O("name",name,"boot",boot,"snapshot",snapshot)),result=>{footer.Text=J.B(result,"attached")?"VM уже работает · управление справа":"QEMU запущен · "+J.S(result,"accelerator").ToUpperInvariant();OpenPanel(name);Poll();});
     }
     public void ControlVm(string name,string action) {
         if(name==null||Backend==null)return;
@@ -369,7 +389,7 @@ sealed partial class MainWindow : Form {
         if(Busy||SnapshotJobs>0||StandJobs>0){args.Cancel=true;if(!Program.TestMode)MessageBox.Show(this,"Дождись завершения операции. Для стенда можно отменить будущие этапы в окне его состояния, затем закрыть менеджер.","VM Manager");return;}
         bool running=rows.Any(row=>State(J.S(row,"name"))!="stopped"&&State(J.S(row,"name"))!="error");
         if(!Program.TestMode && !closing && running && MessageBox.Show(this,"Закрыть менеджер? Работающие VM продолжат работу. Если статус неизвестен, VM также может быть запущена.","Закрытие менеджера",MessageBoxButtons.YesNo,MessageBoxIcon.Information)!=DialogResult.Yes){args.Cancel=true;return;}
-        closing=true;timer.Stop();foreach(var window in panels.Values.Cast<Form>().Concat(logs.Values).ToArray())window.Close();if(Backend!=null)Backend.Dispose();
+        closing=true;timer.Stop();foreach(var window in logs.Values.ToArray())window.Close();if(Backend!=null)Backend.Dispose();
     }
     protected override void Dispose(bool disposing) {
         if(disposing){uiComponents.Dispose();Visuals.Dispose();}
@@ -386,26 +406,6 @@ sealed class ChoiceDialog : Form {
         choices.Items.AddRange(values);if(values.Length>0)choices.SelectedIndex=0;panel.Controls.Add(choices);
         var buttons=Theme.Flow();buttons.Dock=DockStyle.Bottom;buttons.Padding=new Padding(22,10,10,8);
         buttons.Controls.Add(Theme.Button("Выбрать",()=>{if(Selected>=0){DialogResult=DialogResult.OK;Close();}},true));buttons.Controls.Add(Theme.Button("Отмена",()=>{DialogResult=DialogResult.Cancel;Close();}));Theme.Dialog(this,panel,buttons,title,"Выбери один из доступных вариантов.");
-    }
-}
-
-sealed class VmWindow : Form {
-    readonly MainWindow main;readonly string name;readonly Label status=Theme.Label("",13);readonly FlowLayoutPanel actions=Theme.Flow();
-    public VmWindow(MainWindow main,string name) {
-        this.main=main;this.name=name;object row=main.Row(name);object data=J.V(row,"data");
-        Text=J.S(data,"label",name)+" | "+name+" | QEMU";Theme.Form(this,760,570);Icon=Theme.Icon(Theme.VmColor(row));
-        var content=Theme.Flow(true);content.Padding=new Padding(26);content.BackColor=Theme.Bg;content.AutoScroll=false;
-        content.Controls.Add(status);var summary=new ResourceSummary();summary.ShowData(data,true);summary.Width=670;content.Controls.Add(summary);
-        actions.MaximumSize=new Size(580,0);actions.Margin=new Padding(0,16,0,0);
-        actions.Controls.Add(Theme.Button("▶ Запустить",()=>main.StartVm(name),true));actions.Controls.Add(Theme.Button("Пауза / продолжить",()=>main.ControlVm(name,"toggle")));
-        actions.Controls.Add(Theme.Button("Выключить",()=>main.ControlVm(name,"shutdown")));actions.Controls.Add(Theme.Button("Снимки дисков",()=>main.Snapshots(name)));
-        actions.Controls.Add(Theme.Button("Живые логи",()=>main.OpenLogs(name)));actions.Controls.Add(Theme.Button("Диагностика",()=>main.RunDoctor(name)));
-        actions.Controls.Add(Theme.Button("Перезагрузка",()=>main.ControlVm(name,"reset")));actions.Controls.Add(Theme.Button("Остановить QEMU",()=>main.ControlVm(name,"quit"),false,true));
-        content.Controls.Add(actions);content.Controls.Add(Theme.Label("Закрытие этой панели оставляет VM работать.",9,Theme.Muted));Controls.Add(new ScrollSurface(content){BackColor=Theme.Bg});Controls.Add(Theme.Header(J.S(data,"label",name),name,"ПАНЕЛЬ МАШИНЫ"));RefreshState();
-    }
-    public void RefreshState() {
-        string value=main.State(name);status.Text=Theme.State(value);status.ForeColor=Theme.StateColor(value);actions.Enabled=!main.Busy;
-        Text=name+" | "+Theme.State(value)+" | QEMU";
     }
 }
 
@@ -444,7 +444,7 @@ sealed class LogsWindow : Form {
 
 sealed class EditDialog : Form {
     readonly MainWindow main;readonly string name;readonly object original;readonly FieldInput label,disk,iso;readonly ThemedEditor raw;
-    readonly NumberInput ram,cores,width,height;readonly ThemedSelector vga,profile;readonly PageDeck tabs;
+    readonly NumberInput ram,cores,width,height;readonly ThemedSelector vga,profile;readonly ChoiceStrip vgaChoices;readonly PageDeck tabs;
     internal readonly LaunchSettingsUi launchSettings;internal readonly AppearanceView appearance;readonly string initialFields;bool jsonCurrent,syncingJson;
     Dictionary<string,object> draft;
     public EditDialog(MainWindow main,string name,object original) {
@@ -452,10 +452,10 @@ sealed class EditDialog : Form {
         tabs=new PageDeck { Dock=DockStyle.Fill,Padding=new Padding(0) };var common=new PageView("Параметры VM") { BackColor=Theme.Panel };var advanced=new PageView("Конфигурация JSON") { BackColor=Theme.Panel };
         var fields=Theme.Fields();label=Theme.Input(J.S(data,"label",name));ram=Theme.Number(J.N(data,"ram_mb",4096),1,1048576);cores=Theme.Number(J.N(data,"cores",2),1,256);
         width=Theme.Number(J.N(data,"screen_width",1920),320,4095);height=Theme.Number(J.N(data,"screen_height",1080),200,4095);
-        vga=Theme.Combo("std","virtio","qxl","cirrus","none");vga.SelectedItem=J.S(data,"vga","std");profile=LaunchProfiles.Selector();var profileField=LaunchProfiles.Field(profile,main.Backend,this);LaunchProfiles.Load(profile,data);
+        vga=Theme.Combo("std","virtio","qxl","cirrus","none");vga.SelectedItem=J.S(data,"vga","std");vgaChoices=new ChoiceStrip(3,"std","virtio","qxl","cirrus","none");vgaChoices.Bind(vga);vgaChoices.Width=430;profile=LaunchProfiles.Selector();var profileField=LaunchProfiles.Field(profile,main.Backend,this);LaunchProfiles.Load(profile,data);
         disk=Theme.Input(J.S(data,"disk_path"));iso=Theme.Input(J.S(data,"iso_path"));
         Theme.Row(fields,"Название",label,true);Theme.Row(fields,"Память, МБ",ram);Theme.Row(fields,"Ядра CPU",cores);Theme.Row(fields,"Ширина экрана",width);Theme.Row(fields,"Высота экрана",height);
-        Theme.Row(fields,"Видеоадаптер",vga);Theme.Row(fields,"Профиль запуска",profileField);Theme.Row(fields,"Диск",Theme.Browse(disk,false,"Диски qcow2 / VDI|*.qcow2;*.vdi|Все файлы|*.*"),true);Theme.Row(fields,"ISO",Theme.Browse(iso,false,"ISO|*.iso|Все файлы|*.*"),true);
+        Theme.Row(fields,"Видеоадаптер",vgaChoices);Theme.Row(fields,"Профиль запуска",profileField);Theme.Row(fields,"Диск",Theme.Browse(disk,false,"Диски qcow2 / VDI|*.qcow2;*.vdi|Все файлы|*.*"),true);Theme.Row(fields,"ISO",Theme.Browse(iso,false,"ISO|*.iso|Все файлы|*.*"),true);
         var note=Theme.Label("Применится при следующем запуске.\r\nПеред сохранением создаётся копия параметров.",10,Theme.Muted);Theme.Row(fields,"",note);common.Controls.Add(Theme.FieldsView(fields));
         raw=Theme.Editor(J.S(original,"raw"));raw.Font=new Font("Consolas",10F);advanced.Padding=new Padding(24);advanced.Controls.Add(raw);tabs.Pages.Add(common);
         launchSettings=new LaunchSettingsUi(main,this,tabs,FieldsData,EnsureVisual);launchSettings.Load(data,J.V(original,"network_view"));
@@ -512,7 +512,8 @@ sealed class CreateDialog : Form {
     public CreateDialog(MainWindow main,object saved,bool fromBackup=false,string selectedTemplate=null) {
         this.main=main;var profileField=LaunchProfiles.Field(profile,main.Backend,this);templates=J.A(saved);Text="Добавление виртуальной машины";Theme.Form(this,1020,830);
         foreach(object item in templates)template.Items.Add(J.S(item,"backup_name",J.S(item,"id")));
-        var fields=Theme.Fields();Theme.Row(fields,"Параметры из копии",template,true);Theme.Row(fields,"Короткое имя VM",name);Theme.Row(fields,"Название",label);Theme.Row(fields,"Источник",mode,true);
+        var sourceChoices=new ChoiceStrip(3,"Новый диск и ISO","Существующий диск","Live ISO");sourceChoices.Bind(mode);
+        var fields=Theme.Fields();Theme.Row(fields,"Параметры из копии",template,true);Theme.Row(fields,"Короткое имя VM",name);Theme.Row(fields,"Название",label);Theme.Row(fields,"Источник",sourceChoices,true);
         var diskPicker=Theme.BrowseNewDisk(disk,()=>mode.SelectedIndex==0,()=>name.Text);var isoPicker=Theme.Browse(iso,false,"ISO|*.iso|Все файлы|*.*");
         Theme.Row(fields,"Виртуальный диск",diskPicker);Theme.Row(fields,"ISO",isoPicker);Theme.Row(fields,"Размер диска, ГБ",size);
         Theme.Row(fields,"Память, МБ",ram);Theme.Row(fields,"Ядра CPU",cores);Theme.Row(fields,"Профиль запуска",profileField);
@@ -624,7 +625,8 @@ sealed class DeleteDialog : Form {
         this.main=main;this.plan=plan;vmName=J.S(plan,"name");Text="Удаление | "+vmName;Theme.Form(this,850,800);
         mode.SelectedIndex=J.D(plan).ContainsKey("remove_files")&&!J.B(plan,"remove_files")?0:1;
         var fields=Theme.Fields();files.ReadOnly=true;files.Height=250;files.Font=new Font("Consolas",9F);
-        Theme.Row(fields,"Действие",mode,true);Theme.Row(fields,"",saveBackup,true);
+        var deleteChoices=new ChoiceStrip(2,"Только убрать из списка","Удалить личные файлы");deleteChoices.Bind(mode);
+        Theme.Row(fields,"Действие",deleteChoices,true);Theme.Row(fields,"",saveBackup,true);
         Theme.Row(fields,"Имя копии параметров",backup);Theme.Row(fields,"Введи имя VM",confirm);Theme.Row(fields,"",files);Theme.Row(fields,"",note);
         var buttons=Theme.Flow();delete=Theme.Button("Удалить VM",Delete,false,true);delete.Enabled=false;
         backup.TextChanged+=(sender,args)=>ValidateChoice();confirm.TextChanged+=(sender,args)=>ValidateChoice();saveBackup.CheckedChanged+=(sender,args)=>{backup.Enabled=saveBackup.Checked;ValidateChoice();};

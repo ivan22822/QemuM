@@ -16,7 +16,7 @@ import time
 import uuid
 
 from vm_stands import Store, identifier, replace_file
-from vm_stand_plan import upgrade, plan as topology_plan
+from vm_stand_plan import upgrade, plan as topology_plan,switch_port
 from vm_runtime import vm_lock, watch_qmp_process
 
 
@@ -50,6 +50,9 @@ class Host:
         try:yield
         finally:self._planning.checks=previous
     def _checks(self):return getattr(self._planning,'checks',None)
+    def switch_manager(self):
+        from vm_switch import Manager
+        return Manager(self.service.root,getattr(self.service,'switch_helper',None))
     def _processes(self):
         from vm_backend import qemu_processes
         checks=self._checks()
@@ -139,6 +142,10 @@ class Host:
                 accelerator,_=choose(exe,data)
                 if checks is not None:checks['probes'][key]=accelerator
             vm.build_args(name,data,accelerator=accelerator)
+    def multicast_preflight(self,configs):
+        import vm
+        from vm_network import probe_multicast
+        probe_multicast(vm.qemu_executable(),[nic for data in configs.values() for nic in data.get('network_adapters',[])])
     def ports(self,check_names=None):
         import vm
         from vm_network import forwarding
@@ -199,15 +206,31 @@ class Runtime:
         self.guard=threading.RLock();self.plans={};self.jobs={};self.exports={};self.closed=False
     def _journal(self,key,value=None):
         path=self.root/'stand-runtime'/(identifier(key)+'.json');self.store.safe(path)
-        if path.exists() and (path.stat().st_nlink!=1 or path.stat().st_size>2*1024*1024):raise Unknown('Недопустимый журнал стенда.')
         if value is None:
-            result=json.loads(path.read_text(encoding='utf-8')) if path.exists() else dict(owned={},ports={})
+            # An atomic writer or a Windows scanner can briefly deny a concurrent read.
+            # Retry the same validated path; a persistent denial still fails closed.
+            for attempt in range(6):
+                try:
+                    if path.exists() and (path.stat().st_nlink!=1 or path.stat().st_size>2*1024*1024):raise Unknown('Недопустимый журнал стенда.')
+                    result=json.loads(path.read_text(encoding='utf-8')) if path.exists() else dict(owned={},ports={})
+                    break
+                except PermissionError:
+                    if os.name!='nt' or attempt==5:raise
+                    time.sleep(.02*(attempt+1))
+            if not isinstance(result,dict) or not isinstance(result.get('switches',{}),dict) or len(result.get('switches',{}))>32:raise Unknown('Повреждён журнал общих сетей.')
+            for key,record in result.get('switches',{}).items():
+                try:
+                    identifier(key);identifier(record['run_id'])
+                    if record['protocol']!=1 or record['network_id']!=key or record['pipe']!='qemum-switch-'+record['run_id'] or not isinstance(record['ports'],list) or not 2<=len(record['ports'])<=64 or any(type(p) is not int or not 1024<=p<=65535 for p in record['ports']) or len(set(record['ports']))!=len(record['ports']) or not isinstance(record['executable'],str) or not isinstance(record['sha256'],str) or len(record['sha256'])!=64:raise ValueError()
+                    if not record.get('pending') and (type(record['pid']) is not int or record['pid']<=0 or type(record['created']) is not int or record['created']<=0):raise ValueError()
+                except (KeyError,TypeError,ValueError):raise Unknown('Повреждена идентичность коммутатора; журнал не изменён.')
             if not isinstance(result,dict) or not isinstance(result.get('owned',{}),dict) or not isinstance(result.get('ports',{}),dict) or not isinstance(result.get('history',[]),list) or len(result.get('history',[]))>20 or ('current' in result and not isinstance(result['current'],dict)):
                 raise Unknown('Повреждён журнал стенда. Файл не изменён; нужна ручная проверка.')
             records=result.get('history',[])+([result['current']] if 'current' in result else [])
             if any(not isinstance(item,dict) or not isinstance(item.get('id'),str) or not isinstance(item.get('state'),str) or not isinstance(item.get('events',[]),list) for item in records) or any(not isinstance(value,dict) for value in result.get('owned',{}).values()) or ('pending' in result and not isinstance(result['pending'],(dict,str))):
                 raise Unknown('Повреждены записи журнала стенда. Файл не изменён; нужна ручная проверка.')
             return result
+        if path.exists() and (path.stat().st_nlink!=1 or path.stat().st_size>2*1024*1024):raise Unknown('Недопустимый журнал стенда.')
         path.parent.mkdir(parents=True,exist_ok=True)
         temporary=None
         try:
@@ -264,8 +287,36 @@ class Runtime:
                             handle.close();handle=reserve()
                         port=handle.getsockname()[1];leases[link['id']]=handle
                     used.add(port);ports[link['id']]=port
+                for group in row.get('multicast',[]):
+                    for end in group['members']:
+                        name=end['vm']
+                        if identities[name]:
+                            if journal.get('topology')!=fingerprint(row) or owned.get(name,{}).get('identity')!=identities[name] or owned[name].get('config_hash')!=hashes[name]:
+                                raise Conflict('Работающая VM не принадлежит этой multicast-сети: '+name)
+                for group in row.get('switches',[]):
+                    names=[end['vm'] for end in group['members']];record=journal.get('switches',{}).get(group['id'])
+                    if action=='start':self.host.switch_manager().verify()
+                    if any(identities[n] for n in names):
+                        if journal.get('topology')!=fingerprint(row) or not record:raise Conflict('Неизвестная сеть работающих участников.')
+                        for n in names:
+                            if identities[n] and (owned.get(n,{}).get('identity')!=identities[n] or owned[n].get('config_hash')!=hashes[n]):raise Conflict('Работающая VM принадлежит другой сети: '+n)
+                        if action=='start':self.host.switch_manager().status(record)
+                    if record:
+                        if record.get('pending') or type(record.get('pid')) is not int:raise Unknown('Неподтверждённый запуск коммутатора. Требуется сверка процессов.')
+                        live=self.host.switch_manager().check(record)
+                        if live and journal.get('topology')!=fingerprint(row):raise Conflict('Сначала останови прежнюю сеть стенда.')
+                    else:live=False
+                    for index in range(len(group['members'])):
+                        port_key=switch_port(group,index)
+                        if live or (record and action=='stop'):port=record['ports'][index]
+                        else:
+                            handle=reserve()
+                            while handle.getsockname()[1] in used:handle.close();handle=reserve()
+                            port=handle.getsockname()[1];leases[port_key]=handle
+                        ports[port_key]=port;used.add(port)
                 topology=topology_plan(row,configs,ports)
                 if action=='start':
+                    if hasattr(self.host,'multicast_preflight'):self.host.multicast_preflight(topology['configs'])
                     for name,data in configs.items():self.host.preflight(name,data,identities[name] is not None)
                     # Two stopped members must not own the same writable image.
                     from vm_storage import media
@@ -283,7 +334,7 @@ class Runtime:
                 public=dict(id=value['id'],stand_id=key,action=action,force=force,include_existing=include_existing,
                     order=row['order'] if action=='start' else selected,
                     already_running=[n for n in row['order'] if identities[n]],
-                    networks=topology['networks'],ports=ports,resources=self.host.capacity(),
+                    networks=topology['networks'],switches=deepcopy(row.get('switches',[])),ports=ports,resources=self.host.capacity(),
                     requested_ram_mb=sum(d.get('ram_mb',0) for n,d in configs.items() if not identities[n]),
                     requested_cores=sum(d.get('cores',0) for n,d in configs.items() if not identities[n]),
                     warning=topology['warning']+' Ресурсы — оценка, а не гарантия производительности. Отмена оставит запущенные VM работать.')
@@ -363,6 +414,23 @@ class Runtime:
                 job['_journal']=journal;self._record(job)
                 sequence=row['order'] if value['action']=='start' else value['selected']
                 confirmed={n:i for n,i in value['identities'].items() if i}
+                if value['action']=='start':
+                    for group in row.get('switches',[]):
+                        self._check_cancel(job);manager=self.host.switch_manager();record=journal.setdefault('switches',{}).get(group['id'])
+                        if record and manager.check(record):manager.status(record)
+                        else:
+                            if any(confirmed.get(end['vm']) for end in group['members']):raise Unknown('Коммутатор потерян при работающих гостях. Выключи их перед восстановлением.')
+                            self._event(job,'Запуск общей сети '+group['name'])
+                            for index in range(len(group['members'])):
+                                handle=value['leases'].pop(switch_port(group,index),None)
+                                if handle:handle.close()
+                            def persist(record):
+                                if record is None:journal['switches'].pop(group['id'],None)
+                                else:journal['switches'][group['id']]=record
+                                self._journal(key,journal)
+                            record=manager.start(group['id'],[value['ports'][switch_port(group,i)] for i in range(len(group['members']))],persist)
+                        for index,end in enumerate(group['members']):
+                            if end['vm'] in confirmed:manager.authorize(record,index,confirmed[end['vm']])
                 for name in sequence:
                     self._check_cancel(job);data=value['configs'][name];step=row['startup'][name]
                     for previous,identity in confirmed.items():
@@ -375,7 +443,8 @@ class Runtime:
                         self._wait(job,lambda:not self.host.alive(identity),step['timeout'],'VM не завершилась: '+name)
                         confirmed.pop(name,None);journal['owned'].pop(name,None);self._journal(key,journal);job['steps'][name]='stopped';continue
                     if name in confirmed:
-                        self._connections(value,job,name,confirmed,step['timeout']);job['steps'][name]='already-running';continue
+                        self._connections(value,job,name,confirmed,step['timeout'])
+                        self._switch_connections(row,journal,job,name,step['timeout']);job['steps'][name]='already-running';continue
                     self._event(job,'Задержка перед запуском (не готовность ОС)',name)
                     if job['cancel'].wait(step['delay']):raise Cancelled()
                     self._check_cancel(job)
@@ -400,6 +469,10 @@ class Runtime:
                         raise
                     if result.get('attached'):raise Conflict('VM уже запущена другим действием: '+name)
                     if result.get('identity'):journal['pending']['identity']=result['identity'];self._journal(key,journal)
+                    if result.get('identity'):
+                        for group in row.get('switches',[]):
+                            for index,end in enumerate(group['members']):
+                                if end['vm']==name:self.host.switch_manager().authorize(journal['switches'][group['id']],index,result['identity'])
                     self._event(job,'Процесс создан; проверка QMP',name);job['steps'][name]='process-created'
                     observed={}
                     def ready():
@@ -417,6 +490,7 @@ class Runtime:
                     journal['owned'][name]=dict(identity=dict(observed),config_hash=value['hashes'][name]);journal.pop('pending',None);self._journal(key,journal)
                     job['steps'][name]='qmp-ready'
                     self._connections(value,job,name,confirmed,step['timeout'])
+                    self._switch_connections(row,journal,job,name,step['timeout'])
                     if step['ready']=='tcp':
                         self._event(job,'Ожидание TCP-сервиса (не всей ОС)',name)
                         def tcp():
@@ -425,14 +499,26 @@ class Runtime:
                                 with socket.create_connection(('127.0.0.1',step['tcp_port']),timeout=.3):return True
                             except OSError:return False
                         self._wait(job,tcp,step['timeout'],'TCP-сервис не ответил: '+name);job['steps'][name]='tcp-ready'
+                if value['action']=='stop':
+                    for group in row.get('switches',[]):
+                        if all(not self.host.identity(end['vm'],self.host.config(end['vm'])) for end in group['members']):
+                            record=journal.get('switches',{}).get(group['id'])
+                            if record:self.host.switch_manager().stop(record);journal['switches'].pop(group['id']);self._journal(key,journal)
                 self._event(job,'Операция завершена; готовность ОС не измеряется')
                 with self.guard:job['state']='completed'
         except Cancelled:
             with self.guard:job.update(state='cancelled',category='cancelled',error='Будущие этапы отменены. Уже запущенные VM оставлены работать.')
         except Exception as error:
-            category='timeout' if isinstance(error,TimeoutError) else 'conflict' if isinstance(error,Conflict) else 'unknown' if isinstance(error,Unknown) else 'vm-error'
+            category=getattr(error,'category',None) or ('timeout' if isinstance(error,TimeoutError) else 'conflict' if isinstance(error,Conflict) else 'unknown' if isinstance(error,Unknown) else 'vm-error')
             with self.guard:job.update(state='failed',category=category,error=str(error)+'; проверь участника и сформируй новый план. Работающие VM не выключены.')
         finally:
+            if journal and job['state'] in ('failed','cancelled'):
+                for group in row.get('switches',[]):
+                    try:
+                        record=journal.get('switches',{}).get(group['id'])
+                        if record and not record.get('pending') and all(self.host.identity(end['vm'],self.host.config(end['vm'])) is None for end in group['members']):
+                            self.host.switch_manager().stop(record);journal['switches'].pop(group['id']);self._journal(key,journal)
+                    except (OSError,ValueError):pass  # Unknown ownership always leaves the network intact.
             try:
                 with self.guard:self._record(job)
             except (OSError,ValueError) as error:
@@ -444,6 +530,12 @@ class Runtime:
                 lease[0].close()
                 try:lease[1].unlink(missing_ok=True)
                 except OSError:pass  # Unlocked stale marker is safe for the updater.
+    def _switch_connections(self,row,journal,job,name,timeout):
+        for group in row.get('switches',[]):
+            for index,end in enumerate(group['members']):
+                if end['vm']==name:
+                    self._event(job,'Ожидание подключения к общей сети',name)
+                    self._wait(job,lambda:self.host.switch_manager().status(journal['switches'][group['id']])['ports'][index]['connected'],timeout,'Участник не подключился к общей сети: '+name)
     def _connections(self,value,job,name,confirmed,timeout):
         for link in value['row']['links']:
             if link['connect']['vm']!=name:continue
@@ -478,21 +570,43 @@ class Runtime:
             if job is None:raise ValueError('Операция не найдена.')
             job['cancel'].set();return self.status(operation)
     def overview(self,key):
-        row=self.store.read(identifier(key));states={}
+        from vm_stand_diagnostics import summarize
+        row=self.store.read(identifier(key));states={};configs={}
         for name in row['members']:
-            try:states[name]='running' if self.host.identity(name,self.host.config(name)) else 'stopped'
+            try:
+                configs[name]=self.host.config(name)
+                states[name]='running' if self.host.identity(name,configs[name]) else 'stopped'
             except (Unknown,OSError,ValueError):states[name]='unknown'
         with self.guard:
             jobs=[j for j in self.jobs.values() if j['stand_id']==key]
             latest=jobs[-1] if jobs else None
-            recovered=self._journal(key).get('current') if not latest else None
+            journal=self._journal(key);recovered=journal.get('current') if not latest else None
             count=sum(s=='running' for s in states.values())
             state='running' if count==len(states) else 'partial' if count else 'stopped'
             if any(s=='unknown' for s in states.values()):state='unknown'
             if latest and latest['state'] in ('queued','running'):state='starting' if self.plans[latest['id']]['action']=='start' else 'stopping'
             elif latest and latest['state']=='failed':state='error'
             elif recovered and recovered.get('state') in ('queued','running','interrupted'):state='unknown'
-            return dict(state=state,members=states,operation_id=latest['id'] if latest else recovered.get('id') if recovered else None)
+            operation=latest['id'] if latest else recovered.get('id') if recovered else None
+            failed=latest or recovered or {}
+            failure={k:failed.get(k) for k in ('state','category','error')}
+        # Named-pipe deadlines must not hold the global job/cancellation lock.
+        networks={}
+        for group in row.get('switches',[]):
+            record=journal.get('switches',{}).get(group['id'])
+            if not record:
+                networks[group['id']]=dict(state='stopped',guest_connectivity='not-tested')
+                if failure['state']=='failed' and failure['category'] in ('helper-start','helper-unavailable','port-unavailable','permission','identity','protocol','connection'):
+                    networks[group['id']].update(category=failure['category'],error=failure['error'] or '')
+            else:
+                try:
+                    status=self.host.switch_manager().status(record)
+                    networks[group['id']]=dict(state='connected' if all(p['connected'] for p in status['ports']) else 'helper-ready',status=status,guest_connectivity='not-tested')
+                except (ValueError,OSError) as error:
+                    networks[group['id']]=dict(state='unknown',category=getattr(error,'category','helper-unavailable'),error=str(error),guest_connectivity='not-tested')
+                    if count:state='error'
+                    elif state!='error':state='unknown'
+        return dict(state=state,members=states,networks=networks,network_diagnostics=summarize(row,configs,states,networks),operation_id=operation)
     def activity(self):
         with self.guard:
             result={}

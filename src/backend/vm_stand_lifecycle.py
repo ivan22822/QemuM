@@ -47,6 +47,18 @@ def reconcile(runtime,key,revision,confirm):
                 elif actual==owned.get('identity') and owned.get('config_hash')==runtime.host.config_hash(name) and journal.get('topology')==fingerprint(row):states[name]='owned-running'
                 else:states[name]='unowned-running';issues.append('Чужая или изменённая конфигурация: '+name)
             except (ValueError,OSError,KeyError) as error:states[name]='unknown';issues.append(name+': '+str(error))
+        networks={}
+        for group in row.get('switches',[]):
+            record=journal.get('switches',{}).get(group['id'])
+            if record:
+                try:
+                    if record.get('pending'):raise Unknown('Неподтверждённый запуск коммутатора.')
+                    manager=runtime.host.switch_manager()
+                    if not manager.check(record) and all(states.get(end['vm'])=='stopped' for end in group['members']):
+                        journal['switches'].pop(group['id']);networks[group['id']]={'state':'stopped'}
+                    else:networks[group['id']]=manager.status(record)
+                except (ValueError,OSError) as error:networks[group['id']]={'state':'unknown'};issues.append('Общая сеть: '+str(error))
+            elif any(states.get(end['vm'])=='owned-running' for end in group['members']):issues.append('Нет журнала общей сети работающего участника.')
         pending=journal.get('pending')
         if pending:
             name=pending.get('name') if isinstance(pending,dict) else pending
@@ -62,7 +74,7 @@ def reconcile(runtime,key,revision,confirm):
             current.update(state='interrupted',category='recovery-required',error='Менеджер был закрыт. Процессы не перезапускались. Создай новый подтверждённый план после сверки.')
         journal['reconciliation']=dict(time=time.time(),members=states,issues=issues)
         runtime._journal(key,journal)
-        return dict(members=states,issues=issues,start_blocked=bool(journal.get('pending')) or any(s=='unknown' for s in states.values()),automatic_actions=False)
+        return dict(members=states,networks=networks,issues=issues,start_blocked=bool(issues) or bool(journal.get('pending')) or any(s=='unknown' for s in states.values()),automatic_actions=False)
 
 
 def duplicate(runtime,key,revision,name):
@@ -71,6 +83,12 @@ def duplicate(runtime,key,revision,name):
         idle(runtime,key);row=deepcopy(runtime.store.read(key))
         if row['revision']!=revision:raise Conflict('Стенд изменился. Обнови список.')
         row.update(id=uuid.uuid4().hex,revision=0,name=name)
+        for group in row.get('switches',[]):group['id']=uuid.uuid4().hex
+        for group in row.get('multicast',[]):
+            group['id']=uuid.uuid4().hex
+            token=uuid.uuid4().bytes
+            group['address']='239.192.'+str(token[0])+'.'+str(token[1])
+            group['port']=20000+int.from_bytes(token[2:4],'big')%40000
         return runtime.store.save(row,0)
 
 
@@ -89,11 +107,26 @@ def report(runtime,key):
     from vm_support import redact
     row=upgrade(runtime.store.read(identifier(key)));journal=runtime._journal(key)
     aliases={name:'vm-'+str(index+1) for index,name in enumerate(row['members'])}
+    labels={row['name']:'Стенд'}
+    for index,group in enumerate(row.get('switches',[])):labels[group['name']]='network-'+str(index+1)
+    for group in row.get('switches',[])+row.get('multicast',[]):
+        for end in group['members']:labels[end['nic']]='<nic>'
+    for link in row['links']:
+        for side in ('listen','connect'):labels[link[side]['nic']]='<nic>'
+    labels.update(aliases)
     def clean(value):
         value=deepcopy(value)
         if isinstance(value,str):
-            for name,alias in sorted(aliases.items(),key=lambda p:len(p[0]),reverse=True):value=re.sub(r'(?<![A-Za-z0-9_-])'+re.escape(name)+r'(?![A-Za-z0-9_-])',alias,value)
-            return redact(value,[runtime.root,Path.home()])
+            for name,alias in sorted(labels.items(),key=lambda p:len(p[0]),reverse=True):
+                if name:value=re.sub(r'(?<![A-Za-z0-9_-])'+re.escape(name)+r'(?![A-Za-z0-9_-])',lambda match:alias,value)
+            value=redact(value,[runtime.root,Path.home()])
+            value=re.sub(r'(?i)(?<![0-9a-f])(?:[0-9a-f]{2}[:-]){5}[0-9a-f]{2}(?![0-9a-f])','<mac>',value)
+            value=re.sub(r'(?<![\w])(?:\d{1,3}\.){3}\d{1,3}(?![\w])','<address>',value)
+            def ipv6(match):
+                try:__import__('ipaddress').IPv6Address(match.group(0))
+                except ValueError:return match.group(0)
+                return '<address>'
+            return re.sub(r'(?<![\w:])(?:[0-9a-fA-F]{0,4}:){2,}[0-9a-fA-F]{0,4}(?:%[\w.-]+)?(?![\w:])',ipv6,value)
         if isinstance(value,list):return [clean(item) for item in value]
         if isinstance(value,dict):return {aliases.get(k,k):clean(v) for k,v in value.items()}
         return value
@@ -123,6 +156,12 @@ def report(runtime,key):
                       'Имена участников и адаптеров заменены. Проверь текст перед передачей.',
                       'Это диагностический отчёт, а не резервная копия или импортируемый стенд.',
                       'Отказ QEMU, kernel panic внутри гостя и ожидание сети гостя — разные причины; QMP не определяет их автоматически.'])
+    if row.get('multicast'):
+        value['definition']['schema_version']=3
+        value['definition']['multicast']=[dict(id=g['id'],address='multicast-group-'+str(i+1),port='excluded',localaddr='excluded',members=[endpoint(end) for end in g['members']]) for i,g in enumerate(row['multicast'])]
+    if row.get('switches'):
+        value['definition']['schema_version']=4
+        value['definition']['switches']=[dict(id=g['id'],name='Сеть '+str(i+1),members=[endpoint(end) for end in g['members']]) for i,g in enumerate(row['switches'])]
     return json.dumps(value,ensure_ascii=False,indent=2)
 
 

@@ -137,13 +137,17 @@ class Service:
 
     def _stand_save(self,args,row):
         from vm_stands import Store
+        journal=self.stand_runtime._journal(row['id'])
+        for record in journal.get('switches',{}).values():
+            if record.get('pending'):raise ValueError('Сначала выполни сверку неподтверждённой общей сети.')
+            if self.stand_runtime.host.switch_manager().check(record):raise ValueError('Сначала останови общую сеть стенда перед изменением определения.')
         available = {path.stem for path in vm.ROOT.glob('*.json')}
         if any(name not in available for name in row.get('members', [])):
             raise ValueError('Одна из выбранных VM отсутствует. Обнови библиотеку.')
-        if row['schema_version']==2:
-            from vm_stand_plan import effective
+        if row['schema_version']>=2:
+            from vm_stand_plan import effective,validation_ports
             configs={name:vm.load(name) for name in row['members']}
-            effective(row,configs,{link['id']:20000+index for index,link in enumerate(row['links'])})
+            effective(row,configs,validation_ports(row))
             for name,data in configs.items():
                 self.stopped(name,data)
         return Store(self.root).save(row, args.get('revision'))
@@ -246,7 +250,7 @@ class Service:
                 error = str(failure)
             rows.append(dict(name=name, data=data, network_view=network_display(data), snapshot_recovery=bool(error), snapshot_error=error))
         return dict(rows=rows,
-                    mode=vm.manager_settings()['launch_mode'], version='0.1.0-alpha.5')
+                    mode=vm.manager_settings()['launch_mode'], version='0.1.0-alpha.6')
 
     def states(self, args):
         if not self.inventory_running and time.monotonic() - self.inventory_time > 10:
@@ -435,6 +439,8 @@ class Service:
                     raise ValueError('Файл не найден: ' + str(path))
             exe = vm.qemu_executable()
             accelerator, checked = choose(exe, data)
+            from vm_network import probe_multicast
+            probe_multicast(exe,data.get('network_adapters',[]))
             self.event(name, 'Выбрано ускорение ' + accelerator.upper())
             selected = args.get('snapshot')
             checkpoint = None

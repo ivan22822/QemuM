@@ -2,6 +2,29 @@
 from copy import deepcopy
 import ipaddress
 import re
+import subprocess
+
+
+def probe_multicast(exe, adapters):
+    """Check actual socket backend on an owned diskless paused TCG child, never a guest."""
+    tested=set()
+    for nic in adapters:
+        if nic.get('type')!='socket' or nic.get('mode')!='mcast':continue
+        candidate=deepcopy(nic);candidate.update(id='mcast_probe',model='e1000e');candidate.pop('device_options',None)
+        backend,device=adapter_specs(candidate)
+        if backend in tested:continue
+        tested.add(backend)
+        args=[str(exe),'-S','-nodefaults','-machine','pc','-accel','tcg','-m','32','-display','none','-monitor','stdio','-netdev',backend,'-device',device]
+        child=subprocess.Popen(args,stdin=subprocess.PIPE,stdout=subprocess.PIPE,stderr=subprocess.PIPE,creationflags=getattr(subprocess,'CREATE_NO_WINDOW',0))
+        try:
+            output,error=child.communicate(b'info network\nquit\n',timeout=8)
+            if child.returncode or b'socket' not in output:
+                raise ValueError('MCAST недоступен в этой сборке QEMU или на выбранном интерфейсе. Выбери TCP-связи либо совместимую сборку QEMU. VM не запущена. '+error.decode('utf-8','replace')[-1200:])
+        except subprocess.TimeoutExpired as error:
+            raise ValueError('Проверка MCAST не завершилась за 8 секунд. VM не запущена; проверь QEMU, интерфейс и firewall или используй TCP.') from error
+        finally:
+            if child.poll() is None:child.kill()
+            child.wait(timeout=5)
 
 IDENT = re.compile(r'^[A-Za-z_][A-Za-z0-9_.-]{0,63}$')
 MODEL = re.compile(r'^[A-Za-z0-9_][A-Za-z0-9_.-]{0,79}$')
@@ -97,6 +120,17 @@ def adapter_specs(row):
         if type(port) is not int or not 1 <= port <= 65535:
             raise ValueError('Порт TCP-сети: от 1 до 65535.')
         values.append((row['mode'], address + ':' + str(port)))
+    elif backend == 'socket' and row.get('mode') == 'mcast':
+        address=ipaddress.IPv4Address(string(row,'address'))
+        if not address.is_multicast:raise ValueError('Нужен IPv4 multicast-адрес.')
+        port=row.get('port')
+        if type(port) is not int or not 1<=port<=65535:raise ValueError('Порт multicast: 1–65535.')
+        values.append(('mcast',str(address)+':'+str(port)))
+        local=string(row,'localaddr')
+        if local:
+            local=ipaddress.IPv4Address(local)
+            if local.is_multicast or local.is_unspecified:raise ValueError('Нужен IPv4 интерфейса хоста.')
+            values.append(('localaddr',str(local)))
     elif backend == 'tap':
         interface = string(row, 'ifname')
         if not interface:
@@ -209,11 +243,12 @@ def from_specs(backend, device):
         row['hostfwd'] = [value for key, value in values if key == 'hostfwd']
         values[:] = [(key, value) for key, value in values if key != 'hostfwd']
     elif row['type'] == 'socket':
-        modes = [key for key, value in values if key in ('listen', 'connect')]
+        modes = [key for key, value in values if key in ('listen', 'connect', 'mcast')]
         if len(modes) == 1:
             endpoint = take(values, modes[0])
             host, port = endpoint.rsplit(':', 1)
             row.update(mode=modes[0], address=host or '127.0.0.1', port=int(port))
+            if modes[0]=='mcast':row['localaddr']=take(values,'localaddr')
     elif row['type'] == 'tap':
         if any(key in ('script', 'downscript') and value != 'no' for key, value in values):
             raise ValueError('TAP со сценариями оставлен в Extra args.')

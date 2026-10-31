@@ -10,6 +10,8 @@ using System.Windows.Forms;
 static class InputStyleTests {
     static readonly List<string> checks=new List<string>();
     [DllImport("user32.dll")]static extern IntPtr SendMessage(IntPtr window,int message,IntPtr wParam,IntPtr lParam);
+    [DllImport("user32.dll")]static extern IntPtr GetThreadDpiAwarenessContext();
+    [DllImport("user32.dll")]static extern bool AreDpiAwarenessContextsEqual(IntPtr first,IntPtr second);
     static T Field<T>(object owner,string name){return (T)owner.GetType().GetField(name,BindingFlags.NonPublic|BindingFlags.Instance).GetValue(owner);}
     static IEnumerable<Control> All(Control parent){foreach(Control child in parent.Controls){yield return child;foreach(var nested in All(child))yield return nested;}}
     static void Check(bool condition,string label){if(!condition)throw new Exception(label);checks.Add(label);}
@@ -43,17 +45,14 @@ static class InputStyleTests {
                 Save(form,Path.Combine(args[0],"clipboard-help.png"));form.Close();
             }
             using(var main=new MainWindow(args[0],null,true,false)){
-                main.Demo();var states=Field<Dictionary<string,string>>(main,"states");
-                using(var panel=new VmWindow(main,"ubuntu-desktop")){
-                    panel.Show();Application.DoEvents();
-                    foreach(string state in new[]{"shutdown","stopped","running","error"}){
-                        states["ubuntu-desktop"]=state;panel.RefreshState();Application.DoEvents();
-                        Check(!panel.IsDisposed&&panel.Visible&&panel.Text.Contains(Theme.State(state)),"VM panel remains open and updates its state: "+state);
-                        Check(!main.Visible,"VM state changes do not bring the main window forward: "+state);
-                    }
-                    Check(All(panel).OfType<Button>().Single(button=>button.Text=="▶ Запустить").Enabled,"restart action remains available after the guest stops");
-                    Save(panel,Path.Combine(args[0],"vm-panel-after-stop.png"));panel.Close();Check(!panel.Visible,"VM panel still closes when explicitly requested");
+                main.Show();main.Demo();Application.DoEvents();
+                Check(AreDpiAwarenessContextsEqual(GetThreadDpiAwarenessContext(),new IntPtr(-4)),"Windows Forms process uses PerMonitorV2 instead of bitmap scaling");
+                foreach(string state in new[]{"shutdown","stopped","running","error"}){
+                    main.ApplyStates(J.O("ubuntu-desktop",state));Application.DoEvents();
+                    Check(main.Visible&&Field<Label>(main,"status").Text==Theme.State(state),"main VM workspace remains visible and updates its state: "+state);
                 }
+                Check(All(main).OfType<Button>().Single(button=>button.Text=="▶ Запустить").Enabled,"restart action remains available after the guest stops");
+                Save(main,Path.Combine(args[0],"vm-main-after-stop.png"));main.Close();
             }
             using(var form=new Form())using(var summary=new ResourceSummary()){
                 Theme.Form(form,670,220);summary.Dock=DockStyle.Top;form.Controls.Add(summary);form.Show();

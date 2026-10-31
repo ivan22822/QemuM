@@ -9,7 +9,7 @@ import sys
 import tempfile
 import unittest
 
-from build import ROOT, compile_program, copy_runtime, HIDDEN
+from build import ROOT, GUI, compile_program, copy_runtime, HIDDEN
 
 
 def fixture(root):
@@ -50,7 +50,8 @@ def gui_tests(include_qemu=False,only=None):
     if only:names=[only]
     for name in names:
         exe = ROOT / 'build' / 'tests' / (name + '.exe')
-        compile_program(exe, name, (ROOT / 'tests' / 'gui' / (name + '.cs'),))
+        compile_program(exe, name, (ROOT / 'tests' / 'gui' / (name + '.cs'),), manifest=GUI / 'app.manifest')
+        shutil.copy2(GUI / 'VMManager.exe.config', exe.with_name(exe.name + '.config'))
         with tempfile.TemporaryDirectory(prefix=name + '-', dir=ROOT / 'build') as temporary:
             root = Path(temporary)
             iso, sentinel = fixture(root)

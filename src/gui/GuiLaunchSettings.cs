@@ -57,14 +57,16 @@ static class LaunchProfiles {
 
 sealed class LaunchProfileDialog : Form {
     readonly Backend backend;readonly ThemedSelector presets=Theme.Combo(),accelerator=Theme.Combo("WHPX","TCG");
+    readonly ChoiceStrip acceleratorChoices=new ChoiceStrip(2,"WHPX","TCG");
     readonly FieldInput title=Theme.Input(),cpu=Theme.Input(),options=Theme.Input();
     readonly ThemedEditor description=new ThemedEditor();
     readonly Label hint=Theme.Label("",10,Theme.Muted);object catalog;object[] rows;string editing;
     public object Selected {get;private set;}
     public LaunchProfileDialog(Backend backend,string selected){
         this.backend=backend;Text="Профили запуска";Theme.Form(this,780,760);
+        acceleratorChoices.Bind(accelerator);acceleratorChoices.Width=330;
         var fields=Theme.Fields();Theme.Row(fields,"Сохранённый профиль",presets,true);Theme.Row(fields,"Название",title,true);
-        Theme.Row(fields,"Ускоритель",accelerator);Theme.Row(fields,"Модель и опции CPU",cpu);
+        Theme.Row(fields,"Ускоритель",acceleratorChoices);Theme.Row(fields,"Модель и опции CPU",cpu);
         Theme.Row(fields,"Опции ускорителя",options,true);
         description.Height=130;description.Input.MaxLength=2000;description.AccessibleName="Описание профиля";
         Theme.Row(fields,"Описание — назначение и ограничения профиля",description,true);
@@ -86,7 +88,7 @@ sealed class LaunchProfileDialog : Form {
         presets.SelectedIndexChanged+=(sender,args)=>ShowSelected();Reload(selected);
     }
     void Safe(Action action){try{action();}catch(Exception error){MessageBox.Show(this,error.Message,"Профили запуска",MessageBoxButtons.OK,MessageBoxIcon.Warning);}}
-    void EnableFields(bool enabled){title.Enabled=cpu.Enabled=options.Enabled=accelerator.Enabled=enabled;description.ReadOnly=!enabled;}
+    void EnableFields(bool enabled){title.Enabled=cpu.Enabled=options.Enabled=accelerator.Enabled=acceleratorChoices.Enabled=enabled;description.ReadOnly=!enabled;}
     void Reload(string id){catalog=backend.Call("profile_list",J.O());rows=J.A(J.V(catalog,"profiles")).ToArray();presets.Items.Clear();foreach(var row in rows)presets.Items.Add(J.S(row,"label"));presets.SelectedIndex=Math.Max(0,Array.FindIndex(rows,row=>J.S(row,"id")==id));ShowSelected();}
     void ShowSelected(){if(rows==null||presets.SelectedIndex<0||presets.SelectedIndex>=rows.Length)return;var row=rows[presets.SelectedIndex];editing=J.S(row,"id");title.Text=J.S(row,"label");description.Text=J.S(row,"description");var settings=J.V(row,"settings");cpu.Text=J.S(settings,"cpu");options.Text=J.S(settings,"options");accelerator.SelectedIndex=J.S(settings,"accelerator")=="tcg"?1:0;EnableFields(editing!="auto");hint.Text=editing=="auto"?"«Авто» проверяет обычный WHPX, затем TCG; алгоритм не редактируется.":"Изменения каталога не переписывают параметры существующих VM.";}
 }
@@ -176,7 +178,7 @@ sealed class LaunchSettingsUi {
         hint.Text="Добавляй и изменяй адаптеры здесь — сеть из Extra args подхватывается автоматически.\r\nПустой список отключает автоматическую сеть. Применится при следующем запуске.";
         if(warnings.Length>0)hint.Text+=Environment.NewLine+String.Join(Environment.NewLine,warnings);
         List.Items.Clear();var displayed=Adapters.ToArray();
-        foreach(object item in displayed){string type=J.S(item,"type","user");string mode=type=="user"?"NAT":type=="socket"?"TCP "+J.S(item,"mode","ручной"):type.ToUpperInvariant();var row=new AdapterRow(new[]{J.S(item,"id"),mode,J.S(item,"model"),J.S(item,"mac","Авто"),type=="user"?J.S(item,"net","10.0.2.0/24"):type=="tap"?J.S(item,"ifname"):J.S(item,"address")+":"+J.N(item,"port")});List.Items.Add(row);}
+        foreach(object item in displayed){string type=J.S(item,"type","user");string mode=type=="user"?"NAT":type=="socket"?(J.S(item,"mode")=="mcast"?"MCAST ":"TCP ")+J.S(item,"mode","ручной"):type.ToUpperInvariant();var row=new AdapterRow(new[]{J.S(item,"id"),mode,J.S(item,"model"),J.S(item,"mac","Авто"),type=="user"?J.S(item,"net","10.0.2.0/24"):type=="tap"?J.S(item,"ifname"):J.S(item,"address")+":"+J.N(item,"port")});List.Items.Add(row);}
     }
     void Add(){
         if(ensureVisual!=null)ensureVisual();context();
@@ -194,27 +196,28 @@ sealed class LaunchSettingsUi {
 
 sealed class NetworkAdapterDialog : Form {
     readonly Dictionary<string,object> original;readonly FieldInput identifier,mac,network,dhcp,address,ifname,backend,backendOptions,deviceOptions;readonly ThemedEditor forwards;readonly ThemedSelector model;
-    readonly ThemedSelector mode=Theme.Combo("NAT · Интернет и проброс портов","TCP · слушать соединение VM","TCP · подключиться к VM","TAP · существующий адаптер Windows","Другой backend · вручную");
-    readonly CheckBox restrict=new CheckBox{Text="Изоляция NAT: ограничить исходящие соединения",AutoSize=true,ForeColor=Theme.Text};readonly NumberInput port;
+    readonly ThemedSelector mode=Theme.Combo("NAT · Интернет и проброс портов","TCP · слушать соединение VM","TCP · подключиться к VM","TAP · существующий адаптер Windows","Другой backend · вручную","MCAST · общая сеть VM");
+    readonly CheckBox restrict=new CheckBox{Text="Изоляция NAT: ограничить исходящие соединения",AutoSize=true,ForeColor=Theme.Text};readonly NumberInput port;readonly FieldInput localaddr;
     public object Value {get;private set;}
     public NetworkAdapterDialog(object data){
-        original=new Dictionary<string,object>(J.D(data));Text="Сетевой адаптер";Theme.Form(this,940,830);
+        original=new Dictionary<string,object>(J.D(data));localaddr=Theme.Input(J.S(data,"localaddr"));Text="Сетевой адаптер";Theme.Form(this,940,830);
         identifier=Theme.Input(J.S(data,"id"));model=Theme.Combo("e1000e","virtio-net-pci","e1000","rtl8139");model.DropDownStyle=ComboBoxStyle.DropDown;model.Text=J.S(data,"model","virtio-net-pci");mac=Theme.Input(J.S(data,"mac"));network=Theme.Input(J.S(data,"net"));dhcp=Theme.Input(J.S(data,"dhcpstart"));
         address=Theme.Input(J.S(data,"address","127.0.0.1"));port=Theme.Number(J.N(data,"port",1234),1,65535);ifname=Theme.Input(J.S(data,"ifname"));backend=Theme.Input(J.S(data,"type","user"));
         backendOptions=Theme.Input(J.S(data,"backend_options"));deviceOptions=Theme.Input(J.S(data,"device_options"));forwards=Theme.Editor(String.Join(Environment.NewLine,J.A(J.V(data,"hostfwd")).Select(Convert.ToString)));forwards.Height=90;forwards.Font=new Font("Consolas",10F);restrict.Checked=J.B(data,"restrict");
-        var fields=Theme.Fields();Theme.Row(fields,"ID сети",identifier);Theme.Row(fields,"Подключение",mode);Theme.Row(fields,"Модель NIC",model);Theme.Row(fields,"MAC (пусто — авто)",mac);
+        var connectionChoices=new ChoiceStrip(3,"NAT","TCP · слушать","TCP · подключиться","TAP","Другой backend","MCAST");connectionChoices.Bind(mode);
+        var fields=Theme.Fields();Theme.Row(fields,"ID сети",identifier);Theme.Row(fields,"Подключение",connectionChoices,true);Theme.Row(fields,"Модель NIC",model);Theme.Row(fields,"MAC (пусто — авто)",mac);
         var natFields=new[]{Theme.Row(fields,"Подсеть NAT / CIDR",network),Theme.Row(fields,"DHCP начинается с",dhcp),Theme.Row(fields,"",restrict),Theme.Row(fields,"Проброс портов NAT",forwards,true)};
-        var tcpFields=new[]{Theme.Row(fields,"Узел TCP",address),Theme.Row(fields,"Порт TCP",port)};var tapField=Theme.Row(fields,"Имя TAP Windows",ifname,true);var customField=Theme.Row(fields,"Тип ручного backend",backend,true);
+        var tcpFields=new[]{Theme.Row(fields,"Узел TCP / группа MCAST (239.x.x.x)",address),Theme.Row(fields,"Порт TCP / UDP",port)};var tapField=Theme.Row(fields,"Имя TAP Windows",ifname,true);var customField=Theme.Row(fields,"Тип ручного backend",backend,true);var localField=Theme.Row(fields,"IPv4 интерфейса хоста MCAST (пусто — автоматически)",localaddr,true);
         Theme.Row(fields,"Доп. опции netdev",backendOptions);Theme.Row(fields,"Доп. свойства NIC",deviceOptions);
         Theme.Row(fields,"",Theme.Label("Модели: virtio-net-pci, e1000, e1000e, rtl8139.\r\nVirtio требует драйвер гостевой ОС.\r\nПроброс: tcp:127.0.0.1:2222-:22 — по одному правилу в строке.\r\nTAP требует уже установленного драйвера и адаптера.",9,Theme.Muted));
-        string type=J.S(data,"type","user");mode.SelectedIndex=type=="user"?0:type=="socket"&&J.S(data,"mode")=="listen"?1:type=="socket"&&J.S(data,"mode")=="connect"?2:type=="tap"?3:4;
-        Action selectFields=()=>{bool user=mode.SelectedIndex==0,tcp=mode.SelectedIndex==1||mode.SelectedIndex==2;fields.SuspendLayout();foreach(var field in natFields)field.Visible=user;foreach(var field in tcpFields)field.Visible=tcp;tapField.Visible=mode.SelectedIndex==3;customField.Visible=mode.SelectedIndex==4;fields.ResumeLayout();};mode.SelectedIndexChanged+=(sender,args)=>selectFields();selectFields();
+        string type=J.S(data,"type","user");mode.SelectedIndex=type=="user"?0:type=="socket"&&J.S(data,"mode")=="listen"?1:type=="socket"&&J.S(data,"mode")=="connect"?2:type=="tap"?3:type=="socket"&&J.S(data,"mode")=="mcast"?5:4;
+        Action selectFields=()=>{bool user=mode.SelectedIndex==0,tcp=mode.SelectedIndex==1||mode.SelectedIndex==2||mode.SelectedIndex==5;fields.SuspendLayout();foreach(var field in natFields)field.Visible=user;foreach(var field in tcpFields)field.Visible=tcp;localField.Visible=mode.SelectedIndex==5;tapField.Visible=mode.SelectedIndex==3;customField.Visible=mode.SelectedIndex==4;fields.ResumeLayout();};mode.SelectedIndexChanged+=(sender,args)=>selectFields();selectFields();
         var buttons=Theme.Flow();buttons.Controls.Add(Theme.Button("Применить",Save,true));buttons.Controls.Add(Theme.Button("Отмена",()=>{DialogResult=DialogResult.Cancel;Close();}));Theme.Dialog(this,fields,buttons,"Сетевой адаптер",J.S(data,"id")+" · подключение, адресация и проброс портов");
     }
     void Save(){
         if(!Regex.IsMatch(identifier.Text.Trim(),@"^[A-Za-z_][A-Za-z0-9_.-]{0,63}$")||!Regex.IsMatch(model.Text.Trim(),@"^[A-Za-z0-9_][A-Za-z0-9_.-]{0,79}$")){MessageBox.Show(this,"Проверь ID и модель адаптера.");return;}
-        var data=new Dictionary<string,object>(original);data["id"]=identifier.Text.Trim();data["model"]=model.Text.Trim();data["mac"]=mac.Text.Trim();data["type"]=mode.SelectedIndex==0?"user":mode.SelectedIndex==1||mode.SelectedIndex==2?"socket":mode.SelectedIndex==3?"tap":backend.Text.Trim();
-        data["mode"]=mode.SelectedIndex==1?"listen":mode.SelectedIndex==2?"connect":"custom";data["net"]=network.Text.Trim();data["dhcpstart"]=dhcp.Text.Trim();data["restrict"]=restrict.Checked;data["hostfwd"]=forwards.Lines.Where(line=>!String.IsNullOrWhiteSpace(line)).Select(line=>line.Trim()).ToArray();
+        var data=new Dictionary<string,object>(original);data["id"]=identifier.Text.Trim();data["model"]=model.Text.Trim();data["mac"]=mac.Text.Trim();data["type"]=mode.SelectedIndex==0?"user":mode.SelectedIndex==1||mode.SelectedIndex==2||mode.SelectedIndex==5?"socket":mode.SelectedIndex==3?"tap":backend.Text.Trim();
+        data["mode"]=mode.SelectedIndex==1?"listen":mode.SelectedIndex==2?"connect":mode.SelectedIndex==5?"mcast":"custom";data["localaddr"]=localaddr.Text.Trim();data["net"]=network.Text.Trim();data["dhcpstart"]=dhcp.Text.Trim();data["restrict"]=restrict.Checked;data["hostfwd"]=forwards.Lines.Where(line=>!String.IsNullOrWhiteSpace(line)).Select(line=>line.Trim()).ToArray();
         data["address"]=address.Text.Trim();data["port"]=(int)port.Value;data["ifname"]=ifname.Text.Trim();data["backend_options"]=backendOptions.Text.Trim();data["device_options"]=deviceOptions.Text.Trim();Value=data;DialogResult=DialogResult.OK;Close();
     }
 }
@@ -292,6 +295,11 @@ sealed class ExtraHelpView : UserControl {
 Socket-backend передаёт Ethernet-кадры, а не предоставляет NAT или DHCP. Назначь гостям адреса одной лабораторной подсети самостоятельно либо подними DHCP внутри лаборатории. Для машин на одном компьютере подходит 127.0.0.1. Для разных хостов нужны доступный адрес, firewall и доверенная сеть; сам socket-backend не добавляет шифрование.
 
 Если подключающаяся VM завершается с ошибкой соединения, проверь, что первая уже слушает и что порт свободен. Это отдельный порт лаборатории, а не QMP.",E("Сторона, которая слушает","-netdev","socket,id=lab_a,listen=127.0.0.1:1234","-device","e1000,netdev=lab_a"),E("Подключающаяся сторона","-netdev","socket,id=lab_b,connect=127.0.0.1:1234","-device","e1000,netdev=lab_b")),
+        T("MCAST · общая сеть VM",@"MCAST объединяет адаптеры через общую UDP multicast-группу и порт. На вкладке «Сеть» выбери MCAST, укажи группу 239.x.x.x, порт и при необходимости IPv4 интерфейса хоста. В стенде: «Соединения и порядок» → «Добавить MCAST», по одному адаптеру каждой VM (минимум две машины). Слушатель и обязательный порядок TCP не нужны.
+
+Для Интернета оставь второй адаптер NAT. IP и DHCP внутри гостей настраиваются отдельно. Совпадающие группа и порт объединяют сети, в том числе между стендами. Multicast не шифруется и не гарантирует изоляцию. Firewall и выбранный интерфейс влияют на обмен.
+
+Некоторые Windows-сборки QEMU отвергают multicast bind. Перед запуском QemuM проверяет backend на отдельном paused TCG-процессе без дисков; при отказе гостевая VM не запускается. Используй TCP-связи или совместимую сборку QEMU. Успешная проверка не доказывает доставку пакетов и готовность гостевой ОС.",E("Multicast вручную","-netdev","socket,id=lab_mcast,mcast=239.192.50.1:23456","-device","e1000e,netdev=lab_mcast")),
         T("TAP и ручной backend",@"TAP подключает гостя к существующему виртуальному интерфейсу хоста. На Windows нужны подходящий установленный драйвер, созданный адаптер и иногда дополнительные права. Менеджер не устанавливает драйвер и не создаёт мост Windows. Укажи имя существующего TAP в форме; IP, bridge и маршруты хоста настраиваются отдельно.
 
 Для необычных backend выбери ручной тип и дополнительные опции. Поддержка bridge, vhost-user, multicast, stream и других вариантов зависит от ОС и сборки QEMU. Linux-примеры с /dev/net/tun, br0, vhost=on или sudo не переносить на Windows буквально.

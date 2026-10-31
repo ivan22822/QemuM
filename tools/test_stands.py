@@ -77,6 +77,24 @@ def run():
                 dict(id='2'*32,listen=dict(vm=names[0],nic='lan'),connect=dict(vm=names[1],nic='lan')),
                 dict(id='3'*32,listen=dict(vm=names[1],nic='nat'),connect=dict(vm=names[2],nic='lan'))]
             three=Store(root).save(three,0);finish(service.stand_plan(dict(id=three['id'])));finish(service.stand_plan(dict(id=three['id'],action='stop',force=True)))
+            # No TCP listener or launch dependency for a three-member multicast bus.
+            with socket.socket(socket.AF_INET,socket.SOCK_DGRAM) as udp:
+                udp.bind(('127.0.0.1',0));multicast_port=udp.getsockname()[1]
+            bus=upgrade(create('Disposable multicast bus',names[:3]));bus.update(schema_version=3,multicast=[dict(id='4'*32,address='239.192.240.17',port=multicast_port,localaddr='127.0.0.1',members=[dict(vm=n,nic='lan') for n in names[:3]])])
+            bus['order'].reverse();bus=Store(root).save(bus,0)
+            try:bus_plan=service.stand_plan(dict(id=bus['id']))
+            except ValueError as error:
+                if 'MCAST недоступен' not in str(error):raise
+                assert all(not service.stand_runtime.host.identity(n,vm.load(n)) for n in names[:3])
+                multicast_result='unsupported QEMU backend rejected before any guest start'
+            else:
+                assert bus_plan['ports']=={};finish(bus_plan)
+                for name in names[:3]:
+                    network=service.query(name,vm.load(name),'human-monitor-command',{'command-line':'info network'})
+                    assert 'socket' in network and 'user' in network,network
+                finish(service.stand_plan(dict(id=bus['id'],action='stop',force=True)))
+                multicast_result='three paused guests plus NAT; guest IP connectivity not tested'
+            print(json.dumps(dict(multicast=multicast_result)),flush=True)
             # Returning to standalone uses the original user NICs, no socket overlay.
             service.start(dict(name=names[0]))
             deadline=time.monotonic()+10

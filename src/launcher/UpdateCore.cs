@@ -268,7 +268,7 @@ namespace QemuM.Update {
                 NoLinks(path);
                 try{using(var probe=new FileStream(path,FileMode.Open,FileAccess.ReadWrite,FileShare.None)){} }
                 catch(FileNotFoundException){} // The worker completed between enumeration and open.
-                catch(IOException error){throw new IOException("Выполняется операция стенда. Дождись её завершения или отмены перед обновлением.",error);}
+                catch(IOException error){throw new IOException("Работает общая сеть или операция стенда. Останови участников и заверши операции перед обновлением.",error);}
             }
         }
         public static bool Rollback(string root,string failed){

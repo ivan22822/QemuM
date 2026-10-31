@@ -32,7 +32,7 @@ def identifier(value):
 
 def validate(row):
     required = {'schema_version', 'id', 'revision', 'name', 'description', 'members', 'links', 'order'}
-    if not isinstance(row, dict) or type(row.get('schema_version')) is not int or row['schema_version'] not in (1, 2) or set(row) != (required | ({'startup'} if row['schema_version']==2 else set())):
+    if not isinstance(row, dict) or type(row.get('schema_version')) is not int or row['schema_version'] not in (1, 2, 3, 4) or set(row) != (required | ({'startup'} if row['schema_version']>=2 else set()) | ({'multicast'} if row['schema_version']>=3 else set()) | ({'switches'} if row['schema_version']==4 else set())):
         raise ValueError('Неизвестная схема стенда.')
     identifier(row['id'])
     if type(row['revision']) is not int or row['revision'] < 0:
@@ -54,7 +54,7 @@ def validate(row):
         raise ValueError('Порядок должен включать каждую VM ровно один раз.')
     if row['schema_version']==1 and row['links'] != []:
         raise ValueError('Для связей нужна схема стенда 2.')
-    if row['schema_version']==2:
+    if row['schema_version']>=2:
         from vm_stand_plan import validate_topology
         validate_topology(row)
     return row
@@ -91,7 +91,7 @@ class Store:
                     rows.append(self.read(path.stem))
                 except (ValueError, OSError) as error:
                     errors.append(dict(file=path.name, error=str(error)))
-        return dict(rows=rows, errors=errors, schema_version=2)
+        return dict(rows=rows, errors=errors, schema_version=4)
 
     def save(self, incoming, expected):
         row = validate(dict(incoming))

@@ -53,6 +53,7 @@ def release(patch=False):
         shutil.copy2(launcher, stage / 'QemuM.Update.exe')
         compile_program(stage / 'VMManager.exe', icon=ROOT / 'build' / 'tools' / 'app.ico',
                         manifest=GUI / 'app.manifest')
+        shutil.copy2(GUI / 'VMManager.exe.config', stage / 'VMManager.exe.config')
         shutil.copy2(ROOT / 'docs' / 'ALPHA-GUIDE.md', stage / 'ALPHA-GUIDE.md')
         shutil.copy2(ROOT / 'docs' / 'UPDATE-PROTOCOL.md', stage / 'UPDATE-PROTOCOL.md')
         shutil.copy2(ROOT / 'docs' / 'SNAPSHOTS.md', stage / 'SNAPSHOTS.md')
