@@ -279,6 +279,6 @@ static class StandsTests {
                 host.Close();
             }
             File.WriteAllText(Path.Combine(args[1],"stands-results.json"),J.Json().Serialize(J.O("passed",checks)));return 0;
-        }catch(Exception error){File.WriteAllText(Path.Combine(args[1],"stands-error.txt"),error.ToString());return 1;}
+        }catch(Exception error){File.WriteAllText(Path.Combine(args[1],"stands-error.txt"),error.ToString());Console.Error.WriteLine(error);return 1;}
     }
 }
