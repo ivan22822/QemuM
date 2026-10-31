@@ -82,7 +82,7 @@ def gui_tests(include_qemu=False,only=None):
             error_file=output/(name.replace('Tests','').lower()+'-error.txt')
             error_file.unlink(missing_ok=True)
             try:
-                subprocess.run([str(exe), *args], timeout=180 if name in ('GuiTests','SnapshotRpcTests','StandsScaleTests') else 60,
+                subprocess.run([str(exe), *args], timeout=180 if name in ('GuiTests','SnapshotRpcTests','StandsScaleTests','StandsTests') else 60,
                                creationflags=HIDDEN, check=True)
             except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
                 if error_file.is_file():
