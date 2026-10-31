@@ -2,8 +2,8 @@
   "schema": 1,
   "min_launcher_protocol": 1,
   "version": "0.1.0-alpha.6",
-  "build": 0,
+  "build": 1,
   "channel": "alpha",
-  "url": "https://github.com/ivan22822/QemuM/releases/download/v0.1.0-alpha.6/QemuM-0.1.0-alpha.6-app.zip",
-  "sha256": "e602502394e3303d667352ed32bd81b268f801a360a137930391c261059eaf99"
+  "url": "https://github.com/ivan22822/QemuM/releases/download/v0.1.0-alpha.6/QemuM-0.1.0-alpha.6-build.1-app.zip",
+  "sha256": "838e094df6d05774072764327e5212c0bee7cc3bf21006e2129564123b1257ba"
 }
