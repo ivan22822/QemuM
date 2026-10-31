@@ -85,6 +85,8 @@ def gui_tests(include_qemu=False,only=None):
                 subprocess.run([str(exe), *args], timeout=180 if name in ('GuiTests','SnapshotRpcTests','StandsScaleTests','StandsTests') else 60,
                                creationflags=HIDDEN, check=True)
             except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+                trace_file=output/(name.replace('Tests','').lower()+'-progress.txt')
+                if trace_file.is_file():print(trace_file.read_text(encoding='utf-8',errors='replace')[-4000:],file=sys.stderr,flush=True)
                 if error_file.is_file():
                     print(error_file.read_text(encoding='utf-8',errors='replace')[-8000:],file=sys.stderr,flush=True)
                 raise

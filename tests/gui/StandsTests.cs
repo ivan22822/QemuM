@@ -9,12 +9,14 @@ using System.Threading.Tasks;
 
 static class StandsTests {
     static int checks;
+    static string trace;
     static T Field<T>(object x,string n){return (T)x.GetType().GetField(n,BindingFlags.NonPublic|BindingFlags.Instance).GetValue(x);}
     static IEnumerable<Control> All(Control x){foreach(Control c in x.Controls){yield return c;foreach(var d in All(c))yield return d;}}
-    static void Check(bool ok,string message){if(!ok)throw new Exception(message);checks++;}
+    static void Check(bool ok,string message){if(trace!=null)File.AppendAllText(trace,message+Environment.NewLine);if(!ok)throw new Exception(message);checks++;}
     static void Wait(MainWindow main){var until=DateTime.UtcNow.AddSeconds(15);while(main.Busy&&DateTime.UtcNow<until){Application.DoEvents();System.Threading.Thread.Sleep(20);}Check(!main.Busy&&main.TestError==null,"RPC did not complete cleanly: "+main.TestError);}
     [STAThread]static int Main(string[] args){
         Application.EnableVisualStyles();Application.SetCompatibleTextRenderingDefault(false);Program.TestMode=true;
+        trace=Path.Combine(args[1],"stands-progress.txt");File.WriteAllText(trace,"");
         try{
             var multicast=J.O("id","lan","type","socket","mode","mcast","address","239.192.10.20","port",23456,"localaddr","127.0.0.1","model","e1000e","mac","52:54:00:00:00:01");
             string unchanged=J.Json().Serialize(multicast);
