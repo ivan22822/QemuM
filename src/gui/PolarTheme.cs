@@ -254,6 +254,8 @@ sealed class PageDeck : UserControl {
         button.Tag=page;
         button.AutoSize=false;
         button.Size=new Size(148,46);
+        var textSize=TextRenderer.MeasureText(page.Text,button.Font,new Size(118,0),TextFormatFlags.WordBreak|TextFormatFlags.NoPrefix);
+        button.Height=Math.Max(46,textSize.Height+20);
         button.MinimumSize=Size.Empty;
         button.Margin=new Padding(0,0,0,6);
         button.BackColor=Theme.Panel;

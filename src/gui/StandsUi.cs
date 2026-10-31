@@ -139,7 +139,6 @@ sealed partial class MainWindow {
         operations.Controls.Add(Theme.Button("Выключить стенд",()=>PlanStand(standId,"stop")));
         operations.Controls.Add(Theme.Button("Остановить QEMU стенда",()=>PlanStand(standId,"stop",true),false,true));
         var operationStatusButton=Theme.Button("Состояние операции",()=>ReadStandOperation(standId));
-        stack.Controls.Add(operations);
         var maintenance=Theme.Flow();maintenance.MaximumSize=operations.MaximumSize;
         maintenance.Controls.Add(operationStatusButton);
         maintenance.Controls.Add(Theme.Button("Проверить после сбоя",()=>{
@@ -152,33 +151,30 @@ sealed partial class MainWindow {
         maintenance.Controls.Add(Theme.Button("Удалить папку стенда",()=>RemoveStand(selectedStand),false,true));
         maintenance.Controls.Add(Theme.Button("Экспорт отчёта",()=>ExportStand(standId)));
         if(J.A(J.V(selectedStand,"switches")).Length>0)maintenance.Controls.Add(Theme.Button("Диагностика общих сетей",()=>OpenNetworkWorkspace(selectedStand,true)));
-        maintenance.Controls.Add(Theme.Button("Справка о стендах",()=>{using(var faq=new FaqWindow())faq.ShowDialog(this);}));stack.Controls.Add(maintenance);
+        maintenance.Controls.Add(Theme.Button("Справка о стендах",()=>{using(var faq=new FaqWindow())faq.ShowDialog(this);}));
         standPhase=Theme.Label("Состояния участников обновляются автоматически.",10,Theme.Muted);standPhase.MaximumSize=new Size(Math.Max(260,detail.ClientSize.Width-80),0);stack.Controls.Add(standPhase);
         var tabs=new WorkspaceTabs{Width=Math.Max(260,detail.ClientSize.Width-80),Height=365};standTabs=tabs;
-        var layout=new Dictionary<string,Point>();string layoutError="";Guid parsed;
-        if(Guid.TryParseExact(standId,"N",out parsed))try{layout=StandDiagramLayout.Read(RootPath,standId);}catch(Exception error){layoutError="Расположение не загружено: "+error.Message;}
-        var graph=new StandTopologyCanvas(selectedStand,Row,layout);standGraph=graph;
-        var graphPanel=new Panel{Dock=DockStyle.Fill,BackColor=Theme.Bg};var statusBar=new Panel{Dock=DockStyle.Top,Height=42,BackColor=Theme.Bg};standNetworkStatus=Theme.Label(layoutError.Length>0?layoutError:"Нажми «Обновить» для состояния сети. Связь гостевых ОС не проверяется.",9,layoutError.Length>0?Theme.Red:Theme.Muted);standNetworkStatus.Dock=DockStyle.Fill;standNetworkStatus.AutoSize=false;standNetworkStatus.TextAlign=ContentAlignment.MiddleLeft;
-        var refreshGraph=Theme.Button("Обновить",()=>RefreshStandOverview(graph,standId));refreshGraph.AutoSize=false;refreshGraph.MinimumSize=Size.Empty;refreshGraph.Width=112;refreshGraph.Dock=DockStyle.Right;statusBar.Controls.Add(standNetworkStatus);statusBar.Controls.Add(refreshGraph);
-        graphPanel.Controls.Add(new ScrollSurface(graph){BackColor=Theme.Bg});graphPanel.Controls.Add(statusBar);
-        tabs.Add("Схема сети",graphPanel);
-        tabs.Add("Соединения",Theme.Label(String.Join("\n",J.A(J.V(selectedStand,"links")).Select(link=>J.S(J.V(link,"listen"),"vm")+" / "+J.S(J.V(link,"listen"),"nic")+" → "+J.S(J.V(link,"connect"),"vm")+" / "+J.S(J.V(link,"connect"),"nic"))),10,Theme.Muted));
-        if(J.A(J.V(selectedStand,"switches")).Length>0)tabs.Add("Общие сети",Theme.Label(String.Join("\n",J.A(J.V(selectedStand,"switches")).Select(g=>J.S(g,"name")+" · "+String.Join(", ",J.A(J.V(g,"members")).Select(end=>J.S(end,"vm")+" / "+J.S(end,"nic"))))),10,Theme.Muted));
-        if(J.A(J.V(selectedStand,"multicast")).Length>0)tabs.Add("MCAST",Theme.Label(String.Join("\n",J.A(J.V(selectedStand,"multicast")).Select(MulticastText)),10,Theme.Muted));
-        standPlanTabIndex=2+(J.A(J.V(selectedStand,"switches")).Length>0?1:0)+(J.A(J.V(selectedStand,"multicast")).Length>0?1:0);
-        tabs.Add("Запуск",BuildStandPlanPage(standId));
+        standGraph=null;standNetworkStatus=null;
+        var overview=Theme.Flow(true);overview.Dock=DockStyle.Fill;overview.AutoScroll=false;
+        overview.Controls.Add(Theme.Label("Машин в стенде: "+J.A(J.V(selectedStand,"members")).Length+". Выбор машины доступен в библиотеке слева.",10,Theme.Muted));
+        overview.Controls.Add(Theme.Button("Открыть состав стенда",()=>EditStand(selectedStand)));
+        tabs.Add("Обзор",overview);
+        var launch=new Panel{Dock=DockStyle.Fill,BackColor=Theme.Bg};
+        operations.Dock=DockStyle.Top;operations.AutoSize=true;
+        launch.Controls.Add(BuildStandPlanPage(standId));launch.Controls.Add(operations);
+        standPlanTabIndex=1;tabs.Add("Запуск",launch);
         standJournalTabIndex=standPlanTabIndex+1;
         standOperationPanel=new StandOperationPanel(Backend,()=>ReadStandOperation(standId)){Dock=DockStyle.Fill};tabs.Add("Журнал",standOperationPanel);
         if(standActiveOperationStandId==standId&&!String.IsNullOrEmpty(standActiveOperationId))standOperationPanel.SetOperation(standActiveOperationId);
         if(standPendingId==standId&&standPendingPlan!=null)RenderStandPlan();
-        stack.Controls.Add(tabs);
-        stack.Controls.SetChildIndex(standPhase,5);
-        stack.Controls.SetChildIndex(tabs,6);
-        stack.Controls.Add(Theme.Label("Состав стенда",14,null,true));
-        foreach(string name in J.A(J.V(selectedStand,"members")).Select(Convert.ToString)){string n=name;var row=Row(n);var member=Theme.Button(J.S(J.V(row,"data"),"label",n)+(row==null?" · VM отсутствует":" · "+Theme.State(State(n))),()=>{standSelectedVm=n;standSelectedParent=restoreStand=standId;selectedStand=null;standDetail.Visible=false;SelectVm(n);PaintStandStatus();});stack.Controls.Add(member);standMemberButtons[n]=member;}
-        stack.Controls.Add(Theme.Label("Стенд хранит ссылки на VM; образы не перемещаются.\nНастройка связей не назначает IP и DHCP внутри гостевых ОС.",10,Theme.Muted));
-        standDetail.Controls.Add(new ScrollSurface(stack){Dock=DockStyle.Fill,BackColor=Theme.Bg});foreach(Control sibling in detail.Controls)sibling.Visible=Object.ReferenceEquals(sibling,standDetail);standDetail.BringToFront();
+        tabs.Add("Управление",maintenance);
+        var layout=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=1,RowCount=2,BackColor=Theme.Bg,Padding=new Padding(16)};
+        layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));
+        layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));layout.RowStyles.Add(new RowStyle(SizeType.Percent,100));
+        stack.Dock=DockStyle.Fill;layout.Controls.Add(stack,0,0);layout.Controls.Add(tabs,0,1);tabs.Dock=DockStyle.Fill;
+        standDetail.Controls.Add(layout);foreach(Control sibling in detail.Controls)sibling.Visible=Object.ReferenceEquals(sibling,standDetail);standDetail.BringToFront();
     }
+
     void RefreshStandOverview(StandTopologyCanvas graph,string id){
         if(Backend==null||graph==null||standOverviewPending.Contains(id))return;standOverviewPending.Add(id);
         Task.Run(()=>{try{object value=Backend.Call("stand_overview",J.O("id",id));Post(()=>{if(!graph.IsDisposed&&J.S(selectedStand,"id")==id){graph.ApplyStatus(value);if(standNetworkStatus!=null&&!standNetworkStatus.IsDisposed){var networks=J.A(J.V(value,"network_diagnostics"));standNetworkStatus.Text="Срез "+DateTime.Now.ToString("HH:mm:ss")+" · "+networks.Length+" общих сетей · связь внутри ОС не проверена";standNetworkStatus.ForeColor=Theme.Muted;}}});}
