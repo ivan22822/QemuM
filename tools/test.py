@@ -79,8 +79,15 @@ def gui_tests(include_qemu=False,only=None):
                 args = [str(output / 'menu-results.json'), str(root)]
             else:
                 args = [str(output)]
-            subprocess.run([str(exe), *args], timeout=180 if name in ('GuiTests','SnapshotRpcTests','StandsScaleTests') else 60,
-                           creationflags=HIDDEN, check=True)
+            error_file=output/(name.replace('Tests','').lower()+'-error.txt')
+            error_file.unlink(missing_ok=True)
+            try:
+                subprocess.run([str(exe), *args], timeout=180 if name in ('GuiTests','SnapshotRpcTests','StandsScaleTests') else 60,
+                               creationflags=HIDDEN, check=True)
+            except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
+                if error_file.is_file():
+                    print(error_file.read_text(encoding='utf-8',errors='replace')[-8000:],file=sys.stderr,flush=True)
+                raise
             assert iso.read_bytes() == sentinel, 'Test altered its placeholder ISO'
         print(name + ': passed')
 
