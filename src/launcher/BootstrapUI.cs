@@ -6,12 +6,13 @@ using System.Windows.Forms;
 
 // Shared installer/updater chrome. No dependency on the application frontend.
 static class BootstrapUI {
-    public static readonly Color Bg=Color.FromArgb(5,14,37),Panel=Color.FromArgb(11,27,54),
-        Card=Color.FromArgb(16,39,70),Text=Color.FromArgb(249,242,245),
-        Muted=Color.FromArgb(156,180,207),Accent=Color.FromArgb(101,199,255);
+    public static readonly Color Bg=Color.FromArgb(20,24,30),Panel=Color.FromArgb(34,42,50),
+        Card=Color.FromArgb(54,67,75),Text=Color.FromArgb(248,245,238),
+        Muted=Color.FromArgb(188,201,206),Accent=Color.FromArgb(117,214,209);
     [DllImport("dwmapi.dll")]static extern int DwmSetWindowAttribute(IntPtr window,int key,ref int value,int size);
     public static void Style(Form form,string title,int height){
         form.Text=title;form.BackColor=Bg;form.ForeColor=Text;form.Font=new Font("Segoe UI",10);
+        form.AutoScaleMode=AutoScaleMode.Dpi;
         form.ClientSize=new Size(720,height);form.MinimumSize=new Size(680,height+39);form.StartPosition=FormStartPosition.CenterScreen;
         form.Icon=Icon.ExtractAssociatedIcon(Application.ExecutablePath);
         form.HandleCreated+=(sender,args)=>{

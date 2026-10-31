@@ -156,15 +156,31 @@ static class StandsTests {
                 Check(Field<Panel>(main,"standDetail").Visible,"stand parameters are on the right");
                 Check(All(Field<Panel>(main,"standDetail")).OfType<StandTopologyCanvas>().Count()==0&&Application.OpenForms.Cast<Form>().Count(form=>form!=main)==0,"main workspace contains no network preview");
                 var standPage=Field<Panel>(main,"standDetail");
+                Check(Field<WorkspaceTabs>(main,"standTabs").SelectedIndex==1,"stand opens directly on launch controls");
                 Check(All(standPage).OfType<StandOperationPanel>().Count()==1&&All(standPage).OfType<ThemedEditor>().Any(editor=>editor.ReadOnly),"operation journal and plan preview live in the selected stand's main pane");
                 byte[] beforePlan=File.ReadAllBytes(Path.Combine(args[0],"stands",J.S(saved[0],"id")+".json"));
-                Field<WorkspaceTabs>(main,"standTabs").SelectedIndex=Field<int>(main,"standPlanTabIndex");
-                All(standPage).OfType<Button>().Single(button=>button.Text=="Выключить стенд").PerformClick();Wait(main);
+                Field<WorkspaceTabs>(main,"standTabs").SelectedIndex=1;
+                All(standPage).OfType<Button>().Single(button=>button.Text=="План выключения").PerformClick();Wait(main);
                 Check(Field<object>(main,"standPendingPlan")!=null&&Application.OpenForms.Cast<Form>().Count(form=>form!=main)==0,"stop plan preview is inline and opens no extra window");
                 Check(Field<ThemedEditor>(main,"standPlanText").Text.Contains("Штатное выключение")&&Field<Button>(main,"standConfirmPlan").Enabled,"inline plan displays action and requires a separate confirmation");
                 using(var shot=new Bitmap(main.Width,main.Height)){main.DrawToBitmap(shot,new Rectangle(Point.Empty,shot.Size));shot.Save(Path.Combine(args[1],"stand-plan-inline.png"));}
                 Field<Button>(main,"standDiscardPlan").PerformClick();Wait(main);
                 Check(Field<object>(main,"standPendingPlan")==null&&beforePlan.SequenceEqual(File.ReadAllBytes(Path.Combine(args[0],"stands",J.S(saved[0],"id")+".json"))),"discarding inline plan changes neither stand definition nor VM");
+                Field<WorkspaceTabs>(main,"standTabs").SelectedIndex=1;
+                All(standPage).OfType<Button>().Single(button=>button.Text=="Выключить стенд").PerformClick();Wait(main);
+                Check(Field<object>(main,"standPendingPlan")==null&&!String.IsNullOrEmpty(Field<string>(main,"standActiveOperationId")),"ordinary shutdown validates and executes without a second plan confirmation");
+                var jobLimit=DateTime.UtcNow.AddSeconds(10);bool settled=false;
+                while(DateTime.UtcNow<jobLimit){
+                    string state=J.S(main.Backend.Call("stand_status",J.O("operation_id",Field<string>(main,"standActiveOperationId"))),"state");
+                    if(state!="queued"&&state!="running"){
+                        try{foreach(string lease in Directory.GetFiles(Path.Combine(args[0],"stand-runtime","active"),"*.lock"))using(File.Open(lease,FileMode.Open,FileAccess.ReadWrite,FileShare.None)){}settled=true;break;}catch(IOException){}
+                    }
+                    Application.DoEvents();System.Threading.Thread.Sleep(20);
+                }
+                Check(settled,"one-click operation finishes and releases its private fixture locks");
+                typeof(MainWindow).GetMethod("UpdateStandStatus",BindingFlags.NonPublic|BindingFlags.Instance).Invoke(main,null);
+                var activityLimit=DateTime.UtcNow.AddSeconds(5);while(Field<int>(main,"StandJobs")>0&&DateTime.UtcNow<activityLimit){Application.DoEvents();System.Threading.Thread.Sleep(20);}
+                Check(Field<int>(main,"StandJobs")==0,"completed operation no longer blocks manager closure");
                 Field<WorkspaceTabs>(main,"standTabs").SelectedIndex=Field<int>(main,"standJournalTabIndex");
                 All(Field<StandOperationPanel>(main,"standOperationPanel")).OfType<Button>().Single(button=>button.Text=="Обновить журнал").PerformClick();Wait(main);
                 Check(Field<StandOperationPanel>(main,"standOperationPanel").Visible&&Application.OpenForms.Cast<Form>().Count(form=>form!=main)==0,"operation status remains in the journal tab without a window");
@@ -209,17 +225,17 @@ static class StandsTests {
                 main.BeginInvoke((Action)(()=>{var form=Application.OpenForms.Cast<Form>().Single(f=>f.Text=="Соединения и запуск стенда");var networkList=All(form).OfType<ThemedList>().Single(l=>l.Items.Cast<object>().Any(item=>Convert.ToString(item).StartsWith("Draft LAN")));networkList.SelectedIndex=0;All(form).OfType<Button>().Single(b=>b.Text=="Удалить общую сеть").PerformClick();Check(networkList.Items.Count==0,"delete common network changes the draft list");All(form).OfType<Button>().Single(b=>b.Text=="Отмена").PerformClick();}));
                 typeof(MainWindow).GetMethod("EditStandTopology",BindingFlags.NonPublic|BindingFlags.Instance).Invoke(main,new object[]{draftSeed});Check(seedBefore==J.Json().Serialize(draftSeed)&&standBefore.SequenceEqual(File.ReadAllBytes(Path.Combine(args[0],"stands",id+".json"))),"cancel after deleting a network leaves definition and VM references unchanged");
                 main.BeginInvoke((Action)(()=>{var form=Application.OpenForms.Cast<Form>().Single(f=>f.Text=="Копия стенда");All(form).OfType<Button>().Single(b=>b.Text=="Отмена").PerformClick();}));
-                Field<WorkspaceTabs>(main,"standTabs").SelectedIndex=3;
+                Field<WorkspaceTabs>(main,"standTabs").SelectedIndex=4;
                 All(main).OfType<Button>().Single(b=>b.Text=="Дублировать стенд").PerformClick();
                 Check(J.A(J.V(main.Backend.Call("stand_list"),"rows")).Length==1,"cancelling duplicate creates no definition or image");
                 main.BeginInvoke((Action)(()=>{var form=Application.OpenForms.Cast<Form>().Single(f=>f.Text=="Копия стенда");All(form).OfType<FieldInput>().Single().Text="Копия лаборатории";All(form).OfType<Button>().Single(b=>b.Text=="Создать копию").PerformClick();}));
-                Field<WorkspaceTabs>(main,"standTabs").SelectedIndex=3;
+                Field<WorkspaceTabs>(main,"standTabs").SelectedIndex=4;
                 All(main).OfType<Button>().Single(b=>b.Text=="Дублировать стенд").PerformClick();Wait(main);
                 Check(J.A(J.V(main.Backend.Call("stand_list"),"rows")).Length==2,"duplicate UI persists references through RPC");
                 bool previewClosed=false;
                 using(var previewTimer=new System.Windows.Forms.Timer{Interval=25}){
                     previewTimer.Tick+=(s,e)=>{var form=Application.OpenForms.Cast<Form>().FirstOrDefault(f=>f.Text=="Предпросмотр отчёта стенда");if(form==null)return;previewTimer.Stop();var text=All(form).OfType<ThemedEditor>().Single();Check(text.ReadOnly&&!text.Text.Contains(args[0]),"stand report is read-only and hides private source paths before save");All(form).OfType<Button>().Single(b=>b.Text=="Отмена").PerformClick();previewClosed=true;};
-                    Field<WorkspaceTabs>(main,"standTabs").SelectedIndex=3;previewTimer.Start();All(main).OfType<Button>().Single(b=>b.Text=="Экспорт отчёта").PerformClick();
+                    Field<WorkspaceTabs>(main,"standTabs").SelectedIndex=4;previewTimer.Start();All(main).OfType<Button>().Single(b=>b.Text=="Экспорт отчёта").PerformClick();
                     var deadline=DateTime.UtcNow.AddSeconds(10);while(!previewClosed&&DateTime.UtcNow<deadline){Application.DoEvents();System.Threading.Thread.Sleep(10);}
                 }
                 Check(previewClosed,"report preview opens and cancels without creating a file");

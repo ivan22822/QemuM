@@ -15,6 +15,9 @@ static class BootstrapTests {
             }
             using(var update=new UpdateWindow(args[1],false)){
                 update.StartPosition=FormStartPosition.Manual;update.Location=new Point(-2400,-1600);update.Show();Application.DoEvents();
+                foreach(var button in update.Controls.OfType<FlowLayoutPanel>().SelectMany(flow=>flow.Controls.OfType<Button>())){
+                    if(!button.Parent.ClientRectangle.Contains(button.Bounds))throw new Exception("Updater footer buttons must fit the window.");
+                }
                 Save(update,Path.Combine(args[0],"update-design.png"));update.Close();
             }
             using(var component=new ComponentProgress("Python")){

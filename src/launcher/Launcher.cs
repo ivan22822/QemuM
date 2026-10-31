@@ -79,14 +79,18 @@ sealed class UpdateWindow : Form {
     readonly Label status=new Label{Dock=DockStyle.Fill,AutoSize=false,ForeColor=BootstrapUI.Muted};
     readonly Button check=BootstrapUI.Button("Проверить");
     readonly Button install=BootstrapUI.Button("Установить обновление",true);
+    readonly Button close=BootstrapUI.Button("Закрыть");
+    readonly Label installed=BootstrapUI.Label("Канал Alpha · проверка по запросу",10);
     readonly ComponentProgress progress=new ComponentProgress("Пакет приложения"){Dock=DockStyle.Bottom,Visible=false};
     Feed feed;string work;bool busy;
     public UpdateWindow(string root,bool autoCheck=true){
-        this.root=root;BootstrapUI.Style(this,"Обновления QemuM · Alpha",390);install.Enabled=false;
+        this.root=root;BootstrapUI.Style(this,"Обновления QemuM · Alpha",460);install.Enabled=false;
         var body=new Panel{Dock=DockStyle.Fill,Padding=new Padding(28,24,28,12)};
         var header=BootstrapUI.Header("Обновления приложения");
-        body.Controls.Add(status);body.Controls.Add(progress);body.Controls.Add(header);
-        Controls.Add(body);Controls.Add(BootstrapUI.Buttons(check,install));
+        status.BackColor=BootstrapUI.Panel;status.Padding=new Padding(18);status.Font=new Font("Segoe UI",11);status.Text="Нажми «Проверить», чтобы найти новую сборку.";
+        installed.Dock=DockStyle.Top;installed.AutoSize=false;installed.Height=38;installed.ForeColor=BootstrapUI.Accent;
+        body.Controls.Add(status);body.Controls.Add(progress);body.Controls.Add(installed);body.Controls.Add(header);
+        Controls.Add(body);Controls.Add(BootstrapUI.Buttons(check,install,close));close.Click+=(sender,args)=>Close();
         check.Click+=(sender,args)=>Check();install.Click+=(sender,args)=>Install();
         if(autoCheck)Shown+=(sender,args)=>Check();FormClosing+=(sender,args)=>{if(busy)args.Cancel=true;};
     }
@@ -95,6 +99,7 @@ sealed class UpdateWindow : Form {
         try{
             var current=Core.Current(root);
             var local=current==null?null:Core.Read<Package>(Path.Combine(root,"versions",current.current,"package.json"));
+            installed.Text=local==null?"Канал Alpha":"Установлена "+Core.Display(local.version,local.build)+" · канал Alpha";
             work=Path.Combine(root,"downloads",Guid.NewGuid().ToString("N"));Core.NoLinks(work);Directory.CreateDirectory(work);
             feed=await Task.Run(()=>Core.Latest(work));
             if(feed==null)status.Text="Опубликованных обновлений alpha пока нет.";
@@ -109,8 +114,9 @@ sealed class UpdateWindow : Form {
         if(busy||feed==null)return;
         if(MessageBox.Show(this,"Установить "+Core.Display(feed.version,feed.build)+"? Закрой менеджер перед продолжением.","QemuM",MessageBoxButtons.OKCancel)!=DialogResult.OK)return;
         busy=true;check.Enabled=install.Enabled=false;
+        close.Enabled=false;
         try{
-            using(Core.Lock(root,"running.lock"))using(Core.Lock(root,"update.lock")){
+            using(UpdateLock("running.lock","Менеджер QemuM ещё открыт или завершает работу. Закрой его и повтори установку."))using(UpdateLock("update.lock","Другая установка обновления ещё выполняется. Дождись её завершения.")){
                 Core.RecoverRepair(root);
                 status.Text="Скачиваю и проверяю пакет…";progress.Visible=true;
                 var updates=new Progress<InstallProgress>(item=>progress.Report(item.Phase,item.Done,item.Total));
@@ -130,8 +136,9 @@ sealed class UpdateWindow : Form {
             }
             progress.Report("Готово",1,1);
             status.Text="Установлена "+Core.Display(feed.version,feed.build)+". Открой QemuM через прежний ярлык.";
-        }catch(IOException error){status.Text="Обновление не установлено. Проверь, что менеджер закрыт.\n"+error.Message;}
+        }catch(IOException error){status.Text="Обновление не установлено.\n\n"+error.Message;}
         catch(Exception error){status.Text="Обновление не установлено: "+error.Message;}
-        finally{busy=false;check.Enabled=true;}
+        finally{busy=false;check.Enabled=true;close.Enabled=true;install.Enabled=feed!=null;}
     }
+    FileStream UpdateLock(string name,string message){try{return Core.Lock(root,name);}catch(IOException error){throw new IOException(message,error);}}
 }

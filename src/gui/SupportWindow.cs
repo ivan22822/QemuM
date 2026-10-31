@@ -19,8 +19,23 @@ static class AlphaIntegration {
             MessageBox.Show(owner,"Это сборка из исходников. Обновления доступны в установленной альфа-версии.\nВерсия: "+Version,"Обновления");return;
         }
         string bundled=Path.Combine(AppRoot(AppDomain.CurrentDomain.BaseDirectory),"QemuM.Update.exe");
-        Process.Start(new ProcessStartInfo(File.Exists(bundled)?bundled:launcher,
-            File.Exists(bundled)?"--check-updates --install-root "+J.Quote(root):"--check-updates"){UseShellExecute=false,CreateNoWindow=true});
+        if(MessageBox.Show(owner,"Открыть обновлятор и закрыть менеджер? Для установки менеджер должен быть закрыт. Работающие VM продолжат работу; активная общая сеть может блокировать установку.","Обновления QemuM",MessageBoxButtons.OKCancel,MessageBoxIcon.Information)!=DialogResult.OK)return;
+        try{
+            string executable=PrepareUpdater(File.Exists(bundled)?bundled:launcher);
+            var form=owner as Form;if(form==null)throw new InvalidOperationException("Не найдено главное окно менеджера.");
+            form.Close();if(!form.IsDisposed)return;
+            Process.Start(new ProcessStartInfo(executable,"--check-updates --install-root "+J.Quote(root)){UseShellExecute=false,CreateNoWindow=true,WorkingDirectory=Path.GetDirectoryName(executable)});
+        }catch(Exception error){MessageBox.Show("Не удалось открыть обновлятор: "+error.Message,"Обновления QemuM",MessageBoxButtons.OK,MessageBoxIcon.Warning);}
+    }
+    internal static string PrepareUpdater(string source){
+        // Run outside versions/: same-version repair renames that directory.
+        string folder=Path.Combine(Path.GetTempPath(),"QemuM-updater-"+Guid.NewGuid().ToString("N"));Directory.CreateDirectory(folder);
+        string target=Path.Combine(folder,"QemuM.Update.exe");File.Copy(source,target,false);
+        using(var hash=System.Security.Cryptography.SHA256.Create()){
+            byte[] expected,actual;using(var stream=File.OpenRead(source))expected=hash.ComputeHash(stream);using(var stream=File.OpenRead(target))actual=hash.ComputeHash(stream);
+            if(!expected.SequenceEqual(actual))throw new IOException("Копия обновлятора не прошла проверку.");
+        }
+        return target;
     }
     public static void Ready() {
         string path=Environment.GetEnvironmentVariable("QEMUM_READY_FILE");

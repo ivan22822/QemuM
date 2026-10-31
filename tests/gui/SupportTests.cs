@@ -12,6 +12,10 @@ static class SupportTests {
     [STAThread]static int Main(string[] args){
         Application.EnableVisualStyles();Application.SetCompatibleTextRenderingDefault(false);Program.TestMode=true;
         try{
+            string source=Path.Combine(args[1],"handoff-source.exe");File.WriteAllBytes(source,new byte[]{1,2,3,4});
+            string detached=AlphaIntegration.PrepareUpdater(source);
+            try{File.Delete(source);Check(File.ReadAllBytes(detached).SequenceEqual(new byte[]{1,2,3,4})&&!detached.StartsWith(args[1],StringComparison.OrdinalIgnoreCase),"updater survives removal of its original version directory");}
+            finally{Directory.Delete(Path.GetDirectoryName(detached),true);}
             using(var main=new MainWindow(args[1],null,true,false)){
                 main.Show();main.Demo();Application.DoEvents();
                 var update=All(main).OfType<Button>().Single(button=>button.Text=="Обновления");

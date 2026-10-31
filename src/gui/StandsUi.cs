@@ -161,13 +161,19 @@ sealed partial class MainWindow {
         tabs.Add("Обзор",overview);
         var launch=new Panel{Dock=DockStyle.Fill,BackColor=Theme.Bg};
         operations.Dock=DockStyle.Top;operations.AutoSize=true;
-        launch.Controls.Add(BuildStandPlanPage(standId));launch.Controls.Add(operations);
-        standPlanTabIndex=1;tabs.Add("Запуск",launch);
+        var planPage=BuildStandPlanPage(standId);
+        operations.Controls.Add(Theme.Button("Просмотреть план запуска",()=>PlanStand(standId,"start",false,true)));
+        operations.Controls.Add(Theme.Button("План выключения",()=>PlanStand(standId,"stop",false,true)));
+        var launchOptions=Theme.Flow(true);launchOptions.Dock=DockStyle.Fill;
+        launchOptions.Controls.Add(Theme.Label("Запуск выполняется после автоматической проверки порядка, ресурсов и сети.",10,Theme.Muted));
+        standIncludeExisting.Dock=DockStyle.None;launchOptions.Controls.Add(standIncludeExisting);launch.Controls.Add(launchOptions);launch.Controls.Add(operations);
+        tabs.Add("Запуск",launch);standPlanTabIndex=2;tabs.Add("План",planPage);
         standJournalTabIndex=standPlanTabIndex+1;
         standOperationPanel=new StandOperationPanel(Backend,()=>ReadStandOperation(standId)){Dock=DockStyle.Fill};tabs.Add("Журнал",standOperationPanel);
         if(standActiveOperationStandId==standId&&!String.IsNullOrEmpty(standActiveOperationId))standOperationPanel.SetOperation(standActiveOperationId);
         if(standPendingId==standId&&standPendingPlan!=null)RenderStandPlan();
         tabs.Add("Управление",maintenance);
+        tabs.SelectedIndex=standPendingId==standId&&standPendingPlan!=null?standPlanTabIndex:1;
         var layout=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=1,RowCount=2,BackColor=Theme.Bg,Padding=new Padding(16)};
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));layout.RowStyles.Add(new RowStyle(SizeType.Percent,100));
@@ -287,17 +293,18 @@ sealed partial class MainWindow {
         standPlanNotice.ForeColor=standPendingForce?Theme.Red:Theme.Muted;standConfirmPlan.Text=standPendingForce?"Подтвердить остановку QEMU":"Подтвердить план";standConfirmPlan.Enabled=standDiscardPlan.Enabled=true;
         standIncludeExisting.Checked=J.V(plan,"include_existing") is bool && (bool)J.V(plan,"include_existing");standIncludeExisting.Enabled=false;
     }
-    void PlanStand(string id,string action,bool force=false){
+    void PlanStand(string id,string action,bool force=false,bool previewOnly=false){
         if(Backend==null||Busy||selectedStand==null||J.S(selectedStand,"id")!=id)return;
         if(standPendingPlan!=null){
             if(standPendingId==id){standTabs.SelectedIndex=standPlanTabIndex;standPlanNotice.Text="Сначала подтверди или отмени текущий план. Затем можно выбрать другое действие.";return;}
-            string old=J.S(standPendingPlan,"id");Run("Отменяю план предыдущего стенда…",()=>Backend.Call("stand_discard",J.O("plan_id",old)),value=>{standPendingPlan=null;standPendingId=null;PlanStand(id,action,force);});return;
+            string old=J.S(standPendingPlan,"id");Run("Отменяю план предыдущего стенда…",()=>Backend.Call("stand_discard",J.O("plan_id",old)),value=>{standPendingPlan=null;standPendingId=null;PlanStand(id,action,force,previewOnly);});return;
         }
         bool include=action=="stop"&&standIncludeExisting!=null&&!standIncludeExisting.IsDisposed&&standIncludeExisting.Checked;
         standTabs.SelectedIndex=standPlanTabIndex;standPlanNotice.Text="Проверяю план…";standPlanNotice.ForeColor=Theme.Muted;
         Run("Проверяю план стенда…",()=>Backend.Call("stand_plan",J.O("id",id,"action",action,"force",force,"include_existing",include)),plan=>{
             if(J.S(selectedStand,"id")!=id){string stale=J.S(plan,"id");Task.Run(()=>{try{Backend.Call("stand_discard",J.O("plan_id",stale));}catch{}});return;}
             standPendingPlan=plan;standPendingId=id;standPendingAction=action;standPendingForce=force;RenderStandPlan();
+            if(!previewOnly&&!force)ConfirmStandPlan(id);
         },error=>{if(standPlanNotice!=null&&!standPlanNotice.IsDisposed){standPlanNotice.Text="План не создан: "+error.Message;standPlanNotice.ForeColor=Theme.Red;}});
     }
     void DiscardStandPlan(){
