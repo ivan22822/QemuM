@@ -45,6 +45,18 @@ static class StandsTests {
                 owner.Close();
             }
             string diagramStandId=Guid.NewGuid().ToString("N"),diagramNetworkId=Guid.NewGuid().ToString("N");
+            var missingFixture=J.O("id",diagramStandId,"name","fixture","members",new[]{"a","b","missing"},"order",new[]{"a","b","missing"},"links",new object[0],"multicast",new object[0],"switches",new[]{J.O("id",diagramNetworkId,"name","lan","members",new[]{J.O("vm","a","nic","lan"),J.O("vm","b","nic","lan"),J.O("vm","missing","nic","lan")})});
+            using(var missingEditor=new StandNetworkEditorWindow(missingFixture,name=>name=="missing"?null:J.O("data",J.O("network_adapters",new[]{J.O("id","lan","mac",name=="a"?"52:54:00:00:00:01":"52:54:00:00:00:02")})),(window,draft)=>{})){
+                missingEditor.Show();Field<WorkspaceTabs>(missingEditor,"tabs").SelectedIndex=1;Field<ThemedList>(missingEditor,"switchList").SelectedIndex=0;Application.DoEvents();
+                var missingCheck=All(missingEditor).OfType<CheckBox>().Single(c=>c.Text.Contains("VM/NIC отсутствует"));Check(missingCheck.Enabled&&missingCheck.Checked,"missing NIC can be explicitly removed from the draft");missingCheck.Checked=false;
+                Check(J.A(J.V(J.A(J.V(missingEditor.Result(),"switches"))[0],"members")).Length==2,"removing a missing NIC preserves the other members");
+                Field<WorkspaceTabs>(missingEditor,"tabs").SelectedIndex=4;var orderList=Field<ThemedList>(missingEditor,"orderList");var delayField=Field<NumberInput>(missingEditor,"delay");delayField.Text="-1";orderList.SelectedIndex=1;Application.DoEvents();Check(orderList.SelectedIndex==0&&delayField.Text=="-1","invalid startup delay is retained when changing participant");delayField.Text="0";orderList.SelectedIndex=1;Check(orderList.SelectedIndex==1,"correcting startup delay permits changing participant");missingEditor.Close();
+            }
+            var multicastFixture=J.O("id",diagramStandId,"name","fixture","members",new[]{"a","b"},"order",new[]{"a","b"},"links",new object[0],"switches",new object[0],"multicast",new[]{J.O("id",Guid.NewGuid().ToString("N"),"address","239.1.1.1","port",20000,"members",new object[0]),J.O("id",Guid.NewGuid().ToString("N"),"address","239.1.1.2","port",20001,"members",new object[0])});
+            using(var multicastEditor=new StandNetworkEditorWindow(multicastFixture,name=>J.O("data",J.O("network_adapters",new object[0])),(window,draft)=>{})){
+                multicastEditor.Show();Field<WorkspaceTabs>(multicastEditor,"tabs").SelectedIndex=2;var groups=Field<ThemedList>(multicastEditor,"multicastList");groups.SelectedIndex=0;var portField=Field<NumberInput>(multicastEditor,"port");portField.Text="invalid";groups.SelectedIndex=1;Application.DoEvents();
+                Check(groups.SelectedIndex==0&&portField.Text=="invalid"&&Field<Label>(multicastEditor,"errorNotice").Text.Length>0,"invalid MCAST port is retained and blocks switching groups");portField.Text="20000";groups.SelectedIndex=1;Check(groups.SelectedIndex==1,"correcting the port permits switching groups");multicastEditor.Close();
+            }
             var graphStand=J.O("id",diagramStandId,"name","Учебная лаборатория", "members",new[]{"Kali","Ubuntu Server","FreeBSD Zombie"},"switches",new[]{J.O("id",diagramNetworkId,"name","Локальная сеть","members",new[]{J.O("vm","Kali","nic","lan"),J.O("vm","Ubuntu Server","nic","lan"),J.O("vm","FreeBSD Zombie","nic","lan")})},"links",new object[0],"multicast",new object[0]);
             string graphBefore=J.Json().Serialize(graphStand);
             using(var graph=new Form()){
@@ -92,7 +104,7 @@ static class StandsTests {
                     editor.Show(showcase);Application.DoEvents();
                     Check(All(editor).OfType<StandTopologyCanvas>().Count()==1&&All(editor).OfType<WorkspaceTabs>().Count()==1,"network editor presents a graph and editing controls in one window");
                     var addTcp=All(editor).OfType<Button>().FirstOrDefault(b=>b.Text=="Добавить TCP");Check(addTcp!=null,"TCP action is visible: "+String.Join(" | ",All(editor).OfType<Button>().Select(b=>b.Text)));Field<ThemedList>(editor,"from").SelectedIndex=0;Field<ThemedList>(editor,"to").SelectedIndex=3;addTcp.PerformClick();
-                    Check(J.A(J.V(editor.Result(),"links")).Length==0&&Field<Label>(editor,"notice").Text.Contains("уже использует"),"occupied switch NIC is rejected before adding a TCP link: "+Field<Label>(editor,"notice").Text);
+                    Check(J.A(J.V(editor.Result(),"links")).Length==0&&Field<Label>(editor,"errorNotice").Text.Contains("уже использует"),"occupied switch NIC is rejected before adding a TCP link: "+Field<Label>(editor,"errorNotice").Text);
                     Field<ThemedList>(editor,"from").SelectedIndex=4;Field<ThemedList>(editor,"to").SelectedIndex=7;addTcp.PerformClick();
                     Check(J.A(J.V(editor.Result(),"links")).Length==1&&J.Json().Serialize(switchDemo)==originalStand,"direct TCP link updates only the network draft");
                     var order=Field<List<string>>(editor,"order");order.Reverse();bool rejectedOrder=false;try{editor.Result();}catch(InvalidOperationException error){rejectedOrder=error.Message.Contains("слушателя");}Check(rejectedOrder,"TCP listener must precede connector before save");order.Reverse();
@@ -116,6 +128,7 @@ static class StandsTests {
                     Field<WorkspaceTabs>(editor,"tabs").SelectedIndex=1;Application.DoEvents();using(var shot=new Bitmap(editor.Width,editor.Height)){editor.DrawToBitmap(shot,new Rectangle(Point.Empty,shot.Size));shot.Save(Path.Combine(args[1],"stand-network-switch.png"));}
                     Field<WorkspaceTabs>(editor,"tabs").SelectedIndex=3;Application.DoEvents();Check(All(editor).OfType<Label>().Any(label=>label.Text.Contains("занят: коммутатор"))&&All(editor).OfType<Label>().Any(label=>label.Text.Contains("занят: TCP-связь")),"network workspace lists individual NICs and their current connections");using(var shot=new Bitmap(editor.Width,editor.Height)){editor.DrawToBitmap(shot,new Rectangle(Point.Empty,shot.Size));shot.Save(Path.Combine(args[1],"stand-network-adapters.png"));}
                     typeof(StandTopologyCanvas).GetMethod("OnMouseClick",BindingFlags.NonPublic|BindingFlags.Instance).Invoke(canvas,new object[]{new MouseEventArgs(MouseButtons.Left,1,70,75,0)});Check(Field<WorkspaceTabs>(editor,"tabs").SelectedIndex==3&&All(editor).OfType<Label>().Any(label=>label.Text=="ubuntu-desktop"&&label.ForeColor==Theme.Accent),"clicking a VM node reveals its adapters in the same window");
+                    canvas.Focus();typeof(StandTopologyCanvas).GetMethod("OnKeyDown",BindingFlags.NonPublic|BindingFlags.Instance).Invoke(canvas,new object[]{new KeyEventArgs(Keys.Left)});typeof(StandTopologyCanvas).GetMethod("OnKeyDown",BindingFlags.NonPublic|BindingFlags.Instance).Invoke(canvas,new object[]{new KeyEventArgs(Keys.Enter)});Check(Field<WorkspaceTabs>(editor,"tabs").SelectedIndex==3&&canvas.AccessibleDescription.Contains("VM"),"keyboard can select a VM node and open its adapters");
                     editor.Close();Check(J.Json().Serialize(switchDemo)==originalStand,"closing network editor without saving preserves the original stand");
                 }
                 using(var duplicateMac=new StandNetworkEditorWindow(switchDemo,name=>J.O("data",J.O("network_adapters",new[]{J.O("id","lan","type","user","model","e1000e","mac","52:54:00:00:00:01")})),(window,draft)=>{})){
@@ -227,30 +240,28 @@ static class StandsTests {
                 main.BeginInvoke((Action)(()=>{var form=Application.OpenForms.Cast<Form>().Single(f=>f.Text=="Соединения и запуск стенда");var networkList=All(form).OfType<ThemedList>().Single(l=>l.Items.Cast<object>().Any(item=>Convert.ToString(item).StartsWith("Draft LAN")));networkList.SelectedIndex=0;All(form).OfType<Button>().Single(b=>b.Text=="Удалить общую сеть").PerformClick();Check(networkList.Items.Count==0,"delete common network changes the draft list");All(form).OfType<Button>().Single(b=>b.Text=="Отмена").PerformClick();}));
                 typeof(MainWindow).GetMethod("EditStandTopology",BindingFlags.NonPublic|BindingFlags.Instance).Invoke(main,new object[]{draftSeed});Check(seedBefore==J.Json().Serialize(draftSeed)&&standBefore.SequenceEqual(File.ReadAllBytes(Path.Combine(args[0],"stands",id+".json"))),"cancel after deleting a network leaves definition and VM references unchanged");
                 main.BeginInvoke((Action)(()=>{var form=Application.OpenForms.Cast<Form>().Single(f=>f.Text=="Копия стенда");All(form).OfType<Button>().Single(b=>b.Text=="Отмена").PerformClick();}));
-                Field<WorkspaceTabs>(main,"standTabs").SelectedIndex=4;
-                All(main).OfType<Button>().Single(b=>b.Text=="Дублировать стенд").PerformClick();
+                Field<ContextMenuStrip>(main,"standActionsMenu").Items.Cast<ToolStripItem>().Single(b=>b.Text=="Дублировать стенд").PerformClick();
                 Check(J.A(J.V(main.Backend.Call("stand_list"),"rows")).Length==1,"cancelling duplicate creates no definition or image");
                 main.BeginInvoke((Action)(()=>{var form=Application.OpenForms.Cast<Form>().Single(f=>f.Text=="Копия стенда");All(form).OfType<FieldInput>().Single().Text="Копия лаборатории";All(form).OfType<Button>().Single(b=>b.Text=="Создать копию").PerformClick();}));
-                Field<WorkspaceTabs>(main,"standTabs").SelectedIndex=4;
-                All(main).OfType<Button>().Single(b=>b.Text=="Дублировать стенд").PerformClick();Wait(main);
+                Field<ContextMenuStrip>(main,"standActionsMenu").Items.Cast<ToolStripItem>().Single(b=>b.Text=="Дублировать стенд").PerformClick();Wait(main);
                 Check(J.A(J.V(main.Backend.Call("stand_list"),"rows")).Length==2,"duplicate UI persists references through RPC");
                 bool previewClosed=false;
                 using(var previewTimer=new System.Windows.Forms.Timer{Interval=25}){
                     previewTimer.Tick+=(s,e)=>{var form=Application.OpenForms.Cast<Form>().FirstOrDefault(f=>f.Text=="Предпросмотр отчёта стенда");if(form==null)return;previewTimer.Stop();var text=All(form).OfType<ThemedEditor>().Single();Check(text.ReadOnly&&!text.Text.Contains(args[0]),"stand report is read-only and hides private source paths before save");All(form).OfType<Button>().Single(b=>b.Text=="Отмена").PerformClick();previewClosed=true;};
-                    Field<WorkspaceTabs>(main,"standTabs").SelectedIndex=4;previewTimer.Start();All(main).OfType<Button>().Single(b=>b.Text=="Экспорт отчёта").PerformClick();
+                    previewTimer.Start();Field<ContextMenuStrip>(main,"standActionsMenu").Items.Cast<ToolStripItem>().Single(b=>b.Text=="Экспорт отчёта").PerformClick();
                     var deadline=DateTime.UtcNow.AddSeconds(10);while(!previewClosed&&DateTime.UtcNow<deadline){Application.DoEvents();System.Threading.Thread.Sleep(10);}
                 }
                 Check(previewClosed,"report preview opens and cancels without creating a file");
                 var cards=Field<FlowLayoutPanel>(main,"cards");
                 var folders=cards.Controls.OfType<Button>().Where(b=>b.Tag!=null).ToArray();
-                folders[0].PerformClick();Application.DoEvents();
+                folders[0].Controls.OfType<Button>().Single().PerformClick();Application.DoEvents();
                 Check(cards.Controls.OfType<Button>().Count(b=>b.AccessibleDescription=="stand-member")==1,"expanding one folder adds its member only");
                 var memberButton=cards.Controls.OfType<StandMemberButton>().Single();
                 Check(memberButton.Left>=folders[0].Left+20&&memberButton.Right<=folders[0].Right,"stand member is visibly indented and remains inside the group width");
                 Check(memberButton.TextAlign==ContentAlignment.MiddleLeft&&memberButton.Padding.Left>=34,"member names align after a dedicated tree branch gutter");
-                var untouched=folders[1];folders[0].PerformClick();Application.DoEvents();
+                var untouched=folders[1];folders[0].Controls.OfType<Button>().Single().PerformClick();Application.DoEvents();
                 Check(!untouched.IsDisposed&&cards.Controls.Contains(untouched)&&cards.Controls.OfType<Button>().All(b=>b.AccessibleDescription!="stand-member"),"collapse retains unrelated folder controls and removes only children");
-                folders[0].PerformClick();Application.DoEvents();
+                folders[0].Controls.OfType<Button>().Single().PerformClick();Application.DoEvents();
                 cards.Controls.OfType<Button>().Single(b=>b.AccessibleDescription=="stand-member").PerformClick();Application.DoEvents();
                 Check(Field<string>(main,"selected")=="test"&&!Field<Panel>(main,"standDetail").Visible,"nested member opens its real VM detail");
                 folders[0].PerformClick();Application.DoEvents();
@@ -260,7 +271,7 @@ static class StandsTests {
                 try{
                     typeof(MainWindow).GetMethod("Fill",BindingFlags.NonPublic|BindingFlags.Instance).Invoke(main,new[]{main.Backend.Call("list")});Wait(main);
                     typeof(MainWindow).GetMethod("LoadStands",BindingFlags.NonPublic|BindingFlags.Instance).Invoke(main,null);Wait(main);
-                    Check(All(Field<Panel>(main,"standDetail")).OfType<Button>().Any(b=>b.Text=="Открыть состав стенда"),"membership remains accessible from the overview");
+                    Check(All(Field<Panel>(main,"standDetail")).OfType<Button>().Any(b=>b.Text=="Изменить состав и название"),"membership remains accessible from the stand header");
                 }finally{File.Move(missing,config);}
                 typeof(MainWindow).GetMethod("Fill",BindingFlags.NonPublic|BindingFlags.Instance).Invoke(main,new[]{main.Backend.Call("list")});Wait(main);
                 Size normalSize=main.Size;main.Size=new Size(800,600);split.SplitterDistance=240;Application.DoEvents();

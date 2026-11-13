@@ -30,7 +30,7 @@ static class StandsHierarchyTests {
                 var split=All(main).OfType<SplitContainer>().Single();split.SplitterDistance=400;Application.DoEvents();
                 var cards=Field<FlowLayoutPanel>(main,"cards");var folders=cards.Controls.OfType<Button>().Where(b=>b.Tag!=null).ToArray();
                 Check(folders.Length==2,"both saved stands appear after switching library modes");
-                foreach(var folder in folders)folder.PerformClick();Application.DoEvents();
+                foreach(var folder in folders)folder.Controls.OfType<Button>().Single().PerformClick();Application.DoEvents();
                 var children=cards.Controls.OfType<StandMemberButton>().ToArray();Check(children.Length==4,"both stands expose separate member rows");
                 foreach(var member in children){var folder=folders.Single(b=>J.S(b.Tag,"id")==member.StandId);Check(member.Left>=folder.Left+20&&member.Right<=folder.Right,"tree indent remains within parent group");Check(member.AccessibleName.Contains(J.S(folder.Tag,"name")),"accessible name exposes the owning stand");}
                 var shared=children.Where(b=>b.VmName=="server").ToArray();shared[0].PerformClick();Application.DoEvents();

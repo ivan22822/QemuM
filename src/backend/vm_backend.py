@@ -250,7 +250,7 @@ class Service:
                 error = str(failure)
             rows.append(dict(name=name, data=data, network_view=network_display(data), snapshot_recovery=bool(error), snapshot_error=error))
         return dict(rows=rows,
-                    mode=vm.manager_settings()['launch_mode'], version='0.1.0-alpha.6')
+                    mode=vm.manager_settings()['launch_mode'], version='0.1.0-alpha.7')
 
     def states(self, args):
         if not self.inventory_running and time.monotonic() - self.inventory_time > 10:

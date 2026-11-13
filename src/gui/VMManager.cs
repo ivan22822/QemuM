@@ -114,90 +114,91 @@ sealed class BufferedFlowLayoutPanel : FlowLayoutPanel {
 sealed partial class MainWindow : Form {
     public Backend Backend; public bool Busy; internal int SnapshotJobs; public string RootPath; internal Exception TestError; readonly bool demo;
     List<object> rows=new List<object>(); Dictionary<string,string> states=new Dictionary<string,string>();
+    DateTime lastStateUtc=DateTime.MinValue;bool stateReadFailed;int stateGeneration;
     string selected,mode="normal"; bool updatingMode,polling,closing; readonly string python;
     readonly FlowLayoutPanel cards=Theme.Flow(true), actions=Theme.Flow(); readonly Panel detail=new Panel();
-    readonly Label heading=Theme.Label("Выбери виртуальную машину",25,null,true), description=Theme.Label("",10,Theme.Muted), status=Theme.Label("",10), footer=Theme.Label("Загрузка…",9,Theme.Muted);
+    readonly Label heading=Theme.Label("Выбери виртуальную машину",18,null,true), description=Theme.Label("",10,Theme.Muted), status=Theme.Label("",10), footer=Theme.Label("Загрузка…",9,Theme.Muted);
     readonly ResourceSummary resources=new ResourceSummary();
     readonly Label mediaSummary=Theme.Label("",10,Theme.Muted);
-    readonly Button startButton,pauseButton,shutdownButton;
+    readonly Button startButton,pauseButton,shutdownButton,logsButton;
     internal readonly AppearanceStore Visuals;readonly MonitorEmblem emblem=new MonitorEmblem();string visualKey;int visualRequest;
     readonly FieldInput search=new FieldInput{SearchIcon=true,Placeholder="Найти машину…"}; readonly LaunchModeSelector launchMode=new LaunchModeSelector();
+    Panel libraryHeaderPanel;Button searchButton;bool searchOpen;
     readonly ScrollSurface libraryScroll;
     readonly WorkspaceTabs workspace=new WorkspaceTabs();
     readonly Label libraryCount=Theme.Label("0",9,Theme.Muted),breadcrumb=Theme.Label("Виртуальные машины",9,Theme.Muted);
-    readonly ThemedEditor networkPreview=Theme.Editor(),extraPreview=Theme.Editor(),logPreview=Theme.Editor();
+    readonly ThemedEditor networkPreview=Theme.Editor();
     readonly ProgressBar progress=new ProgressBar { Style=ProgressBarStyle.Marquee,Dock=DockStyle.Bottom,Height=3,Visible=false };
     readonly System.Windows.Forms.Timer timer=new System.Windows.Forms.Timer { Interval=2500 };
     readonly Dictionary<string,LogsWindow> logs=new Dictionary<string,LogsWindow>();
     readonly System.ComponentModel.IContainer uiComponents=new System.ComponentModel.Container();
-    readonly ContextMenuStrip libraryMenu,machineMenu;
+    ToolTip actionTips;
+    readonly ContextMenuStrip machineMenu;
     public List<object> Rows { get { return rows; } }
     public MainWindow(string root,string python=null,bool demo=false,bool autoStart=true) {
         RootPath=root;this.python=python;this.demo=demo;Visuals=new AppearanceStore(root);
         Visuals.Changed+=(sender,args)=>{visualKey=null;RefreshEmblem(selected,J.V(Row(selected),"data"));};
-        libraryMenu=BuildMenu("Из копии параметров",(Action)(()=>CreateVm(true)),"Обновить список",(Action)Reload);
         machineMenu=BuildMenu("Диагностика VM",(Action)(()=>RunDoctor(selected)),"Перезагрузка",(Action)(()=>ControlVm(selected,"reset")),"Остановить QEMU",(Action)(()=>ControlVm(selected,"quit")),"Удалить VM",(Action)(()=>DeleteVm(selected)));
-        Text="QEMU VM Manager";Theme.Form(this,1040,760);MinimumSize=new Size(920,680);
-        var top=new BufferedPanel { Dock=DockStyle.Top,Height=43,Padding=new Padding(20,9,20,7) };
-        var brand=Theme.Label("QEMU   /   VM Manager",11,null,true);brand.Dock=DockStyle.Left;
-        var support=Theme.Flow();support.Dock=DockStyle.Right;support.AutoSize=false;support.Width=310;support.WrapContents=false;
-        support.Controls.Add(Theme.Button("Помощь / отчёт",()=>{using(var window=new SupportWindow(this,selected,true))window.ShowDialog(this);}));
-        support.Controls.Add(Theme.Button("Обновления",()=>AlphaIntegration.Updates(this)));
-        top.Height=64;top.Controls.Add(brand);top.Controls.Add(support);
+        Text="QEMU VM Manager";Theme.Form(this,1280,800);MinimumSize=new Size(920,680);
+        var working=Screen.FromPoint(Cursor.Position).WorkingArea;MinimumSize=new Size(Math.Min(920,working.Width),Math.Min(680,working.Height));Size=new Size(Math.Min(Width,working.Width),Math.Min(Height,working.Height));if(!Program.TestMode){StartPosition=FormStartPosition.Manual;Location=new Point(working.Left+(working.Width-Width)/2,working.Top+(working.Height-Height)/2);}
+        var top=new BufferedPanel { Dock=DockStyle.Top,Height=32,Padding=new Padding(20,0,20,0) };
+        var support=Theme.Flow();support.Dock=DockStyle.Right;support.AutoSize=false;support.Width=160;support.WrapContents=false;support.FlowDirection=FlowDirection.RightToLeft;
+        var serviceButton=Theme.Button("Сервис",()=>ShowService());serviceButton.Margin=Padding.Empty;serviceButton.Padding=Padding.Empty;serviceButton.MinimumSize=Size.Empty;serviceButton.AutoSize=false;serviceButton.Size=new Size(118,30);support.Controls.Add(serviceButton);
+        top.Controls.Add(support);
         var bottom=new Panel { Dock=DockStyle.Bottom,Height=32,Padding=new Padding(20,7,16,0) };
         footer.Dock=DockStyle.Fill;bottom.Controls.Add(footer);bottom.Controls.Add(progress);
-        var content=new SplitContainer { Dock=DockStyle.Fill,Size=new Size(1000,600),SplitterWidth=7,BackColor=Theme.Panel,Panel1MinSize=220,Panel2MinSize=420,SplitterDistance=256 };
-        var left=new BufferedPanel { Dock=DockStyle.Fill,Padding=new Padding(14,22,12,12),BackColor=Theme.Panel };
-        var libraryHeader=new Panel { Dock=DockStyle.Top,Height=137,BackColor=Theme.Panel };
+        footer.TextChanged+=(sender,args)=>{bottom.Visible=!String.IsNullOrWhiteSpace(footer.Text)&&footer.Text!="Готово"&&!footer.Text.StartsWith("Машин:",StringComparison.Ordinal);};
+        var content=new SplitContainer { Dock=DockStyle.Fill,Size=new Size(1000,600),SplitterWidth=7,BackColor=Theme.Panel,Panel1MinSize=220,Panel2MinSize=420,SplitterDistance=260 };
+        var left=new BufferedPanel { Dock=DockStyle.Fill,Padding=new Padding(14,0,12,12),BackColor=Theme.Panel };
+        var libraryHeader=new Panel { Dock=DockStyle.Top,Height=135,BackColor=Theme.Panel };libraryHeaderPanel=libraryHeader;
         var category=Theme.Label("БИБЛИОТЕКА",8,Theme.Muted);category.Location=new Point(9,0);
         var library=Theme.Label("Мои машины",16,null,true);library.Location=new Point(9,22);
         libraryCount.Location=new Point(9,56);libraryCount.ForeColor=Theme.Muted;
         search.Dock=DockStyle.None;search.SetBounds(9,80,208,40);search.AccessibleName="Поиск машин";
         search.TextChanged+=(sender,args)=>RenderCards();
-        var more=Theme.Button("···",()=>{});more.MinimumSize=Size.Empty;more.AutoSize=false;more.Size=new Size(29,25);more.Location=new Point(192,0);more.Padding=Padding.Empty;more.BackColor=Theme.Panel;more.ForeColor=Theme.Muted;more.AccessibleName="Меню библиотеки";more.Click+=(sender,args)=>ShowLibraryMenu(more);
-        libraryHeader.Controls.Add(category);libraryHeader.Controls.Add(library);libraryHeader.Controls.Add(libraryCount);libraryHeader.Controls.Add(search);libraryHeader.Controls.Add(more);
+        search.Visible=false;searchOpen=false;searchButton=Theme.Button("Поиск",()=>SetSearchVisible(!searchOpen));searchButton.AccessibleName="Открыть или закрыть поиск";searchButton.AutoSize=false;searchButton.MinimumSize=Size.Empty;searchButton.SetBounds(132,0,90,32);searchButton.Padding=Padding.Empty;searchButton.BackColor=Theme.Panel;
+        libraryHeader.Controls.Add(searchButton);KeyPreview=true;KeyDown+=(sender,args)=>{if(args.Control&&args.KeyCode==Keys.F){SetSearchVisible(true);args.Handled=true;args.SuppressKeyPress=true;}else if(args.KeyCode==Keys.Escape&&searchOpen){if(search.Text.Length>0)search.Text="";else SetSearchVisible(false);args.Handled=true;args.SuppressKeyPress=true;}};
+        var libraryTips=new ToolTip(uiComponents);libraryTips.SetToolTip(searchButton,"Поиск · Ctrl+F; закрытие очищает фильтр");
+        libraryHeader.Controls.Add(category);libraryHeader.Controls.Add(library);libraryHeader.Controls.Add(libraryCount);libraryHeader.Controls.Add(search);
         cards.WrapContents=false;cards.BackColor=Theme.Panel;
         libraryScroll=new ScrollSurface(cards) { BackColor=Theme.Panel };
         cards.SizeChanged+=(sender,args)=>{foreach(Control card in cards.Controls){int width=Math.Max(1,cards.Width-card.Margin.Horizontal);if(standMode&&card is Button&&card.MaximumSize.Width!=width)card.MaximumSize=new Size(width,0);if(card.Width!=width)card.Width=width;}};
         var tools=Theme.Flow(true);tools.Dock=DockStyle.Bottom;tools.BackColor=Theme.Panel;tools.Padding=new Padding(9,20,0,0);
         var add=Theme.Button("＋  Новая машина",()=>{if(!standMode)CreateVm();});add.AutoSize=false;add.Width=208;tools.Controls.Add(add);
-        var doctor=Theme.Button("VM Doctor",()=>RunDoctor(null));doctor.BackColor=Theme.Panel;doctor.ForeColor=Theme.Muted;doctor.AutoSize=false;doctor.Width=208;doctor.Height=34;doctor.MinimumSize=Size.Empty;tools.Controls.Add(doctor);
         left.Controls.Add(libraryScroll);left.Controls.Add(libraryHeader);left.Controls.Add(tools);
-        detail.Dock=DockStyle.Fill;detail.Padding=new Padding(32,24,30,14);detail.BackColor=Theme.Bg;
+        detail.Dock=DockStyle.Fill;detail.Padding=new Padding(32,0,30,14);detail.BackColor=Theme.Bg;
         var detailStack=Theme.Flow(true);detailStack.Dock=DockStyle.Top;
-        breadcrumb.Margin=new Padding(0,0,0,24);detailStack.Controls.Add(breadcrumb);
-        var hero=new TableLayoutPanel { AutoSize=true,Width=680,ColumnCount=2,RowCount=3,MinimumSize=new Size(0,201),BackColor=Theme.Bg,Margin=Padding.Empty };
+        breadcrumb.Margin=new Padding(0,0,0,8);detailStack.Controls.Add(breadcrumb);
+        var hero=new TableLayoutPanel { AutoSize=true,Width=680,ColumnCount=2,RowCount=3,MinimumSize=new Size(0,120),BackColor=Theme.Bg,Margin=Padding.Empty };
         hero.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,80));hero.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));
-        hero.RowStyles.Add(new RowStyle(SizeType.Absolute,91));hero.RowStyles.Add(new RowStyle(SizeType.AutoSize));hero.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        hero.RowStyles.Add(new RowStyle(SizeType.Absolute,72));hero.RowStyles.Add(new RowStyle(SizeType.AutoSize));hero.RowStyles.Add(new RowStyle(SizeType.AutoSize));
         emblem.Margin=new Padding(0,3,0,0);hero.Controls.Add(emblem,0,0);
-        status.AutoSize=false;status.Dock=DockStyle.Top;status.Height=23;status.TextAlign=ContentAlignment.MiddleRight;status.Margin=new Padding(0,9,0,0);hero.Controls.Add(status,1,0);
+        status.AutoSize=false;status.AutoEllipsis=true;status.Dock=DockStyle.Top;status.Height=42;status.TextAlign=ContentAlignment.MiddleLeft;status.Margin=new Padding(0,9,0,0);hero.Controls.Add(status,1,0);
         heading.AutoSize=true;heading.MaximumSize=new Size(680,0);heading.Margin=new Padding(0,0,0,8);hero.Controls.Add(heading,0,1);hero.SetColumnSpan(heading,2);
-        description.Margin=new Padding(0,0,0,24);description.Text="Твоя лаборатория. Всё под контролем.";hero.Controls.Add(description,0,2);hero.SetColumnSpan(description,2);
+        description.Margin=Padding.Empty;description.Visible=false;hero.Controls.Add(description,0,2);hero.SetColumnSpan(description,2);
         detailStack.Controls.Add(hero);
         actions.FlowDirection=FlowDirection.TopDown;actions.WrapContents=false;actions.Width=680;
         var primary=Theme.Flow();
         startButton=Theme.Button("▶ Запустить",()=>StartVm(selected),true);primary.Controls.Add(startButton);
-        primary.Controls.Add(Theme.Button("Снимки дисков",()=>Snapshots(selected)));
+        actionTips=new ToolTip(uiComponents);
+        pauseButton=Theme.Button("Пауза / продолжить",()=>ControlVm(selected,"toggle"));primary.Controls.Add(pauseButton);
+        shutdownButton=Theme.Button("Выключить",()=>ControlVm(selected,"shutdown"));primary.Controls.Add(shutdownButton);
+        primary.Controls.Add(Theme.Button("Снимки",()=>Snapshots(selected)));
         primary.Controls.Add(Theme.Button("Параметры",()=>EditVm(selected)));
+        logsButton=Theme.Button("Журналы",()=>OpenLogs(selected));primary.Controls.Add(logsButton);
+        Button moreActions=null;moreActions=Theme.Button("Ещё…",()=>ShowMachineMenu(moreActions));primary.Controls.Add(moreActions);
         actions.Controls.Add(primary);
+        var launchLabel=Theme.Label("Режим запуска",9,Theme.Muted);launchLabel.Margin=new Padding(0,0,0,4);actions.Controls.Add(launchLabel);actionTips.SetToolTip(launchLabel,"Применяется ко всем виртуальным машинам.");
         launchMode.AutoSize=false;launchMode.Size=new Size(295,36);launchMode.Margin=new Padding(0,0,0,8);actions.Controls.Add(launchMode);
         var overview=new Panel { Padding=new Padding(0,18,0,0) };workspace.Height=310;
         resources.Dock=DockStyle.Top;resources.Height=83;
         mediaSummary.Dock=DockStyle.Top;mediaSummary.AutoSize=false;mediaSummary.Height=66;mediaSummary.AutoEllipsis=true;
-        var power=Theme.Flow();power.Dock=DockStyle.Top;power.Padding=new Padding(0,20,0,0);
-        pauseButton=Theme.Button("Пауза / продолжить",()=>ControlVm(selected,"toggle"));power.Controls.Add(pauseButton);
-        shutdownButton=Theme.Button("Выключить",()=>ControlVm(selected,"shutdown"));power.Controls.Add(shutdownButton);
-        power.Controls.Add(Theme.Button("Ещё действия",()=>ShowMachineMenu(power)));
-        overview.Controls.Add(power);overview.Controls.Add(mediaSummary);overview.Controls.Add(resources);
+        overview.Controls.Add(mediaSummary);overview.Controls.Add(resources);
         workspace.Add("Обзор",overview);
         workspace.Add("Сеть",PreviewPage(networkPreview,"Настроить адаптеры",()=>EditVm(selected,"network")));
-        workspace.Add("Extra args",PreviewPage(extraPreview,"Открыть редактор",()=>EditVm(selected,"extra")));
-        workspace.Add("Живые логи",PreviewPage(logPreview,"Открыть живые логи",()=>OpenLogs(selected)));
-        workspace.SelectionChanged+=(sender,args)=>{if(workspace.SelectedIndex==3)ReadLogPreview();};
         workspace.Margin=Padding.Empty;actions.Controls.Add(workspace);detailStack.Controls.Add(actions);
-        var note=Theme.Label("Локальная библиотека",9,Theme.Muted);note.Margin=new Padding(0,22,0,0);detailStack.Controls.Add(note);
         detail.Controls.Add(new ScrollSurface(detailStack) { BackColor=Theme.Bg });content.Panel1.Controls.Add(left);content.Panel2.Controls.Add(detail);
-        InitStands(content,libraryHeader,library,add,more);
+        InitStands(content,libraryHeader,library,add);
         Controls.Add(content);Controls.Add(top);Controls.Add(bottom);
         launchMode.SelectedIndexChanged+=(sender,args)=>{
             if(updatingMode||Backend==null)return;
@@ -206,25 +207,27 @@ sealed partial class MainWindow : Form {
         };
         Action arrange=()=>{
             int width=Math.Max(270,detail.ClientSize.Width-detail.Padding.Horizontal-12);
-            hero.MinimumSize=new Size(width,201);
+            hero.MinimumSize=new Size(width,120);
             detailStack.MinimumSize=actions.MinimumSize=new Size(width,0);
             detailStack.MaximumSize=actions.MaximumSize=new Size(width,0);
             heading.MaximumSize=description.MaximumSize=new Size(width,0);
-            primary.MaximumSize=power.MaximumSize=new Size(width,0);
+            primary.MaximumSize=new Size(width,0);
             int tabHeight=Math.Max(215,detail.ClientSize.Height-detail.Padding.Vertical-hero.Height-215);
             workspace.MinimumSize=workspace.MaximumSize=new Size(width,tabHeight);
             workspace.Size=new Size(width,tabHeight);
         };
         detail.Resize+=(sender,args)=>arrange();
         Shown+=(sender,args)=>arrange();
-        timer.Tick+=(sender,args)=>Poll();FormClosing+=OnClosing;
+        timer.Tick+=(sender,args)=>{if(!demo&&lastStateUtc!=DateTime.MinValue&&(DateTime.UtcNow-lastStateUtc).TotalSeconds>10){SelectVm(selected);PaintStandStatus();}Poll();};FormClosing+=OnClosing;
         Shown+=(sender,args)=>{if(!demo&&autoStart)Run("Открываю библиотеку…",()=>{Backend=new Backend(root,python);Backend.Open();return Backend.Call("list");},result=>{Fill(result);timer.Start();Poll();AlphaIntegration.Ready();});};
         SelectVm(null);
     }
+    void SetSearchVisible(bool value){searchOpen=value;search.Visible=value;libraryHeaderPanel.Height=value?175:135;if(value)search.Focus();else{search.Text="";searchButton.Focus();}}
+    void ShowService(){Action selectedAction=null;using(var service=new Form()){service.Text="Сервис · QemuM";Theme.Form(service,600,520);var list=Theme.Flow(true);list.Padding=new Padding(24);Action<Action> choose=action=>{selectedAction=action;service.Close();};list.Controls.Add(Theme.Button("Обновить список",()=>choose(()=>{if(standMode)LoadStands();else Reload();})));list.Controls.Add(Theme.Button("VM Doctor · компьютер",()=>choose(()=>RunDoctor(null))));string vmName=standMode&&selectedStand!=null?null:selected;var doctorVm=Theme.Button("VM Doctor · "+(vmName??"выбери VM"),()=>choose(()=>RunDoctor(vmName)));doctorVm.Enabled=vmName!=null;list.Controls.Add(doctorVm);list.Controls.Add(Theme.Button("Помощь / отчёт",()=>choose(()=>{using(var window=new SupportWindow(this,vmName,true))window.ShowDialog(this);})));list.Controls.Add(Theme.Button("Обновления",()=>choose(()=>AlphaIntegration.Updates(this))));list.Controls.Add(Theme.Button("Копии параметров",()=>choose(()=>CreateVm(true))));if(selectedStand!=null){string id=J.S(selectedStand,"id");list.Controls.Add(Theme.Button("Отчёт стенда · "+J.S(selectedStand,"name"),()=>choose(()=>ExportStand(id))));}var buttons=Theme.Flow();buttons.Controls.Add(Theme.Button("Закрыть",service.Close));Theme.Dialog(service,new ScrollSurface(list),buttons,"Сервис","Диагностика, помощь и обновления");service.ShowDialog(this);}if(selectedAction!=null)selectedAction();}
     Panel PreviewPage(ThemedEditor preview,string buttonTitle,Action action) {
         var page=new Panel { Padding=new Padding(0,20,0,0),BackColor=Theme.Bg };
         preview.ReadOnly=true;preview.BorderVisible=false;preview.BackColor=Theme.Bg;
-        preview.Font=new Font("Consolas",10F);
+        preview.Font=new Font("Segoe UI",10F);
         var buttons=Theme.Flow();buttons.Dock=DockStyle.Bottom;buttons.Controls.Add(Theme.Button(buttonTitle,action));
         page.Controls.Add(preview);page.Controls.Add(buttons);return page;
     }
@@ -233,28 +236,18 @@ sealed partial class MainWindow : Form {
         for(int index=0;index<entries.Length;index+=2){var action=(Action)entries[index+1];NightMenuRenderer.Add(menu,(string)entries[index],(sender,args)=>action());}
         return menu;
     }
-    void ShowLibraryMenu(Control anchor) {
-        libraryMenu.Show(anchor,new Point(0,anchor.Height+6));
-    }
     void ShowMachineMenu(Control anchor) {
+        bool fresh=demo||(!stateReadFailed&&lastStateUtc!=DateTime.MinValue&&(DateTime.UtcNow-lastStateUtc).TotalSeconds<=10);bool canControl=!Busy&&fresh&&new[]{"running","paused"}.Contains(State(selected));
+        foreach(ToolStripItem item in machineMenu.Items)if(item.Text=="Перезагрузка"||item.Text=="Остановить QEMU")item.Enabled=canControl;
         machineMenu.Show(anchor,new Point(0,anchor.Height));
-    }
-    void ReadLogPreview() {
-        if(Backend==null||selected==null){logPreview.Text="Журнал появится после запуска машины.";return;}
-        string name=selected;
-        Run("Читаю фрагмент журнала…",()=>Backend.Call("logs",J.O("name",name)),value=>{
-            if(selected!=name)return;
-            var lines=J.A(J.V(value,"events")).Select(item=>J.S(item,"text")).ToArray();
-            logPreview.Text=lines.Length==0?"Событий пока нет. Полный вывод QEMU доступен в окне живых логов.":String.Join(Environment.NewLine,lines.Skip(Math.Max(0,lines.Length-7)));
-        });
     }
     public void Post(Action action) { if(!IsDisposed && IsHandleCreated) { try { BeginInvoke(action); } catch(InvalidOperationException) {} } }
     public void Run(string message,Func<object> operation,Action<object> done=null,Action<Exception> failed=null,bool notifyError=true) {
         if(demo) return;
         if(Busy) { footer.Text="Дождись завершения текущей операции.";return; }
         Busy=true;progress.Visible=true;footer.Text=message;actions.Enabled=false;launchMode.Enabled=false;
-        Task.Run(()=>{try {object result=operation();Post(()=>{Busy=false;progress.Visible=false;actions.Enabled=selected!=null;launchMode.Enabled=true;footer.Text="Готово";if(done!=null)done(result);});}
-            catch(Exception error){Post(()=>{Busy=false;progress.Visible=false;actions.Enabled=selected!=null;launchMode.Enabled=true;footer.Text="Действие не выполнено";if(notifyError){if(Program.TestMode)TestError=error;else MessageBox.Show(this,error.Message,"VM Manager",MessageBoxButtons.OK,MessageBoxIcon.Warning);}if(failed!=null)failed(error);});}});
+        Task.Run(()=>{try {object result=operation();Post(()=>{Busy=false;progress.Visible=false;actions.Enabled=selected!=null;launchMode.Enabled=true;footer.Text="Готово";if(!standMode||selectedStand==null)SelectVm(selected);if(done!=null)done(result);});}
+            catch(Exception error){Post(()=>{Busy=false;progress.Visible=false;actions.Enabled=selected!=null;launchMode.Enabled=true;footer.Text="Действие не выполнено";if(!standMode||selectedStand==null)SelectVm(selected);if(notifyError){if(Program.TestMode)TestError=error;else MessageBox.Show(this,error.Message,"VM Manager",MessageBoxButtons.OK,MessageBoxIcon.Warning);}if(failed!=null)failed(error);});}});
     }
     void Fill(object result) { rows=J.A(J.V(result,"rows")).ToList();mode=J.S(result,"mode","normal");updatingMode=true;launchMode.SelectedIndex=mode=="snapshot"?1:0;updatingMode=false;if(selected==null || !rows.Any(row=>J.S(row,"name")==selected))selected=rows.Count>0?J.S(rows[0],"name"):null;RenderCards();SelectVm(selected);if(standMode)LoadStands();footer.Text="Машин: "+rows.Count+" · все действия доступны в интерфейсе"; }
     public void Reload() { if(Backend!=null)Run("Обновляю список…",()=>Backend.Call("list"),Fill); }
@@ -277,6 +270,7 @@ sealed partial class MainWindow : Form {
             var card=new LibraryCard(name,label,Theme.VmColor(row)) { Width=Math.Max(170,cards.Width),BackColor=name==selected?Theme.Card:Theme.Panel };
             card.SetStatus(State(name));
             EventHandler select=(sender,args)=>SelectVm(name);card.Click+=select;card.DoubleClick+=select;
+            card.KeyDown+=(sender,args)=>{if(args.KeyCode==Keys.Enter||args.KeyCode==Keys.Space){SelectVm(name);args.Handled=true;}else if(args.KeyCode==Keys.Up||args.KeyCode==Keys.Down){var items=cards.Controls.OfType<LibraryCard>().ToArray();int index=Array.IndexOf(items,card)+(args.KeyCode==Keys.Up?-1:1);if(index>=0&&index<items.Length){items[index].Focus();SelectVm(Convert.ToString(items[index].Tag));}args.Handled=true;}};
             foreach(Control control in card.Controls){control.Click+=select;control.DoubleClick+=select;}
             cards.Controls.Add(card);
         }
@@ -299,7 +293,7 @@ sealed partial class MainWindow : Form {
     void SelectVm(string name) {
         if(standMode && selectedStand!=null)return;
         foreach(Control sibling in detail.Controls)sibling.Visible=!Object.ReferenceEquals(sibling,standDetail);
-        bool changed=selected!=name;selected=name;var row=Row(name);object data=J.V(row,"data");
+        selected=name;var row=Row(name);object data=J.V(row,"data");
         RefreshEmblem(name,data);
         heading.Text=row==null?"Выбери виртуальную машину":J.S(data,"label",name);heading.ForeColor=Theme.Text;
         description.Text=row==null?"Добавь машину или выбери её в списке.":"Твоя лаборатория. Всё под контролем.";resources.ShowData(data,row!=null);
@@ -312,28 +306,33 @@ sealed partial class MainWindow : Form {
         string disk=J.S(data,"disk_path"),iso=J.S(data,"iso_path");
         mediaSummary.Text=row==null?"":"Диск: "+(disk.Length==0?"не задан":System.IO.Path.GetFileName(disk)+" · "+J.S(data,"disk_format","авто"))+"\nISO: "+(iso.Length==0?"не подключён":System.IO.Path.GetFileName(iso))+" · Сеть: "+adapters.Length+" адапт.";
         mediaSummary.AccessibleDescription=row==null?"":("Диск: "+disk+"; ISO: "+iso+"; сетевых адаптеров: "+adapters.Length);
-        networkPreview.Text=adapters.Length==0?"Нет распознанных сетевых адаптеров. Открой настройки сети для подробностей.":String.Join(Environment.NewLine,adapters.Select(item=>J.S(item,"id")+"   ·   "+J.S(item,"type")+"   ·   "+J.S(item,"model")));
-        string extra=ArgText.Format(J.A(J.V(data,"extra_args")));extraPreview.Text=String.IsNullOrEmpty(extra)?"Дополнительные аргументы не заданы.":extra;
-        if(row==null)logPreview.Text="Выбери виртуальную машину.";
-        else if(changed){logPreview.Text="Журнал машины: "+name;if(workspace.SelectedIndex==3&&!Busy)ReadLogPreview();}
+        networkPreview.Text=adapters.Length==0?"Нет распознанных сетевых адаптеров. Открой настройки сети для подробностей.":String.Join(Environment.NewLine,adapters.Select(item=>{string type=J.S(item,"type"),modeName=J.S(item,"mode"),kind=type=="user"?"NAT":type=="tap"?"TAP":type=="socket"?(modeName=="mcast"?"MCAST":new[]{"listen","connect"}.Contains(modeName)?"TCP":"Сокет"):type;return "Адаптер: "+J.S(item,"id")+" · Подключение: "+kind+" · Модель: "+J.S(item,"model");}));
         string vmState=State(name);
-        status.Text=row==null?"":Theme.State(vmState);status.ForeColor=Theme.StateColor(vmState);actions.Enabled=row!=null && !Busy;
+        bool fresh=demo||(!stateReadFailed&&lastStateUtc!=DateTime.MinValue&&(DateTime.UtcNow-lastStateUtc).TotalSeconds<=10);
+        status.Text=row==null?"":fresh?Theme.State(vmState):lastStateUtc==DateTime.MinValue?"Проверка состояния…":"Последний статус: "+Theme.State(vmState)+" · "+lastStateUtc.ToLocalTime().ToString("HH:mm:ss")+" · не подтверждён";status.ForeColor=fresh?Theme.StateColor(vmState):Theme.Yellow;actions.Enabled=row!=null && !Busy;
+        status.AccessibleName=status.Text;
+        logsButton.Text=vmState=="error"?"Журналы · ошибка":"Журналы";logsButton.ForeColor=vmState=="error"?Theme.Red:Theme.Text;
         bool running=vmState=="running"||vmState=="paused";
-        startButton.Enabled=row!=null&&!Busy&&!running&&vmState!="shutdown"&&vmState!="prelaunch";
-        pauseButton.Enabled=shutdownButton.Enabled=row!=null&&!Busy&&running;
+        startButton.Enabled=row!=null&&!Busy&&fresh&&new[]{"stopped","error"}.Contains(vmState);
+        pauseButton.Enabled=shutdownButton.Enabled=row!=null&&!Busy&&fresh&&running;
+        string unavailable=row==null?"Выбери виртуальную машину.":Busy?"Дождись завершения операции.":!fresh?"Дождись подтверждения текущего состояния.":vmState=="recovery-required"?"Сначала проверь незавершённые операции снимков.":running?"Машина уже запущена.":"Запуск недоступен в текущем состоянии.";
+        startButton.AccessibleDescription=startButton.Enabled?(vmState=="error"?"Повторный запуск после предупреждения и проверки.":"Запустить виртуальную машину."):unavailable;actionTips.SetToolTip(startButton,startButton.AccessibleDescription);
         pauseButton.Text=vmState=="paused"?"Продолжить":"Пауза";
         if(!standMode)foreach(Control card in cards.Controls) {
             Color color=Object.Equals(card.Tag,name)?Theme.Card:Theme.Panel;
             if(card.BackColor!=color)card.BackColor=color;
+            var libraryCard=card as LibraryCard;if(libraryCard!=null)libraryCard.SetStatus(fresh?State(card.Tag as string):"checking");
         }
         else PaintStandStatus();
     }
     void Poll() {
-        if(Backend==null || Busy || polling || closing)return;polling=true;
-        Task.Run(()=>{try {object result=Backend.Call("states");Post(()=>ApplyStates(result));}
-            catch(Exception error){Post(()=>footer.Text=error.Message);}finally{polling=false;}});
+        if(Backend==null || Busy || polling || closing)return;polling=true;int generation=stateGeneration;
+        Task.Run(()=>{try {object result=Backend.Call("states");Post(()=>{if(generation==stateGeneration)ApplyStates(result);});}
+            catch(Exception error){Post(()=>{if(generation!=stateGeneration)return;stateReadFailed=true;footer.Text="Не удалось обновить состояние: "+error.Message;SelectVm(selected);PaintStandStatus();});}finally{polling=false;}});
     }
     internal void ApplyStates(object result) {
+        lastStateUtc=DateTime.UtcNow;stateReadFailed=false;
+        if(footer.Text.StartsWith("Не удалось обновить состояние:",StringComparison.Ordinal))footer.Text="Готово";
         var next=J.D(result).ToDictionary(pair=>pair.Key,pair=>Convert.ToString(pair.Value));
         foreach(Control card in cards.Controls) {
             string name=card.Tag as string;if(name==null)continue;string value;if(!next.TryGetValue(name,out value))value="checking";
@@ -354,21 +353,22 @@ sealed partial class MainWindow : Form {
     }
     public void OpenLogs(string name) { if(name==null)return;LogsWindow window;if(logs.TryGetValue(name,out window)&&!window.IsDisposed){window.Activate();return;}window=new LogsWindow(this,name);logs[name]=window;window.FormClosed+=(sender,args)=>logs.Remove(name);window.Show(); }
     public void StartVm(string name,object snapshot=null) {
-        if(name==null||Backend==null)return;
+        if(name==null||Backend==null||Busy)return;
         if(snapshot==null && mode=="snapshot"){Snapshots(name,true);return;}
+        if(State(name)=="error"&&MessageBox.Show(this,"Последний запуск QEMU завершился с ошибкой. Проверь журнал перед повтором. Продолжить?","Повторный запуск · "+name,MessageBoxButtons.YesNo,MessageBoxIcon.Warning)!=DialogResult.Yes)return;
         object data=J.V(Row(name),"data");string boot=String.IsNullOrEmpty(J.S(data,"disk_path",J.S(data,"kind")=="disk"?J.S(data,"path"):""))?"iso":"disk";
         bool iso=!String.IsNullOrEmpty(J.S(data,"iso_path",J.S(data,"kind")=="iso"?J.S(data,"path"):""));
         if(snapshot==null && boot=="disk" && iso) { using(var choice=new ChoiceDialog("Источник загрузки",new[]{"Виртуальный диск","Установочный / Live ISO"})) {if(choice.ShowDialog(this)!=DialogResult.OK)return;boot=choice.Selected==0?"disk":"iso";} }
         if(snapshot!=null)boot="disk";
-        Run("Подготавливаю запуск…",()=>Backend.Call("start",J.O("name",name,"boot",boot,"snapshot",snapshot)),result=>{footer.Text=J.B(result,"attached")?"VM уже работает · управление справа":"QEMU запущен · "+J.S(result,"accelerator").ToUpperInvariant();OpenPanel(name);Poll();});
+        stateGeneration++;stateReadFailed=true;Run("Подготавливаю запуск…",()=>Backend.Call("start",J.O("name",name,"boot",boot,"snapshot",snapshot)),result=>{stateReadFailed=true;footer.Text=J.B(result,"attached")?"VM уже работает · управление справа":"QEMU запущен · "+J.S(result,"accelerator").ToUpperInvariant();OpenPanel(name);Poll();},error=>{stateReadFailed=true;SelectVm(selected);Poll();});
     }
     public void ControlVm(string name,string action) {
-        if(name==null||Backend==null)return;
+        if(name==null||Backend==null||Busy)return;
         if(new[]{"shutdown","reset","quit"}.Contains(action)) {
             string message=action=="shutdown"?"Запросить штатное выключение гостевой ОС?":action=="reset"?"Жёстко перезагрузить VM? Несохранённые данные могут быть потеряны.":"Принудительно остановить QEMU? Несохранённые данные будут потеряны.";
             if(MessageBox.Show(this,name+"\r\n\r\n"+message,"Подтверждение",MessageBoxButtons.YesNo,MessageBoxIcon.Warning)!=DialogResult.Yes)return;
         }
-        Run("Выполняю действие…",()=>Backend.Call("control",J.O("name",name,"action",action,"confirm",name)),result=>{footer.Text=action=="snapshot"?"Снимок дисков создан":"Запрос отправлен VM";Poll();});
+        stateGeneration++;stateReadFailed=true;Run("Выполняю действие…",()=>Backend.Call("control",J.O("name",name,"action",action,"confirm",name)),result=>{stateReadFailed=true;SelectVm(selected);footer.Text=action=="snapshot"?"Снимок дисков создан":"Запрос отправлен VM";Poll();},error=>{stateReadFailed=true;SelectVm(selected);Poll();});
     }
     public void Snapshots(string name,bool boot=false) {if(name==null||Backend==null)return;new SnapshotsWindow(this,name,null,boot).Show(this);}
     void EditVm(string name,string page=null) {if(name==null||Backend==null)return;Run("Читаю параметры…",()=>Backend.Call("get",J.O("name",name)),result=>{var dialog=new EditDialog(this,name,result);dialog.OpenPage(page);dialog.Show(this);});}
@@ -402,10 +402,10 @@ sealed class ChoiceDialog : Form {
     public int Selected { get { return choices.SelectedIndex; } }
     readonly ThemedList choices=Theme.ListBox(11);
     public ChoiceDialog(string title,string[] values) {
-        Text=title;Theme.Form(this,520,300);var panel=new Panel { Dock=DockStyle.Fill,Padding=new Padding(22) };
+        Text=title;Theme.Form(this,600,440);MinimumSize=new Size(520,400);var panel=new Panel { Dock=DockStyle.Fill,Padding=new Padding(22) };
         choices.Items.AddRange(values);if(values.Length>0)choices.SelectedIndex=0;panel.Controls.Add(choices);
         var buttons=Theme.Flow();buttons.Dock=DockStyle.Bottom;buttons.Padding=new Padding(22,10,10,8);
-        buttons.Controls.Add(Theme.Button("Выбрать",()=>{if(Selected>=0){DialogResult=DialogResult.OK;Close();}},true));buttons.Controls.Add(Theme.Button("Отмена",()=>{DialogResult=DialogResult.Cancel;Close();}));Theme.Dialog(this,panel,buttons,title,"Выбери один из доступных вариантов.");
+        var accept=Theme.Button("Выбрать",()=>{if(Selected>=0){DialogResult=DialogResult.OK;Close();}},true);var cancel=Theme.Button("Отмена",()=>{DialogResult=DialogResult.Cancel;Close();});buttons.Controls.Add(accept);buttons.Controls.Add(cancel);AcceptButton=accept;CancelButton=cancel;Theme.Dialog(this,panel,buttons,title,"Выбери один из доступных вариантов.");
     }
 }
 
@@ -445,7 +445,7 @@ sealed class LogsWindow : Form {
 sealed class EditDialog : Form {
     readonly MainWindow main;readonly string name;readonly object original;readonly FieldInput label,disk,iso;readonly ThemedEditor raw;
     readonly NumberInput ram,cores,width,height;readonly ThemedSelector vga,profile;readonly ChoiceStrip vgaChoices;readonly PageDeck tabs;
-    internal readonly LaunchSettingsUi launchSettings;internal readonly AppearanceView appearance;readonly string initialFields;bool jsonCurrent,syncingJson;
+    internal readonly LaunchSettingsUi launchSettings;internal readonly AppearanceView appearance;readonly string initialFields,initialRaw,initialAppearance;bool jsonCurrent,syncingJson,allowClose;
     Dictionary<string,object> draft;
     public EditDialog(MainWindow main,string name,object original) {
         this.main=main;this.name=name;this.original=original;object data=J.V(original,"data");draft=new Dictionary<string,object>(J.D(data));Text="Параметры | "+name;Theme.Form(this,1020,800);Icon=Theme.Icon(Theme.VmColor(main.Row(name)));
@@ -462,6 +462,8 @@ sealed class EditDialog : Form {
         appearance=new AppearanceView(main.Visuals,()=>J.O("iso_path",iso.Text,"label",label.Text,"disk_path",disk.Text),()=>name,main.Visuals.Choice(name));
         var appearancePage=new PageView("Оформление");appearancePage.Controls.Add(appearance);tabs.Pages.Add(appearancePage);tabs.Pages.Add(advanced);
         try{initialFields=J.Json().Serialize(FieldsData());}catch(Exception){initialFields=null;}
+        initialRaw=raw.Text;initialAppearance=appearance.Choice;
+        FormClosing+=(sender,args)=>{if(allowClose||Program.TestMode)return;bool changed=appearance.Choice!=initialAppearance;try{changed|=jsonCurrent?raw.Text!=initialRaw&&raw.Text!=initialFields:initialFields==null||J.Json().Serialize(FieldsData())!=initialFields;}catch(Exception){changed=true;}if(changed&&MessageBox.Show(this,"Закрыть параметры без сохранения изменений?","Несохранённые изменения",MessageBoxButtons.YesNo,MessageBoxIcon.Warning)!=DialogResult.Yes)args.Cancel=true;};
         iso.Leave+=(sender,args)=>appearance.RefreshPreview();label.Leave+=(sender,args)=>appearance.RefreshPreview();
         jsonCurrent=!String.IsNullOrEmpty(J.S(original,"error"));if(jsonCurrent)tabs.SelectedPage=advanced;
         raw.TextChanged+=(sender,args)=>{if(!syncingJson)jsonCurrent=true;};
@@ -496,9 +498,9 @@ sealed class EditDialog : Form {
     void Save() {
         try{
             string content=jsonCurrent?raw.Text:J.Json().Serialize(FieldsData());string choice=appearance.Choice;
-            if(initialFields!=null&&content==initialFields){main.Visuals.SaveChoice(name,choice);Close();main.Reload();return;}
+            if(initialFields!=null&&content==initialFields){main.Visuals.SaveChoice(name,choice);allowClose=true;Close();main.Reload();return;}
             var args=J.O("name",name,"hash",J.S(original,"hash"),"raw",content);
-            main.Run("Сохраняю параметры и резервную копию…",()=>main.Backend.Call("save",args),result=>{main.SaveAppearanceAfterOperation(name,choice);Close();main.Reload();});
+            main.Run("Сохраняю параметры и резервную копию…",()=>main.Backend.Call("save",args),result=>{main.SaveAppearanceAfterOperation(name,choice);allowClose=true;Close();main.Reload();});
         }catch(Exception error){if(Program.TestMode)main.TestError=error;else MessageBox.Show(this,error.Message,"Параметры VM");}
     }
 }
@@ -508,6 +510,7 @@ sealed class CreateDialog : Form {
     readonly ThemedSelector template=Theme.Combo("Новые настройки"),mode=Theme.Combo("Установка ISO на новый диск","Существующий диск","Только Live ISO"),profile=LaunchProfiles.Selector();
     readonly NumberInput ram=Theme.Number(4096,1,1048576),cores=Theme.Number(2,1,256),size=Theme.Number(60,1,65536);
     readonly Dictionary<string,string> replacements=new Dictionary<string,string>();
+    string initialDraft;bool allowClose;
     internal readonly LaunchSettingsUi launchSettings;internal readonly AppearanceView appearance;readonly PageDeck tabs;
     public CreateDialog(MainWindow main,object saved,bool fromBackup=false,string selectedTemplate=null) {
         this.main=main;var profileField=LaunchProfiles.Field(profile,main.Backend,this);templates=J.A(saved);Text="Добавление виртуальной машины";Theme.Form(this,1020,830);
@@ -528,7 +531,10 @@ sealed class CreateDialog : Form {
         template.SelectedIndexChanged+=(sender,args)=>LoadTemplate();mode.SelectedIndexChanged+=(sender,args)=>{diskPicker.Enabled=mode.SelectedIndex!=2;isoPicker.Enabled=mode.SelectedIndex!=1;size.Enabled=mode.SelectedIndex==0;};
         if(selectedTemplate!=null){int index=Array.FindIndex(templates,item=>J.S(item,"id")==selectedTemplate);if(index>=0)template.SelectedIndex=index+1;}
         else if(fromBackup && templates.Length>0)template.SelectedIndex=1;
+        try{initialDraft=DraftFingerprint();}catch(Exception){initialDraft=null;}
+        FormClosing+=(sender,args)=>{if(allowClose||Program.TestMode)return;bool changed;try{changed=initialDraft==null||DraftFingerprint()!=initialDraft;}catch(Exception){changed=true;}if(changed&&MessageBox.Show(this,"Закрыть создание VM без сохранения введённых параметров?","Несохранённые изменения",MessageBoxButtons.YesNo,MessageBoxIcon.Warning)!=DialogResult.Yes)args.Cancel=true;};
     }
+    string DraftFingerprint(){return J.Json().Serialize(J.O("name",name.Text,"data",CreateData(),"mode",mode.SelectedIndex,"size",size.Text,"template",template.SelectedIndex,"appearance",appearance.Choice,"replacements",replacements));}
     void LoadTemplate() {
         replacements.Clear();if(template.SelectedIndex<1){launchSettings.Load(LaunchSettingsUi.Defaults());return;}object saved=templates[template.SelectedIndex-1];object data=J.V(saved,"parameters");
         name.Text=J.S(saved,"original_vm_name");label.Text=J.S(data,"label",name.Text);ram.Value=Math.Max(ram.Minimum,Math.Min(ram.Maximum,J.N(data,"ram_mb",4096)));cores.Value=Math.Max(cores.Minimum,Math.Min(cores.Maximum,J.N(data,"cores",2)));
@@ -557,7 +563,7 @@ sealed class CreateDialog : Form {
         args["network_managed"]=true;
         if(template.SelectedIndex>0)args["template"]=J.S(templates[template.SelectedIndex-1],"id");
         string createdName=name.Text.Trim(),choice=appearance.Choice;
-        main.Run("Создаю VM…",()=>main.Backend.Call("create",args),result=>{main.SaveAppearanceAfterOperation(createdName,choice);Close();main.Reload();});
+        main.Run("Создаю VM…",()=>main.Backend.Call("create",args),result=>{main.SaveAppearanceAfterOperation(createdName,choice);allowClose=true;Close();main.Reload();});
         }catch(Exception error){if(Program.TestMode)main.TestError=error;else MessageBox.Show(this,error.Message,"Создание VM");}
     }
 }

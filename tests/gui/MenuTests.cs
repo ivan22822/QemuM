@@ -46,7 +46,7 @@ static class MenuTests {
                     Check(!popup.IsDisposed&&!popup.Visible,"item selection closes but does not dispose the menu");
                 }
                 Check(clicks==12,"twelve native mouse selections invoke the action exactly once each");
-                foreach(string field in new[]{"libraryMenu","machineMenu"}) {
+                foreach(string field in new[]{"machineMenu"}) {
                     var menu=(ContextMenuStrip)typeof(MainWindow).GetField(field,BindingFlags.Instance|BindingFlags.NonPublic).GetValue(main);
                     for(int index=0;index<menu.Items.Count;index++) {
                         Show(menu,main);Select(menu,index);

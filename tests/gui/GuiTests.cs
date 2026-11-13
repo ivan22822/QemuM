@@ -71,7 +71,7 @@ static class GuiTests {
             File.WriteAllText(Path.Combine(output,"console-details.json"),J.Json().Serialize(J.O("backend",backend.Pid,"protocol",backend.Call("ping"),"consoleWindows",Consoles(backend.Pid),"attached",attached,"handle",console.ToInt64(),"visible",visible)),new UTF8Encoding(false));
             Check(Consoles(backend.Pid)==0&&!visible,"backend has no console window");
             var main=new MainWindow(root,python,true);main.Backend=backend;main.Show();main.Demo();Application.DoEvents();
-            Check(All(main).OfType<Button>().Any(button=>button.Text=="Живые логи"),"live logs button is present");
+            Check(All(main).OfType<Button>().Any(button=>button.Text=="Журналы"),"live logs button is present");
             Check(Application.OpenForms.OfType<LogsWindow>().Count()==0,"logs are not opened automatically");
             Check(All(main).OfType<Panel>().Count()>6,"main window renders VM cards and details");Save(main,"main.png");
             int caption,text;int capResult=DwmGetWindowAttribute(main.Handle,35,out caption,4);int expectedCaption=ColorTranslator.ToWin32(Theme.Bg);bool composition;int compositionResult=DwmIsCompositionEnabled(out composition);

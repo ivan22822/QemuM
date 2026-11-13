@@ -18,7 +18,8 @@ static class SupportTests {
             finally{Directory.Delete(Path.GetDirectoryName(detached),true);}
             using(var main=new MainWindow(args[1],null,true,false)){
                 main.Show();main.Demo();Application.DoEvents();
-                var update=All(main).OfType<Button>().Single(button=>button.Text=="Обновления");
+                var service=All(main).OfType<Button>().Single(button=>button.Text=="Сервис");
+                main.BeginInvoke((Action)(()=>{var window=Application.OpenForms.Cast<Form>().Single(form=>form.Text=="Сервис · QemuM");Check(All(window).OfType<Button>().Any(button=>button.Text=="Обновления"),"service retains the updates action");Check(All(window).OfType<Button>().Any(button=>button.Text=="Помощь / отчёт"),"service retains support");window.Close();}));service.PerformClick();
                 using(var faq=new FaqWindow()){
                     faq.Show();Application.DoEvents();
                     Check(FaqWindow.Entries.Length>=35,"FAQ covers application features");
@@ -28,7 +29,7 @@ static class SupportTests {
                     search.Text="";var category=All(faq).OfType<ThemedSelector>().First();category.SelectedIndex=1;Application.DoEvents();Check(list.Items.Count>0&&list.Items.Count<FaqWindow.Entries.Length,"FAQ category filters results");
                     faq.ClientSize=new Size(800,580);Application.DoEvents();using(var image=new Bitmap(faq.Width,faq.Height)){faq.DrawToBitmap(image,new Rectangle(Point.Empty,image.Size));image.Save(Path.Combine(args[0],"faq.png"));}faq.Close();
                 }
-                Check(update.Visible&&update.Bottom<=update.Parent.ClientSize.Height&&update.Right<=update.Parent.ClientSize.Width,"update action fits header");
+                Check(service.Visible&&service.Bottom<=service.Parent.ClientSize.Height&&service.Right<=service.Parent.ClientSize.Width,"service action fits header: visible="+service.Visible+" bounds="+service.Bounds+" parent="+service.Parent.ClientSize);
                 using(var support=new SupportWindow(main,null)){
                     support.Show();Application.DoEvents();
                     var boxes=All(support).OfType<CheckBox>().ToArray();

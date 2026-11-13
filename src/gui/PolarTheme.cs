@@ -17,7 +17,7 @@ static class Theme {
     static Color Hex(string value){return ColorTranslator.FromHtml(value);}
     public static Color VmColor(object row){try{return ColorTranslator.FromHtml(J.S(J.V(row,"data"),"ui_color","#65C7FF"));}catch(ArgumentException){return Accent;}}
     public static string State(string value){switch(value){case "recovery-required":return "Нужна проверка снимков";case "running":return "Работает";case "paused":return "Пауза";case "prelaunch":return "Ожидает запуска";case "stopped":return "Выключена";case "no-qmp":return "Запущена · нет QMP";case "shutdown":return "Завершается";case "checking":return "Проверка…";case "error":return "Ошибка QEMU · открой логи";default:return "Состояние неизвестно";}}
-    public static Color StateColor(string value){return value=="running"?Green:value=="stopped"?Muted:new[]{"paused","prelaunch","shutdown"}.Contains(value)?Yellow:Red;}
+    public static Color StateColor(string value){return value=="running"?Green:value=="stopped"?Muted:new[]{"paused","prelaunch","shutdown","checking"}.Contains(value)?Yellow:Red;}
     public static void Form(Form form,int width,int height){
         form.BackColor=Bg;form.ForeColor=Text;form.Font=new Font("Segoe UI",10F);form.AutoScaleMode=AutoScaleMode.Dpi;
         form.ClientSize=new Size(width,height);form.MinimumSize=new Size(Math.Min(width,740),Math.Min(height,520));form.StartPosition=FormStartPosition.CenterScreen;form.Icon=Icon(Accent);
@@ -45,10 +45,14 @@ static class Theme {
         var layout=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=1,RowCount=3};
         var category=Label(eyebrow,8,Muted);category.Margin=new Padding(0,0,0,7);layout.Controls.Add(category);layout.Controls.Add(Label(title,22,null,true));layout.Controls.Add(Label(subtitle,9,Muted));panel.Controls.Add(layout);return panel;
     }
-    public static void Dialog(Form form,Control content,Control buttons,string title,string subtitle,string eyebrow="QEMU / VM MANAGER"){
+    public static void Dialog(Form form,Control content,Control buttons,string title,string subtitle,string eyebrow="QEMU / VM MANAGER",bool compact=false){
         if(content is TableLayoutPanel&&content.Tag is int)content=FieldsView((TableLayoutPanel)content);
         content.Dock=DockStyle.Fill;buttons.Dock=DockStyle.Bottom;buttons.BackColor=Bg;buttons.Padding=new Padding(24,14,14,6);
-        form.Controls.Add(content);form.Controls.Add(buttons);form.Controls.Add(Header(title,subtitle,eyebrow));
+        var actions=buttons as FlowLayoutPanel;if(actions!=null&&actions.Controls.Count<=2)actions.FlowDirection=FlowDirection.RightToLeft;
+        Control header;
+        if(compact){var layout=new TableLayoutPanel{Dock=DockStyle.Top,AutoSize=true,ColumnCount=1,RowCount=2,Padding=new Padding(24,16,24,8),BackColor=Bg};var heading=Label(title,18,null,true);var detail=Label(subtitle,9,Muted);layout.Controls.Add(heading,0,0);layout.Controls.Add(detail,0,1);layout.SizeChanged+=(sender,args)=>{int width=Math.Max(1,layout.ClientSize.Width-layout.Padding.Horizontal);heading.MaximumSize=detail.MaximumSize=new Size(width,0);};header=layout;}
+        else header=Header(title,subtitle,eyebrow);
+        form.Controls.Add(content);form.Controls.Add(buttons);form.Controls.Add(header);
     }
     public static TableLayoutPanel Fields(){var table=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=2,RowCount=0,Padding=new Padding(24),AutoScroll=false,BackColor=Bg,Tag=0};table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,50));table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,50));return table;}
     public static Control FieldsView(TableLayoutPanel fields){return new ScrollSurface(fields);}
@@ -158,7 +162,7 @@ sealed class PageView : BufferedPanel {
 }
 
 sealed class ResourceSummary : UserControl {
-    readonly Label memory=Theme.Label("—",17),cores=Theme.Label("—",17),profile=Theme.Label("—",17);
+    readonly Label memory=Theme.Label("—",14),cores=Theme.Label("—",14),profile=Theme.Label("—",14);
     readonly ToolTip profileTip=new ToolTip();
     public ResourceSummary(){Size=new Size(650,80);BackColor=Theme.Bg;Margin=new Padding(0);var table=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=3,RowCount=2,Padding=new Padding(0,12,0,8)};
         for(int index=0;index<3;index++)table.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,33.333F));
@@ -255,7 +259,7 @@ sealed class PageDeck : UserControl {
         button.AutoSize=false;
         button.Size=new Size(148,46);
         var textSize=TextRenderer.MeasureText(page.Text,button.Font,new Size(118,0),TextFormatFlags.WordBreak|TextFormatFlags.NoPrefix);
-        button.Height=Math.Max(46,textSize.Height+20);
+        button.Height=Math.Max(46,textSize.Height+button.Padding.Vertical+8);
         button.MinimumSize=Size.Empty;
         button.Margin=new Padding(0,0,0,6);
         button.BackColor=Theme.Panel;

@@ -56,7 +56,7 @@ static class AppearanceTests {
                 backend.Open();main.Backend=backend;main.Show();main.Demo();Wait();Save(main,Path.Combine(output,"appearance-main.png"));
                 var search=Field<FieldInput>(main,"search");Check(search.SearchIcon&&search.Height>=40,"search uses a spacious themed field with a drawn icon");
                 search.Text="ubuntu-server";Check(Field<FlowLayoutPanel>(main,"cards").Controls.Count==1,"new search field filters the existing library");search.Clear();
-                var menu=Field<ContextMenuStrip>(main,"libraryMenu");menu.Show(main,new Point(240,70));Application.DoEvents();using(var bitmap=new Bitmap(menu.Width,menu.Height)){menu.DrawToBitmap(bitmap,menu.ClientRectangle);bitmap.Save(Path.Combine(output,"library-menu.png"));}menu.Close();Check(!menu.ShowImageMargin&&menu.Items[0].Height>=36,"library menu has readable rows without empty image gutters");
+                var menu=Field<ContextMenuStrip>(main,"machineMenu");menu.Show(main,new Point(240,70));Application.DoEvents();using(var bitmap=new Bitmap(menu.Width,menu.Height)){menu.DrawToBitmap(bitmap,menu.ClientRectangle);bitmap.Save(Path.Combine(output,"machine-menu.png"));}menu.Close();Check(!menu.ShowImageMargin&&menu.Items[0].Height>=36,"machine menu has readable rows without empty image gutters");
                 var original=backend.Call("get",J.O("name","test"));byte[] before=File.ReadAllBytes(Path.Combine(root,"machines","test.json"));
                 using(var editor=new EditDialog(main,"test",original)){
                     editor.Show();var deck=Field<PageDeck>(editor,"tabs");deck.SelectedPage=deck.Pages.Cast<PageView>().First(page=>page.Text=="Оформление");

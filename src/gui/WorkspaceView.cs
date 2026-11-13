@@ -146,22 +146,26 @@ sealed class LibraryCard : BufferedPanel {
     readonly Color identity;
     public string Status { get;private set; }
     public LibraryCard(string name,string label,Color identity) {
-        Tag=name;this.identity=identity;Height=72;Width=222;Margin=new Padding(0,0,0,6);
-        BackColor=Theme.Panel;Cursor=Cursors.Hand;AccessibleRole=AccessibleRole.ListItem;
+        Tag=name;this.identity=identity;Height=52;Width=222;Margin=new Padding(0,0,0,4);
+        BackColor=Theme.Panel;Cursor=Cursors.Hand;AccessibleRole=AccessibleRole.ListItem;TabStop=true;
         AccessibleName=label+" / "+name;
         title.Text=label;subtitle.Text=name;
         foreach(var text in new[]{title,subtitle}) { text.AutoSize=false;text.AutoEllipsis=true;text.BackColor=Color.Transparent;Controls.Add(text); }
-        title.SetBounds(35,13,160,22);subtitle.SetBounds(35,37,160,19);
+        title.SetBounds(28,5,160,21);subtitle.SetBounds(28,27,160,18);ArrangeText();
     }
     public void SetStatus(string value) {
         if(value==Status) return;
         Status=value;AccessibleDescription=Theme.State(value);
-        tooltip.SetToolTip(this,AccessibleDescription);tooltip.SetToolTip(title,AccessibleDescription);
+        string details=AccessibleName+" · "+AccessibleDescription;tooltip.SetToolTip(this,details);tooltip.SetToolTip(title,details);tooltip.SetToolTip(subtitle,details);
         Invalidate(new Rectangle(Math.Max(0,Width-19),0,19,Height));
     }
     protected override void OnSizeChanged(EventArgs e) {
-        base.OnSizeChanged(e);if(title==null)return;title.Width=subtitle.Width=Math.Max(10,Width-62);
+        base.OnSizeChanged(e);if(title==null)return;ArrangeText();
     }
+    void ArrangeText(){int width=Math.Max(10,Width-62);title.Width=subtitle.Width=width;int measured=TextRenderer.MeasureText(title.Text,title.Font,new Size(width,0),TextFormatFlags.WordBreak|TextFormatFlags.NoPrefix).Height;int titleHeight=measured>22?Math.Min(42,measured):21;title.Height=titleHeight;subtitle.Top=title.Bottom+1;int desired=subtitle.Bottom+7;if(Height!=desired)Height=desired;}
+    protected override bool IsInputKey(Keys keyData){return new[]{Keys.Up,Keys.Down,Keys.Enter,Keys.Space}.Contains(keyData&Keys.KeyCode)||base.IsInputKey(keyData);}
+    protected override void OnGotFocus(EventArgs e){base.OnGotFocus(e);Invalidate();}
+    protected override void OnLostFocus(EventArgs e){base.OnLostFocus(e);Invalidate();}
     protected override void OnPaintBackground(PaintEventArgs e) {
         e.Graphics.Clear(Theme.Panel);
         if(BackColor==Theme.Card) {
@@ -171,8 +175,9 @@ sealed class LibraryCard : BufferedPanel {
     }
     protected override void OnPaint(PaintEventArgs e) {
         base.OnPaint(e);e.Graphics.SmoothingMode=SmoothingMode.AntiAlias;
-        using(var pen=new Pen(identity,4)){pen.StartCap=pen.EndCap=LineCap.Round;e.Graphics.DrawLine(pen,17,25,17,46);}
-        using(var brush=new SolidBrush(Theme.StateColor(Status)))e.Graphics.FillEllipse(brush,Width-17,20,4,4);
+        using(var pen=new Pen(identity,3)){pen.StartCap=pen.EndCap=LineCap.Round;e.Graphics.DrawLine(pen,14,15,14,37);}
+        using(var brush=new SolidBrush(Theme.StateColor(Status)))e.Graphics.FillEllipse(brush,Width-17,12,4,4);
+        if(Focused&&ShowFocusCues)ControlPaint.DrawFocusRectangle(e.Graphics,ClientRectangle);
     }
     protected override void Dispose(bool disposing) { if(disposing)tooltip.Dispose();base.Dispose(disposing); }
 }

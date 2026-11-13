@@ -38,11 +38,11 @@ static class StandsScaleTests {
                 var cards=Field<FlowLayoutPanel>(main,"cards");Check(cards.Controls.OfType<Button>().Count()==100,"large stand list renders every folder");
                 Trace(args[1],"open folders");
                 GC.Collect();GC.WaitForPendingFinalizers();uint gdiBefore=GetGuiResources(Process.GetCurrentProcess().Handle,0);
-                watch.Restart();for(int i=0;i<30;i++){cards.Controls.OfType<Button>().First().PerformClick();Application.DoEvents();}watch.Stop();measurements["open_folder_30_times_ms"]=watch.ElapsedMilliseconds;
+                watch.Restart();for(int i=0;i<30;i++){cards.Controls.OfType<StandFolderButton>().First().Controls.OfType<Button>().Single().PerformClick();Application.DoEvents();}watch.Stop();measurements["open_folder_30_times_ms"]=watch.ElapsedMilliseconds;
                 watch.Restart();for(int i=0;i<50;i++)Call(main,"PaintStandStatus");watch.Stop();measurements["paint_100_statuses_50_times_ms"]=watch.ElapsedMilliseconds;
                 Trace(args[1],"focus and scaling");
                 GC.Collect();GC.WaitForPendingFinalizers();GC.Collect();uint gdiAfter=GetGuiResources(Process.GetCurrentProcess().Handle,0);measurements["gdi_delta"]=((long)gdiAfter)-gdiBefore;Check(gdiAfter<=gdiBefore+300,"folder refresh has bounded GDI resources");
-                var search=Field<FieldInput>(main,"search");search.Text="Стенд 0";search.Focus();Application.DoEvents();string before=search.Text;Call(main,"PaintStandStatus");Check(search.Text==before&&search.ContainsFocus,"status paint preserves search focus and text");search.Text="";
+                Call(main,"SetSearchVisible",true);var search=Field<FieldInput>(main,"search");search.Text="Стенд 0";search.Focus();Application.DoEvents();string before=search.Text;Call(main,"PaintStandStatus");Check(search.Text==before&&search.ContainsFocus,"status paint preserves search focus and text");search.Text="";
                 var split=All(main).OfType<SplitContainer>().Single();int width=split.SplitterDistance;var key=new KeyEventArgs(Keys.Right);typeof(Control).GetMethod("OnKeyDown",BindingFlags.NonPublic|BindingFlags.Instance).Invoke(split,new object[]{key});Check(split.SplitterDistance>=width&&key.Handled,"splitter accepts keyboard resizing");
                 foreach(float scale in new[]{1F,1.25F,1.5F,2F})using(var operation=new StandOperationWindow(null,new string('1',32))){
                     operation.StatusProvider=stop=>System.Threading.Tasks.Task.FromResult<object>(J.O("state","completed","phase","Проверка размеров","current","node0","events",new object[0]));
