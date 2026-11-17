@@ -15,6 +15,22 @@ static class StandsTests {
     static Button ConfigurationAction(MainWindow main,string text){All(main).OfType<ConfigurationDisclosure>().Single(c=>c.Visible).Expanded=true;return All(Field<ConfigurationInspector>(main,"standInspector")).OfType<Button>().Single(b=>b.Text==text);}
     static void Check(bool ok,string message){if(trace!=null)File.AppendAllText(trace,message+Environment.NewLine);if(!ok)throw new Exception(message);checks++;}
     static void Wait(MainWindow main){var until=DateTime.UtcNow.AddSeconds(15);while((main.Busy||main.Reading||main.ModeSaving)&&DateTime.UtcNow<until){Application.DoEvents();System.Threading.Thread.Sleep(20);}Check(!main.Busy&&!main.Reading&&!main.ModeSaving&&main.TestError==null,"RPC did not complete cleanly: "+main.TestError);}
+    static void NetworkDialog(MainWindow main,Action<StandNetworkEditorWindow> interact){
+        bool handled=false;Exception failure=null;
+        using(var timer=new System.Windows.Forms.Timer{Interval=15}){
+            timer.Tick+=(sender,args)=>{
+                var editor=Application.OpenForms.OfType<StandNetworkEditorWindow>().FirstOrDefault(window=>window.Visible&&window.IsHandleCreated);
+                if(editor==null)return;timer.Stop();
+                try{interact(editor);}catch(Exception error){failure=error;editor.Close();}
+                handled=true;
+            };
+            timer.Start();ConfigurationAction(main,"Сеть и соединения").PerformClick();
+            var until=DateTime.UtcNow.AddSeconds(15);
+            while(!handled&&DateTime.UtcNow<until){Application.DoEvents();System.Threading.Thread.Sleep(10);}
+            if(failure!=null)throw new Exception("Network dialog interaction failed",failure);
+            Check(handled,"network interaction waits for the asynchronously opened editor");
+        }
+    }
     [STAThread]static int Main(string[] args){
         Application.SetUnhandledExceptionMode(UnhandledExceptionMode.ThrowException);Application.EnableVisualStyles();Application.SetCompatibleTextRenderingDefault(false);Program.TestMode=true;
         trace=Path.Combine(args[1],"stands-progress.txt");File.WriteAllText(trace,"");
@@ -212,15 +228,13 @@ static class StandsTests {
                 typeof(MainWindow).GetMethod("LoadStands",BindingFlags.NonPublic|BindingFlags.Instance).Invoke(main,null);Wait(main);
                 Check(J.S(Field<object>(main,"selectedStand"),"id")==id&&J.S(Field<object>(main,"selectedStand"),"name")=="Updated stand","refresh retains selection and replaces stale metadata");
                 byte[] standBefore=File.ReadAllBytes(Path.Combine(args[0],"stands",id+".json"));
-                main.BeginInvoke((Action)(()=>{var editor=Application.OpenForms.OfType<StandNetworkEditorWindow>().Single();Check(All(editor).OfType<StandTopologyCanvas>().Count()==1,"network button opens one graph editor without a nested window");var canvas=All(editor).OfType<StandTopologyCanvas>().Single();
+                NetworkDialog(main,editor=>{Check(All(editor).OfType<StandTopologyCanvas>().Count()==1,"network button opens one graph editor without a nested window");var canvas=All(editor).OfType<StandTopologyCanvas>().Single();
                     typeof(StandTopologyCanvas).GetMethod("OnMouseDown",BindingFlags.NonPublic|BindingFlags.Instance).Invoke(canvas,new object[]{new MouseEventArgs(MouseButtons.Left,1,70,75,0)});
                     typeof(StandTopologyCanvas).GetMethod("OnMouseMove",BindingFlags.NonPublic|BindingFlags.Instance).Invoke(canvas,new object[]{new MouseEventArgs(MouseButtons.Left,1,105,120,0)});
                     typeof(StandTopologyCanvas).GetMethod("OnMouseUp",BindingFlags.NonPublic|BindingFlags.Instance).Invoke(canvas,new object[]{new MouseEventArgs(MouseButtons.Left,1,105,120,0)});
-                    All(editor).OfType<Button>().Single(b=>b.Text=="Отмена").PerformClick();}));
-                ConfigurationAction(main,"Сеть и соединения").PerformClick();
+                    All(editor).OfType<Button>().Single(b=>b.Text=="Отмена").PerformClick();});
                 Check(standBefore.SequenceEqual(File.ReadAllBytes(Path.Combine(args[0],"stands",id+".json")))&&StandDiagramLayout.Read(args[0],id).ContainsKey("vm:test"),"cancelling network edits keeps stand byte-identical while local diagram placement persists");
-                main.BeginInvoke((Action)(()=>{var editor=Application.OpenForms.OfType<StandNetworkEditorWindow>().Single();Field<WorkspaceTabs>(editor,"tabs").SelectedIndex=4;Field<NumberInput>(editor,"delay").Value=2;All(editor).OfType<Button>().Single(b=>b.Text=="Сохранить стенд").PerformClick();}));
-                ConfigurationAction(main,"Сеть и соединения").PerformClick();Wait(main);
+                NetworkDialog(main,editor=>{Field<WorkspaceTabs>(editor,"tabs").SelectedIndex=4;Field<NumberInput>(editor,"delay").Value=2;All(editor).OfType<Button>().Single(b=>b.Text=="Сохранить стенд").PerformClick();});Wait(main);
                 var savedNetwork=J.A(J.V(main.Backend.Call("stand_list"),"rows")).Single(row=>J.S(row,"id")==id);
                 Check(J.N(J.V(J.V(savedNetwork,"startup"),"test"),"delay")==2,"one-window network save persists startup settings through backend revision check");
                 standBefore=File.ReadAllBytes(Path.Combine(args[0],"stands",id+".json"));
