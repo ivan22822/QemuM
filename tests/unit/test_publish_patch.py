@@ -1,6 +1,6 @@
 import sys, unittest
 from pathlib import Path
-sys.path.insert(0, str(Path(__file__).resolve().parents[2]/'tools'))
+sys.path.append(str(Path(__file__).resolve().parents[2]/'tools'))
 from publish_patch import ci_ready
 class PublicationChecks(unittest.TestCase):
     def setUp(self):
