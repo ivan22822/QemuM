@@ -84,12 +84,14 @@ sealed class UpdateWindow : Form {
     readonly ComponentProgress progress=new ComponentProgress("Пакет приложения"){Dock=DockStyle.Bottom,Visible=false};
     Feed feed;string work;bool busy,updateInstalled;
     public UpdateWindow(string root,bool autoCheck=true){
-        this.root=root;BootstrapUI.Style(this,"Обновления QemuM · Alpha",560);install.Enabled=false;
-        var body=new Panel{Dock=DockStyle.Fill,Padding=new Padding(28,24,28,12)};
-        var header=BootstrapUI.Header("Обновления приложения");
-        status.BackColor=BootstrapUI.Panel;status.Padding=new Padding(18);status.Font=UiTypography.Make(11);status.Text="Нажми «Проверить», чтобы найти новую сборку.";
-        installed.Dock=DockStyle.Top;installed.AutoSize=false;installed.Height=38;installed.ForeColor=BootstrapUI.Accent;
-        body.Controls.Add(status);body.Controls.Add(progress);body.Controls.Add(installed);body.Controls.Add(header);
+        this.root=root;BootstrapUI.Style(this,"Обновления QemuM · Alpha",430);ClientSize=new Size(660,430);MinimumSize=SizeFromClientSize(new Size(660,430));MaximizeBox=false;install.Enabled=false;
+        var body=new Panel{Dock=DockStyle.Fill,Padding=new Padding(22,18,22,10)};
+        var header=BootstrapUI.Header("Обновления",true);
+        status.BackColor=BootstrapUI.Panel;status.Padding=Padding.Empty;status.Font=UiTypography.Make(12);status.Text="Нажми «Проверить», чтобы найти новую сборку.";
+        installed.Dock=DockStyle.Top;installed.AutoSize=false;installed.Height=38;installed.ForeColor=BootstrapUI.Muted;installed.Font=UiTypography.Make(10.5F);installed.TextAlign=ContentAlignment.MiddleLeft;
+        var message=new BootstrapCard{Dock=DockStyle.Fill,Padding=new Padding(18)};message.Controls.Add(status);
+        foreach(var button in new[]{check,install,close})button.Font=UiTypography.Make(10.5F,500);
+        body.Controls.Add(message);body.Controls.Add(progress);body.Controls.Add(installed);body.Controls.Add(header);
         Controls.Add(body);Controls.Add(BootstrapUI.Buttons(check,install,close));close.Click+=(sender,args)=>Close();
         check.Click+=(sender,args)=>Check();install.Click+=(sender,args)=>{if(updateInstalled)LaunchManager();else Install();};
         if(autoCheck)Shown+=(sender,args)=>Check();FormClosing+=(sender,args)=>{if(busy)args.Cancel=true;};
@@ -141,6 +143,7 @@ sealed class UpdateWindow : Form {
         finally{busy=false;check.Enabled=true;close.Enabled=true;install.Enabled=feed!=null;}
     }
     internal void UpdateComplete(Feed updated){
+        installed.Text="Установлена "+Core.Display(updated.version,updated.build)+" · канал Alpha";
         updateInstalled=true;install.Text="Запустить менеджер";install.Enabled=true;
         status.Text="Установлена "+Core.Display(updated.version,updated.build)+". Можно запустить менеджер.";
         AcceptButton=install;

@@ -18,6 +18,8 @@ static class BootstrapTests {
                 foreach(var button in update.Controls.OfType<FlowLayoutPanel>().SelectMany(flow=>flow.Controls.OfType<Button>())){
                     if(!button.Parent.ClientRectangle.Contains(button.Bounds))throw new Exception("Updater footer buttons must fit the window.");
                 }
+                if(update.ClientSize.Width>680||update.ClientSize.Height>450)throw new Exception("Updater must remain compact at standard DPI.");
+                if(!update.Controls.Cast<Control>().SelectMany(control=>AllControls(control)).OfType<BootstrapCard>().Any())throw new Exception("Updater status requires a rounded card.");
                 Save(update,Path.Combine(args[0],"update-design.png"));
                 var action=update.Controls.OfType<FlowLayoutPanel>().SelectMany(flow=>flow.Controls.OfType<Button>()).Single(button=>button.Text=="Установить обновление");
                 if(action.Enabled)throw new Exception("Launch must not be offered before an update succeeds.");
@@ -25,6 +27,7 @@ static class BootstrapTests {
                 Application.DoEvents();
                 if(action.Text!="Запустить менеджер"||!action.Enabled||update.AcceptButton!=action)throw new Exception("Successful update must offer launch as the default action.");
                 if(!action.Parent.ClientRectangle.Contains(action.Bounds))throw new Exception("Launch button must fit the updater footer.");
+                Save(update,Path.Combine(args[0],"update-success-design.png"));
                 bool missing=false;try{update.ManagerStartInfo();}catch(IOException){missing=true;}
                 if(!missing)throw new Exception("Missing installation loader must be rejected.");
                 action.PerformClick();
@@ -46,5 +49,6 @@ static class BootstrapTests {
             File.WriteAllText(Path.Combine(args[0],"bootstrap-results.json"),"{\"passed\":9}");return 0;
         }catch(Exception error){File.WriteAllText(Path.Combine(args[0],"bootstrap-error.txt"),error.ToString());return 1;}
     }
+    static System.Collections.Generic.IEnumerable<Control> AllControls(Control root){yield return root;foreach(Control child in root.Controls)foreach(var control in AllControls(child))yield return control;}
     static void Save(Form form,string path){using(var image=new Bitmap(form.Width,form.Height)){form.DrawToBitmap(image,new Rectangle(Point.Empty,image.Size));image.Save(path);}}
 }

@@ -29,6 +29,11 @@ jobs:
           retention-days: 7
       - name: Check pinned taskbar launch on a private fixture
         run: python -c "import sys; sys.path.insert(0, 'tools'); import test; test.gui_tests(False, 'TaskbarLaunchTests')"
+      - name: Check service layout and publication cleanup
+        run: |
+          python -m unittest discover -s tests/unit -p test_publish_patch.py -v
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python -c "import sys; sys.path.insert(0, 'tools'); import test; test.gui_tests(False, 'SupportTests')"
       - name: Build isolated development app
         run: python tools/build.py
       - name: Audit tracked source files
@@ -51,9 +56,20 @@ jobs:
       - name: Build and audit patch
         shell: pwsh
         run: |
-          python tools/release.py --patch
+          python tools/release.py
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
-          python tools/audit_release.py --patch
+          python tools/audit_release.py
+      - name: Verify embedded installer package
+        shell: pwsh
+        run: |
+          $releaseDir = Join-Path (Get-Location) 'build/release/0.1.0-alpha.7/build.4'
+          $assembly = [System.Reflection.Assembly]::LoadFile((Join-Path $releaseDir 'QemuM-0.1.0-alpha.7-Setup.exe'))
+          $stream = $assembly.GetManifestResourceStream('app.zip')
+          if ($null -eq $stream) { throw 'Installer package resource is missing' }
+          try { $sha = [System.Security.Cryptography.SHA256]::Create(); $actual = [Convert]::ToHexString($sha.ComputeHash($stream)).ToLowerInvariant() } finally { $stream.Dispose() }
+          $expected = (Get-FileHash -LiteralPath (Join-Path $releaseDir 'QemuM-0.1.0-alpha.7-app.zip') -Algorithm SHA256).Hash.ToLowerInvariant()
+          if ($actual -ne $expected) { throw 'Installer does not contain the current update package' }
+          Write-Output 'Installer and updater contain the same verified application package.'
       - name: Download verified upgrade inputs
         if: env.PRIOR_VALIDATION_RELEASE != 'true'
         shell: python
@@ -80,10 +96,10 @@ jobs:
       - name: Publish verified application and updater feeds
         env:
           GH_TOKEN: ${{ github.token }}
-        run: python tools/publish_patch.py --commit ${{ github.sha }} --publish
+        run: python tools/publish_patch.py --commit ${{ github.sha }} --publish --installer
       - name: Preserve release artifacts and receipt
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: alpha7-build3-release
-          path: build/release/0.1.0-alpha.7/build.3/
+          name: alpha7-build4-release
+          path: build/release/0.1.0-alpha.7/build.4/

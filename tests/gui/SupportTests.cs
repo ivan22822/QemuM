@@ -19,7 +19,14 @@ static class SupportTests {
             using(var main=new MainWindow(args[1],null,true,false)){
                 main.Show();main.Demo();Application.DoEvents();
                 var service=All(main).OfType<Button>().Single(button=>button.Text=="Сервис");
-                main.BeginInvoke((Action)(()=>{var window=Application.OpenForms.Cast<Form>().Single(form=>form.Text=="Service · QemuM");Check(All(window).OfType<Button>().Any(button=>button.Text=="Обновления"),"service retains the updates action");Check(All(window).OfType<Button>().Any(button=>button.Text=="Помощь / отчёт"),"service retains support");window.Close();}));service.PerformClick();
+                main.BeginInvoke((Action)(()=>{var window=Application.OpenForms.Cast<Form>().Single(form=>form.Text=="Service · QemuM");Check(All(window).OfType<Button>().Any(button=>button.Text=="Обновления"),"service retains the updates action");Check(All(window).OfType<Button>().Any(button=>button.Text=="Помощь / отчёт"),"service retains support");
+                    Check(!All(window).OfType<ScrollSurface>().Any(),"service actions need no scrolling");
+                    foreach(var button in All(window).OfType<Button>()){
+                        for(Control parent=button.Parent;parent!=null&&parent!=window;parent=parent.Parent)
+                            Check(parent.RectangleToScreen(parent.ClientRectangle).Contains(button.RectangleToScreen(button.ClientRectangle)),"service action is fully visible: "+button.Text);
+                    }
+                    using(var image=new Bitmap(window.Width,window.Height)){window.DrawToBitmap(image,new Rectangle(Point.Empty,image.Size));image.Save(Path.Combine(args[0],"service-fit.png"));}
+                    window.Close();}));service.PerformClick();
                 using(var faq=new FaqWindow()){
                     faq.Show();Application.DoEvents();
                     Check(FaqWindow.Entries.Length>=35,"FAQ covers application features");

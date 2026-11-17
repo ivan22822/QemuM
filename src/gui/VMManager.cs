@@ -279,10 +279,10 @@ sealed partial class MainWindow : SmoothForm {
         if(DialogLaunch.Defer(this,ShowService))return;
         Action selectedAction=null;
         using(var service=new MotionDialog()){
-            service.Text="Service · QemuM";Theme.Form(service,1000,590);
+            service.Text="Service · QemuM";Theme.Form(service,1000,660);
             var body=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=2,RowCount=3,Margin=Padding.Empty};
             body.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,50));body.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,50));
-            body.RowStyles.Add(new RowStyle(SizeType.Absolute,133));body.RowStyles.Add(new RowStyle(SizeType.Absolute,133));body.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+            body.RowStyles.Add(new RowStyle(SizeType.Absolute,124));body.RowStyles.Add(new RowStyle(SizeType.Absolute,124));body.RowStyles.Add(new RowStyle(SizeType.AutoSize));
             Action<Action> choose=action=>{selectedAction=action;service.Close();};
             string vmName=standMode&&selectedStand!=null?null:selected;
             var settings=new ReferenceServiceTile("dialog:settings","Настройки приложения","Тема, плотность и анимация",()=>{});
@@ -298,7 +298,7 @@ sealed partial class MainWindow : SmoothForm {
             extras.Controls.Add(Theme.Button("Помощь / отчёт",()=>choose(()=>{using(var window=new SupportWindow(this,vmName,true))window.ShowDialog(this);})));
             if(selectedStand!=null){string id=J.S(selectedStand,"id");extras.Controls.Add(Theme.Button("Отчёт стенда · "+J.S(selectedStand,"name"),()=>choose(()=>ExportStand(id))));}
             body.Controls.Add(extras,0,2);body.SetColumnSpan(extras,2);
-            var buttons=Theme.Flow();buttons.Controls.Add(Theme.Button("Закрыть",service.Close));Theme.Dialog(service,new ScrollSurface(body),buttons,"Сервис","Инструменты приложения","СЕРВИС");service.ShowDialog(this);
+            var buttons=Theme.Flow();buttons.Controls.Add(Theme.Button("Закрыть",service.Close));Theme.Dialog(service,body,buttons,"Сервис","Инструменты приложения","СЕРВИС");service.ShowDialog(this);
         }
         if(selectedAction!=null)selectedAction();
     }

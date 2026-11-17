@@ -1,8 +1,13 @@
 import sys, unittest
 from pathlib import Path
 sys.path.append(str(Path(__file__).resolve().parents[2]/'tools'))
-from publish_patch import ci_ready
+from publish_patch import ci_ready, archived_metadata
 class PublicationChecks(unittest.TestCase):
+    def test_release_cleanup_preserves_live_feeds_packages_and_installers(self):
+        for name in ('update-build.1.json','update-before-build.3.json','SHA256SUMS-build.2.txt','SHA256SUMS-before-build.1.txt'):
+            self.assertTrue(archived_metadata(name), name)
+        for name in ('update.json','SHA256SUMS.txt','QemuM-0.1.0-alpha.7-app.zip','QemuM-0.1.0-alpha.7-build.1-app.zip','QemuM-0.1.0-alpha.7-Setup.exe','QemuM.exe','QemuM-Refresh.exe','update-build.4.json.extra','../update-build.4.json'):
+            self.assertFalse(archived_metadata(name), name)
     def setUp(self):
         self.env = dict(GITHUB_ACTIONS='true', GITHUB_SHA='tested', GITHUB_JOB='publish-alpha7-build1', GITHUB_RUN_ID='123')
         self.ok = dict(name='windows', status='completed', conclusion='success')

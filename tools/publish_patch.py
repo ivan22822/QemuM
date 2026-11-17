@@ -3,6 +3,7 @@ import argparse
 import hashlib
 import json
 import os
+import re
 import subprocess
 import urllib.error
 import urllib.request
@@ -28,15 +29,20 @@ def ci_ready(checks, commit, environment=None):
     return bool(checks) and any(completed(item) for item in checks) and all(completed(item) or own_publication_job(item) for item in checks)
 
 
+def archived_metadata(name):
+    return re.fullmatch(r'(?:update-(?:before-)?build\.\d+\.json|SHA256SUMS-(?:before-)?build\.\d+\.txt)', name) is not None
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument('--commit', required=True, help='exact tested full source commit')
     parser.add_argument('--publish', action='store_true', help='perform GitHub writes')
+    parser.add_argument('--installer', action='store_true', help='also refresh the installer and bootstrap downloads')
     args = parser.parse_args()
     git = lambda *parts: subprocess.check_output(['git', '-C', str(ROOT), *parts], text=True).strip()
     if git('rev-parse', 'HEAD') != args.commit or git('status', '--porcelain'):
         raise RuntimeError('Commit must be current and the tracked checkout must be clean')
-    subprocess.run([__import__('sys').executable, str(ROOT/'tools/audit_release.py'), '--patch'], check=True)
+    subprocess.run([__import__('sys').executable, str(ROOT/'tools/audit_release.py')] + ([] if args.installer else ['--patch']), check=True)
     feed = json.loads((OUT/'update.json').read_text(encoding='utf-8'))
     if BUILD_NUMBER <= 0 or feed.get('build') != BUILD_NUMBER:
         raise RuntimeError('A positive, matching patch build is required')
@@ -69,7 +75,7 @@ def main():
         if content is not None:
             payload = content; options['Content-Type'] = 'application/octet-stream'
         with urllib.request.urlopen(urllib.request.Request(url, headers=options, data=payload, method=method), timeout=90) as response:
-            return json.load(response)
+            return None if response.status == 204 else json.load(response)
 
     checks = api('commits/'+args.commit+'/check-runs')['check_runs']
     if not ci_ready(checks, args.commit):
@@ -93,10 +99,29 @@ def main():
     payload = package.read_bytes()
     upload(package_name, payload)
     feed_bytes = (OUT/'update.json').read_bytes()
-    upload(f'update-build.{BUILD_NUMBER}.json', feed_bytes)
-    checksums = hashlib.sha256(payload).hexdigest()+'  '+package_name+'\n'
-    checksums += hashlib.sha256(feed_bytes).hexdigest()+f'  update-build.{BUILD_NUMBER}.json\n'
-    upload(f'SHA256SUMS-build.{BUILD_NUMBER}.txt', checksums.encode('ascii'))
+    def backup_asset(item):
+        # Backups are preserved in the CI artifact, never added as release downloads.
+        target = OUT/'replaced-assets'/item['name']
+        target.parent.mkdir(parents=True, exist_ok=True)
+        with urllib.request.urlopen(item['browser_download_url'], timeout=90) as response:
+            value = response.read(32*1024*1024+1)
+        if len(value) != item['size'] or len(value) > 32*1024*1024:
+            raise RuntimeError('Release backup size mismatch: '+item['name'])
+        if item.get('digest') and item['digest'] != 'sha256:'+hashlib.sha256(value).hexdigest():
+            raise RuntimeError('Release backup checksum mismatch: '+item['name'])
+        target.write_bytes(value)
+
+    def replace_asset(name, content):
+        item = assets.get(name)
+        if item and item.get('digest') != 'sha256:'+hashlib.sha256(content).hexdigest():
+            backup_asset(item)
+            api('releases/assets/'+str(item['id']), 'DELETE')
+            del assets[name]
+        return upload(name, content)
+
+    if args.installer:
+        for name in [f'QemuM-{VERSION}-Setup.exe', 'QemuM.exe', 'QemuM-Refresh.exe']:
+            replace_asset(name, (OUT/name).read_bytes())
 
     # Publish a metadata-only tree. Source and compiled binaries stay off this branch.
     old = None
@@ -128,27 +153,29 @@ def main():
         api('git/refs', 'POST', {'ref': 'refs/heads/'+CHANNEL_BRANCH, 'sha': commit['sha']})
     print('Patch channel advanced without force push', flush=True)
 
-    # The legacy loader only recognizes update.json in Releases. Keep its previous
-    # feed/checksums, then publish the new feed under the recognized mutable name.
-    old_feed = assets.get('update.json')
-    if old_feed and old_feed.get('digest') != 'sha256:'+hashlib.sha256(feed_bytes).hexdigest():
-        archived = f'update-before-build.{BUILD_NUMBER}.json'
-        if archived in assets:
-            raise RuntimeError('Legacy feed archive already exists; inspect before resuming')
-        api('releases/assets/'+str(old_feed['id']), 'PATCH', {'name': archived})
-        assets[archived] = dict(old_feed, name=archived); del assets['update.json']
-    upload('update.json', feed_bytes)
-    current_sums = ''.join(item['digest'].split(':', 1)[1]+'  '+name+'\n'
-                           for name, item in sorted(assets.items()) if item.get('digest') and not name.startswith('SHA256SUMS'))
-    sums_bytes = current_sums.encode('ascii')
-    old_sums = assets.get('SHA256SUMS.txt')
-    if old_sums and old_sums.get('digest') != 'sha256:'+hashlib.sha256(sums_bytes).hexdigest():
-        archived = f'SHA256SUMS-before-build.{BUILD_NUMBER}.txt'
-        if archived in assets:
-            raise RuntimeError('Checksum archive already exists; inspect before resuming')
-        api('releases/assets/'+str(old_sums['id']), 'PATCH', {'name': archived})
-        del assets['SHA256SUMS.txt']
-    upload('SHA256SUMS.txt', sums_bytes)
+    # Keep stable legacy feed URLs. Old package ZIPs remain available to cached feeds.
+    replace_asset('update.json', feed_bytes)
+    for name, item in list(assets.items()):
+        if archived_metadata(name):
+            backup_asset(item)
+            api('releases/assets/'+str(item['id']), 'DELETE')
+            del assets[name]
+            print('Archived obsolete metadata: '+name, flush=True)
+    sums_bytes = ''.join(item['digest'].split(':', 1)[1]+'  '+name+'\n'
+                         for name, item in sorted(assets.items())
+                         if item.get('digest') and name != 'SHA256SUMS.txt').encode('ascii')
+    replace_asset('SHA256SUMS.txt', sums_bytes)
+    if args.installer:
+        body = ('## QemuM '+VERSION+' · сборка '+str(BUILD_NUMBER)+'\n\n'
+                '[**Установить QemuM для Windows x64**](https://github.com/ivan22822/QemuM/releases/download/v'+VERSION+'/QemuM-'+VERSION+'-Setup.exe)\n\n'
+                'Для существующей установки: **Сервис → Обновления**.\n\n'
+                '[Пакет обновления — сборка '+str(BUILD_NUMBER)+']('+expected_url+') · '
+                '[Контрольные суммы](https://github.com/ivan22822/QemuM/releases/download/v'+VERSION+'/SHA256SUMS.txt)\n\n'
+                'Плавные диалоги и переходы, исправление запуска из панели задач, кнопка запуска после обновления, '
+                'компактный обновлятор и окно сервиса без прокрутки.\n\n'
+                'Установщик содержит ту же сборку, что и канал обновлений. Старые ZIP сохранены для действующих ссылок. '
+                'Длительный тест стендов остаётся приостановлен; полный GUI-прогон не повторялся по запросу пользователя.\n')
+        api('releases/'+str(release['id']), 'PATCH', {'body': body})
     receipt = dict(plan, channel_commit=commit['sha'], release=release['html_url'])
     (OUT/'publication.json').write_text(json.dumps(receipt, indent=2), encoding='utf-8')
     print(json.dumps(receipt, indent=2))

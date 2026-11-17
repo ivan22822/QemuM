@@ -32,7 +32,7 @@ static class BootstrapUI {
         var flow=new FlowLayoutPanel{Dock=DockStyle.Bottom,Height=72,Padding=new Padding(28,16,20,16),WrapContents=false,BackColor=ColorTranslator.FromHtml("#f1ece3")};
         flow.Controls.AddRange(buttons);return flow;
     }
-    public static Control Header(string text){return new BootstrapHeader(text);}
+    public static Control Header(string text,bool compact=false){return new BootstrapHeader(text,compact);}
 
 }
 
@@ -114,16 +114,44 @@ sealed class InstallProgress {
 }
 
 sealed class BootstrapHeader : Control {
-    readonly string title;float scale=1;readonly Timer motion=new Timer{Interval=33};readonly System.Diagnostics.Stopwatch clock=System.Diagnostics.Stopwatch.StartNew();
-    public BootstrapHeader(string title){this.title=title;motion.Tick+=(s,e)=>Invalidate();Dock=DockStyle.Top;Height=142;SetStyle(ControlStyles.UserPaint|ControlStyles.OptimizedDoubleBuffer|ControlStyles.ResizeRedraw,true);}
+    readonly string title;readonly bool compact;float scale=1;readonly Timer motion=new Timer{Interval=33};readonly System.Diagnostics.Stopwatch clock=System.Diagnostics.Stopwatch.StartNew();
+    public BootstrapHeader(string title,bool compact=false){this.title=title;this.compact=compact;motion.Tick+=(s,e)=>Invalidate();Dock=DockStyle.Top;Height=compact?104:142;SetStyle(ControlStyles.UserPaint|ControlStyles.OptimizedDoubleBuffer|ControlStyles.ResizeRedraw,true);}
     protected override void ScaleControl(SizeF factor,BoundsSpecified specified){scale*=factor.Width;base.ScaleControl(factor,specified);}
     [DllImport("user32.dll")]static extern bool SystemParametersInfo(uint action,uint parameter,out bool value,uint flags);
-    protected override void OnVisibleChanged(EventArgs e){base.OnVisibleChanged(e);bool enabled=true;try{SystemParametersInfo(0x1042,0,out enabled,0);}catch(EntryPointNotFoundException){}motion.Enabled=Visible&&enabled;}
+    protected override void OnVisibleChanged(EventArgs e){base.OnVisibleChanged(e);bool enabled=true;try{SystemParametersInfo(0x1042,0,out enabled,0);}catch(EntryPointNotFoundException){}motion.Enabled=Visible&&enabled&&!compact;}
     protected override void Dispose(bool disposing){if(disposing)motion.Dispose();base.Dispose(disposing);}
     protected override void OnPaint(PaintEventArgs e){base.OnPaint(e);var g=e.Graphics;var state=g.Save();g.ScaleTransform(scale,scale);float width=Width/scale,height=Height/scale;g.SmoothingMode=SmoothingMode.AntiAlias;
+        if(compact){
+            using(var path=BootstrapCard.Shape(new RectangleF(0,0,width-1,height-1),16)){
+                using(var fill=new LinearGradientBrush(new RectangleF(0,0,width,height),ColorTranslator.FromHtml("#eee5d8"),BootstrapUI.Bg,15F))g.FillPath(fill,path);
+                using(var pen=new Pen(BootstrapUI.Line))g.DrawPath(pen,path);
+            }
+            using(var font=UiTypography.Make(9,600))using(var ink=new SolidBrush(BootstrapUI.Accent))g.DrawString("QEMU M  /  ALPHA",font,ink,20,15);
+            using(var font=UiTypography.Make(25,800))using(var ink=new SolidBrush(BootstrapUI.Text))g.DrawString(title,font,ink,18,39);
+            using(var font=UiTypography.Make(43,900))using(var ink=new SolidBrush(Color.FromArgb(10,BootstrapUI.Accent)))g.DrawString("UPDATE",font,ink,width-265,28);
+            g.Restore(state);return;
+        }
         using(var gradient=new LinearGradientBrush(new RectangleF(0,0,width,height),BootstrapUI.Bg,ColorTranslator.FromHtml("#eee5d8"),120F))g.FillRectangle(gradient,0,0,width,height);
         var ghost=g.Save();float drift=motion.Enabled?(float)((1-Math.Cos(clock.Elapsed.TotalSeconds*Math.PI/14))/2):0;g.TranslateTransform(width*.38F-15*drift,12+4*drift);g.RotateTransform(-4+3*drift);using(var font=UiTypography.Make(70,900))using(var ink=new SolidBrush(Color.FromArgb(14,BootstrapUI.Accent)))g.DrawString(title.ToUpperInvariant(),font,ink,0,0);g.Restore(ghost);
         float size=30;using(var font=UiTypography.Make(size,800)){var measured=g.MeasureString(title,font);if(measured.Width>width-48)size=Math.Max(22,size*(width-48)/measured.Width);}using(var font=UiTypography.Make(size,800))using(var ink=new SolidBrush(BootstrapUI.Text))g.DrawString(title,font,ink,24,43);
         using(var pen=new Pen(BootstrapUI.Line))g.DrawLine(pen,0,height-1,width,height-1);g.Restore(state);
+    }
+}
+
+sealed class BootstrapCard : Panel {
+    public BootstrapCard(){DoubleBuffered=true;BackColor=BootstrapUI.Panel;}
+    internal static GraphicsPath Shape(RectangleF r,float radius){
+        var path=new GraphicsPath();float d=Math.Max(1,Math.Min(radius*2,Math.Min(r.Width,r.Height)));
+        path.AddArc(r.Left,r.Top,d,d,180,90);path.AddArc(r.Right-d,r.Top,d,d,270,90);
+        path.AddArc(r.Right-d,r.Bottom-d,d,d,0,90);path.AddArc(r.Left,r.Bottom-d,d,d,90,90);path.CloseFigure();return path;
+    }
+    protected override void OnPaintBackground(PaintEventArgs e){
+        e.Graphics.Clear(Parent==null?BootstrapUI.Bg:Parent.BackColor);
+        e.Graphics.SmoothingMode=SmoothingMode.AntiAlias;
+        if(Width<2||Height<2)return;
+        using(var path=Shape(new RectangleF(0,0,Width-1,Height-1),16)){
+            using(var brush=new SolidBrush(BackColor))e.Graphics.FillPath(brush,path);
+            using(var pen=new Pen(BootstrapUI.Line))e.Graphics.DrawPath(pen,path);
+        }
     }
 }
