@@ -340,8 +340,11 @@ sealed partial class MainWindow : SmoothForm {
     internal void CancelRead(string key){readTickets.Remove(key);lock(reads){CancellationTokenSource source;if(readCancellations.TryGetValue(key,out source))source.Cancel();}}
     void CancelReads(){readTickets.Clear();lock(reads){foreach(var source in readCancellations.Values.ToArray())source.Cancel();}}
     public async void Read(string message,Func<object> operation,Action<object> done,Action<Exception> failed=null,string key=null){
+        if(IsDisposed)return;
+        if(IsHandleCreated&&InvokeRequired){Post(()=>Read(message,operation,done,failed,key));return;}
+        if(!(SynchronizationContext.Current is WindowsFormsSynchronizationContext))SynchronizationContext.SetSynchronizationContext(new WindowsFormsSynchronizationContext());
         key=key??message;int ticket=++nextReadTicket;readTickets[key]=ticket;
-        try{var task=ReadAsync(key,operation);if(await Task.WhenAny(task,Task.Delay(180))!=task){int active;if(!IsDisposed&&!Busy&&readTickets.TryGetValue(key,out active)&&active==ticket){readFooterTicket=ticket;footer.Text=message;}}object result=await task;int current;if(IsDisposed||!readTickets.TryGetValue(key,out current)||current!=ticket)return;readTickets.Remove(key);if(!Busy&&readFooterTicket==ticket)footer.Text="";if(done!=null)done(result);}
+        try{var task=ReadAsync(key,operation);if(await Task.WhenAny(task,Task.Delay(180))!=task){int active;if(!IsDisposed&&!Busy&&readTickets.TryGetValue(key,out active)&&active==ticket){readFooterTicket=ticket;footer.Text=message;}}object result=await task;int current;if(IsDisposed||!readTickets.TryGetValue(key,out current)||current!=ticket)return;if(!Busy&&readFooterTicket==ticket)footer.Text="";if(done!=null)done(result);if(readTickets.TryGetValue(key,out current)&&current==ticket)readTickets.Remove(key);}
         catch(OperationCanceledException){int current;if(!IsDisposed&&readTickets.TryGetValue(key,out current)&&current==ticket){readTickets.Remove(key);if(!Busy&&readFooterTicket==ticket)footer.Text="";}}
         catch(Exception error){int current;if(IsDisposed||!readTickets.TryGetValue(key,out current)||current!=ticket)return;readTickets.Remove(key);footer.Text=message.TrimEnd('…')+": "+error.Message;if(failed!=null)failed(error);}
     }
