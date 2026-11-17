@@ -12,7 +12,16 @@ static class StandsTests {
     static string trace;
     static T Field<T>(object x,string n){return (T)x.GetType().GetField(n,BindingFlags.NonPublic|BindingFlags.Instance).GetValue(x);}
     static IEnumerable<Control> All(Control x){foreach(Control c in x.Controls){yield return c;foreach(var d in All(c))yield return d;}}
-    static Button ConfigurationAction(MainWindow main,string text){All(main).OfType<ConfigurationDisclosure>().Single(c=>c.Visible).Expanded=true;return All(Field<ConfigurationInspector>(main,"standInspector")).OfType<Button>().Single(b=>b.Text==text);}
+    static Button ConfigurationAction(MainWindow main,string text){
+        var inspector=Field<ConfigurationInspector>(main,"standInspector");
+        var panel=Field<Panel>(main,"standDetail");
+        var disclosure=All(panel).OfType<ConfigurationDisclosure>().SingleOrDefault(item=>Object.ReferenceEquals(Field<Control>(item,"inspector"),inspector));
+        Check(disclosure!=null&&disclosure.Visible,"stand parameters are visible before action: main="+main.Visible+", stand="+panel.Visible+", headers="+All(panel).OfType<ConfigurationDisclosure>().Count());
+        disclosure.Expanded=true;
+        var button=All(inspector).OfType<Button>().SingleOrDefault(item=>item.Text==text);
+        Check(button!=null,"stand action is available: "+text+"; actual: "+String.Join(" | ",All(inspector).OfType<Button>().Select(item=>item.Text)));
+        return button;
+    }
     static void Check(bool ok,string message){if(trace!=null)File.AppendAllText(trace,message+Environment.NewLine);if(!ok)throw new Exception(message);checks++;}
     static void Wait(MainWindow main){var until=DateTime.UtcNow.AddSeconds(15);while((main.Busy||main.Reading||main.ModeSaving)&&DateTime.UtcNow<until){Application.DoEvents();System.Threading.Thread.Sleep(20);}Check(!main.Busy&&!main.Reading&&!main.ModeSaving&&main.TestError==null,"RPC did not complete cleanly: "+main.TestError);}
     static void NetworkDialog(MainWindow main,Action<StandNetworkEditorWindow> interact){

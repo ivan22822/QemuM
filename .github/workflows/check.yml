@@ -14,6 +14,13 @@ jobs:
           python-version: '3.12'
       - name: Unit and native GUI tests
         run: python tools/test.py --gui
+      - name: Preserve failed Windows checks
+        if: failure()
+        uses: actions/upload-artifact@v4
+        with:
+          name: windows-check-failure
+          path: build/test-results/
+          retention-days: 7
       - name: Build isolated development app
         run: python tools/build.py
       - name: Audit tracked source files
