@@ -1,4 +1,4 @@
 # QemuM update channel
 
-Metadata only. Sources: 1a3a222529715db6589599b9821bae08574ed496.
+Metadata only. Sources: 014a6901b5827ca46897dcf1763aad5c49c3ce99.
 No main merge or new release is required for patch delivery.
