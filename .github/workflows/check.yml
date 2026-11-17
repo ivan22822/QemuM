@@ -62,7 +62,7 @@ jobs:
       - name: Verify embedded installer package
         shell: pwsh
         run: |
-          $releaseDir = Join-Path (Get-Location) 'build/release/0.1.0-alpha.7/build.4'
+          $releaseDir = Join-Path (Get-Location) 'build/release/0.1.0-alpha.7/build.5'
           $assembly = [System.Reflection.Assembly]::LoadFile((Join-Path $releaseDir 'QemuM-0.1.0-alpha.7-Setup.exe'))
           $stream = $assembly.GetManifestResourceStream('app.zip')
           if ($null -eq $stream) { throw 'Installer package resource is missing' }
@@ -101,5 +101,5 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: alpha7-build4-release
-          path: build/release/0.1.0-alpha.7/build.4/
+          name: alpha7-build5-release
+          path: build/release/0.1.0-alpha.7/build.5/

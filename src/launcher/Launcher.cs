@@ -81,7 +81,8 @@ sealed class UpdateWindow : Form {
     readonly Button install=BootstrapUI.Button("Установить обновление",true);
     readonly Button close=BootstrapUI.Button("Закрыть");
     readonly Label installed=BootstrapUI.Label("Канал Alpha · проверка по запросу",10);
-    readonly ComponentProgress progress=new ComponentProgress("Пакет приложения"){Dock=DockStyle.Bottom,Visible=false};
+    readonly ComponentProgress progress=new ComponentProgress("Пакет приложения"){Dock=DockStyle.Fill};
+    readonly Panel progressHost=new Panel{Dock=DockStyle.Bottom,Height=104,Padding=new Padding(0,12,0,0),Visible=false};
     Feed feed;string work;bool busy,updateInstalled;
     public UpdateWindow(string root,bool autoCheck=true){
         this.root=root;BootstrapUI.Style(this,"Обновления QemuM · Alpha",430);ClientSize=new Size(660,430);MinimumSize=SizeFromClientSize(new Size(660,430));MaximizeBox=false;install.Enabled=false;
@@ -91,8 +92,10 @@ sealed class UpdateWindow : Form {
         installed.Dock=DockStyle.Top;installed.AutoSize=false;installed.Height=38;installed.ForeColor=BootstrapUI.Muted;installed.Font=UiTypography.Make(10.5F);installed.TextAlign=ContentAlignment.MiddleLeft;
         var message=new BootstrapCard{Dock=DockStyle.Fill,Padding=new Padding(18)};message.Controls.Add(status);
         foreach(var button in new[]{check,install,close})button.Font=UiTypography.Make(10.5F,500);
-        body.Controls.Add(message);body.Controls.Add(progress);body.Controls.Add(installed);body.Controls.Add(header);
-        Controls.Add(body);Controls.Add(BootstrapUI.Buttons(check,install,close));close.Click+=(sender,args)=>Close();
+        progressHost.Controls.Add(progress);
+        body.Controls.Add(message);body.Controls.Add(progressHost);body.Controls.Add(installed);body.Controls.Add(header);
+        var footer=BootstrapUI.Buttons(check,install,close);footer.Padding=new Padding(22,12,22,12);footer.Height=68;
+        Controls.Add(body);Controls.Add(footer);close.Click+=(sender,args)=>Close();
         check.Click+=(sender,args)=>Check();install.Click+=(sender,args)=>{if(updateInstalled)LaunchManager();else Install();};
         if(autoCheck)Shown+=(sender,args)=>Check();FormClosing+=(sender,args)=>{if(busy)args.Cancel=true;};
     }
@@ -120,7 +123,7 @@ sealed class UpdateWindow : Form {
         try{
             using(UpdateLock("running.lock","Менеджер QemuM ещё открыт или завершает работу. Закрой его и повтори установку."))using(UpdateLock("update.lock","Другая установка обновления ещё выполняется. Дождись её завершения.")){
                 Core.RecoverRepair(root);
-                status.Text="Скачиваю и проверяю пакет…";progress.Visible=true;
+                status.Text="Скачиваю и проверяю пакет…";progressHost.Visible=true;
                 var updates=new Progress<InstallProgress>(item=>progress.Report(item.Phase,item.Done,item.Total));
                 IProgress<InstallProgress> reporter=updates;
                 await Task.Run(()=>{
@@ -138,8 +141,8 @@ sealed class UpdateWindow : Form {
             }
             progress.Report("Готово",1,1);
             UpdateComplete(feed);
-        }catch(IOException error){status.Text="Обновление не установлено.\n\n"+error.Message;}
-        catch(Exception error){status.Text="Обновление не установлено: "+error.Message;}
+        }catch(IOException error){progressHost.Visible=false;status.Text="Обновление не установлено.\n\n"+error.Message;}
+        catch(Exception error){progressHost.Visible=false;status.Text="Обновление не установлено: "+error.Message;}
         finally{busy=false;check.Enabled=true;close.Enabled=true;install.Enabled=feed!=null;}
     }
     internal void UpdateComplete(Feed updated){

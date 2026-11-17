@@ -23,10 +23,20 @@ static class BootstrapTests {
                 Save(update,Path.Combine(args[0],"update-design.png"));
                 var action=update.Controls.OfType<FlowLayoutPanel>().SelectMany(flow=>flow.Controls.OfType<Button>()).Single(button=>button.Text=="Установить обновление");
                 if(action.Enabled)throw new Exception("Launch must not be offered before an update succeeds.");
+                var progress=AllControls(update).OfType<ComponentProgress>().Single();
+                progress.Parent.Visible=true;progress.Report("Готово",1,1);
                 update.UpdateComplete(new QemuM.Update.Feed{version="0.1.0-alpha.7",build=3});
                 Application.DoEvents();
                 if(action.Text!="Запустить менеджер"||!action.Enabled||update.AcceptButton!=action)throw new Exception("Successful update must offer launch as the default action.");
                 if(!action.Parent.ClientRectangle.Contains(action.Bounds))throw new Exception("Launch button must fit the updater footer.");
+                var message=AllControls(update).OfType<BootstrapCard>().Single();
+                int gap=progress.PointToScreen(Point.Empty).Y-message.PointToScreen(new Point(0,message.Height)).Y;
+                if(gap<12)throw new Exception("Message and progress cards require a visible gap.");
+                var status=message.Controls.OfType<Label>().Single();
+                var needed=TextRenderer.MeasureText(status.Text,status.Font,new Size(status.Width,int.MaxValue),TextFormatFlags.WordBreak);
+                if(needed.Height>status.Height)throw new Exception("Post-update message must fit above the progress card.");
+                var footer=action.Parent;
+                if(footer.Padding.Left!=message.PointToScreen(Point.Empty).X-update.PointToScreen(Point.Empty).X)throw new Exception("Footer actions must align with the content cards.");
                 Save(update,Path.Combine(args[0],"update-success-design.png"));
                 bool missing=false;try{update.ManagerStartInfo();}catch(IOException){missing=true;}
                 if(!missing)throw new Exception("Missing installation loader must be rejected.");
