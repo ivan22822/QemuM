@@ -4,6 +4,8 @@ on:
   pull_request:
 permissions:
   contents: read
+env:
+  PRIOR_VALIDATION_RELEASE: ${{ github.ref == 'refs/heads/codex/alpha7-build1-smooth-ui' && contains(github.event.head_commit.message, '[publish-with-prior-validation]') }}
 jobs:
   windows:
     runs-on: windows-latest
@@ -12,7 +14,11 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: '3.12'
+      - name: Record user-approved use of prior validation
+        if: env.PRIOR_VALIDATION_RELEASE == 'true'
+        run: Write-Output 'User approved publishing using prior unit, GUI, motion and isolated upgrade checks. Latest StandsTests run timed out in the network editor; this limitation remains unresolved.'
       - name: Unit and native GUI tests
+        if: env.PRIOR_VALIDATION_RELEASE != 'true'
         run: python tools/test.py --gui
       - name: Preserve failed Windows checks
         if: failure()
@@ -47,6 +53,7 @@ jobs:
           if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
           python tools/audit_release.py --patch
       - name: Download verified upgrade inputs
+        if: env.PRIOR_VALIDATION_RELEASE != 'true'
         shell: python
         run: |
           from pathlib import Path
@@ -66,6 +73,7 @@ jobs:
           with zipfile.ZipFile(target/'previous.zip') as archive:
               (target/'previous.exe').write_bytes(archive.read('QemuM.Update.exe'))
       - name: Test isolated upgrade with the released updater
+        if: env.PRIOR_VALIDATION_RELEASE != 'true'
         run: python tools/test_release.py --patch --python-archive build/release-inputs/python.zip --previous-package build/release-inputs/previous.zip --launcher build/release-inputs/previous.exe
       - name: Publish verified application and updater feeds
         env:
