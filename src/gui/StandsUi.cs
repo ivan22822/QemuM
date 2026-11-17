@@ -75,7 +75,7 @@ sealed partial class MainWindow {
                 models.Add(new VirtualLibraryRow{Key=key,Version=title+"|"+J.N(stand,"revision")+"|"+expandedStands.Contains(id),Tag=captured,AccessibleName="Стенд: "+title,Margin=new Padding(0,0,0,8),EstimatedHeight=48,Measure=width=>virtualCards.StandHeight(StandLibraryText(captured),width,false),Create=()=>StandFolder(captured),Activate=()=>SelectStandFolder(captured),Expanded=()=>expandedStands.Contains(id),Expand=()=>{if(!expandedStands.Remove(id))expandedStands.Add(id);RenderStands();virtualCards.EnsureKeyVisible(key,false);}});
                 if(expandedStands.Contains(id))for(int i=0;i<members.Length;i++){
                     string member=members[i],label=J.S(J.V(Row(member),"data"),"label",member)+(Row(member)==null?" · отсутствует":"");bool last=i==members.Length-1;
-                    models.Add(new VirtualLibraryRow{Key="member/"+id+"/"+member,ParentKey=key,Version=label+"|"+last+"|"+J.N(stand,"revision"),Tag=null,AccessibleName="Машина "+label+", стенд "+title,Margin=new Padding(12,0,0,4),EstimatedHeight=40,Measure=width=>virtualCards.StandHeight(label,width,true),Create=()=>StandChild(member,captured,last),Activate=()=>SelectStandMember(member,captured)});
+                    models.Add(new VirtualLibraryRow{Key="member/"+id+"/"+member,ParentKey=key,Version=label+"|"+last+"|"+J.N(stand,"revision"),Tag=null,AccessibleName="Машина "+label+", стенд "+title,Margin=new Padding(24,0,0,4),EstimatedHeight=40,Measure=width=>virtualCards.StandHeight(label,width,true),Create=()=>StandChild(member,captured,last),Activate=()=>SelectStandMember(member,captured)});
                 }
             }
             if(models.Count==0)models.Add(new VirtualLibraryRow{Key="empty",Version=search.Text,AccessibleName="По запросу ничего не найдено",Margin=Padding.Empty,Measure=width=>80,Create=()=>Theme.Label("По запросу ничего не найдено. Измени поиск или очисти поле.",10,Theme.Muted)});
@@ -459,7 +459,7 @@ sealed class StandMemberButton : StandTreeButton {
     public bool Selected {get{return selected;}set{if(selected==value)return;selected=value;BackColor=value?Theme.Card:Theme.Panel;ForeColor=value?Theme.Accent:Theme.Text;Invalidate();}}
     public StandMemberButton(string stand,string vm,bool last){
         StandId=stand;VmName=vm;this.last=last;CornerRadius=5;Quiet=true;AutoSize=true;MinimumSize=new Size(112,40);Padding=new Padding(36,8,10,8);
-        Margin=new Padding(12,0,0,4);TextAlign=ContentAlignment.MiddleLeft;BackColor=Theme.Panel;ForeColor=Theme.Text;AccessibleDescription="stand-member";
+        Margin=new Padding(24,0,0,4);TextAlign=ContentAlignment.MiddleLeft;BackColor=Theme.Panel;ForeColor=Theme.Text;AccessibleDescription="stand-member";
     }
     protected override void OnPaint(PaintEventArgs e){
         base.OnPaint(e);int middle=Height/2;
