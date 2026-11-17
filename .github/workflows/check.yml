@@ -27,6 +27,8 @@ jobs:
           name: windows-check-failure
           path: build/test-results/
           retention-days: 7
+      - name: Check pinned taskbar launch on a private fixture
+        run: python -c "import sys; sys.path.insert(0, 'tools'); import test; test.gui_tests(False, 'TaskbarLaunchTests')"
       - name: Build isolated development app
         run: python tools/build.py
       - name: Audit tracked source files
@@ -83,5 +85,5 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: alpha7-build1-release
-          path: build/release/0.1.0-alpha.7/build.1/
+          name: alpha7-build2-release
+          path: build/release/0.1.0-alpha.7/build.2/

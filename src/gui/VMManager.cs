@@ -875,7 +875,24 @@ sealed class DoctorWindow : MotionDialog {
 static class Program {
     internal static bool TestMode=false;
     [DllImport("user32.dll")] static extern bool SetForegroundWindow(IntPtr window);
+    // A pinned running window targets VMManager.exe rather than the installation loader.
+    // Route that entry point through the loader before creating any state beside the binaries.
+    internal static string InstalledLauncher(string applicationDirectory,string dataDirectory,string[] args) {
+        if(!String.IsNullOrEmpty(dataDirectory)||args.Contains("--root")||args.Contains("--preview"))return null;
+        var version=new DirectoryInfo(Path.GetFullPath(applicationDirectory));
+        if(version.Parent==null||!version.Parent.Name.Equals("versions",StringComparison.OrdinalIgnoreCase)||
+           version.Parent.Parent==null||!File.Exists(Path.Combine(version.FullName,"package.json")))return null;
+        string install=version.Parent.Parent.FullName,launcher=Path.Combine(install,"QemuM.exe");
+        if(!File.Exists(launcher)||!File.Exists(Path.Combine(install,"active.json"))||!File.Exists(Path.Combine(install,"runtime.json")))
+            throw new IOException("Не найдены файлы запуска установки QemuM. Запусти QemuM.exe из корневой папки установки.");
+        return launcher;
+    }
     [STAThread] static void Main(string[] args) {
+        try {
+            string launcher=InstalledLauncher(AppDomain.CurrentDomain.BaseDirectory,Environment.GetEnvironmentVariable("QEMUM_DATA_DIR"),args);
+            if(launcher!=null){Process.Start(new ProcessStartInfo(launcher){UseShellExecute=false,CreateNoWindow=true,WorkingDirectory=Path.GetDirectoryName(launcher)});return;}
+        }catch(Exception error){MessageBox.Show(error.Message,"QemuM",MessageBoxButtons.OK,MessageBoxIcon.Warning);return;}
+
         System.Globalization.CultureInfo.DefaultThreadCurrentCulture=System.Globalization.CultureInfo.GetCultureInfo("ru-RU");System.Globalization.CultureInfo.DefaultThreadCurrentUICulture=System.Globalization.CultureInfo.GetCultureInfo("ru-RU");
         Application.EnableVisualStyles();Application.SetCompatibleTextRenderingDefault(false);
         string root=Environment.GetEnvironmentVariable("QEMUM_DATA_DIR")??AppDomain.CurrentDomain.BaseDirectory.TrimEnd('\\'),python=Environment.GetEnvironmentVariable("QEMUM_PYTHON"),preview=null;

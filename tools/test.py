@@ -44,7 +44,7 @@ def gui_tests(include_qemu=False,only=None):
     subprocess.run([str(bootstrap), str(output), str(output)], timeout=60, creationflags=HIDDEN, check=True)
     print('BootstrapTests: passed')
     names = ['EditorTests', 'MenuTests', 'SelectorTests', 'InputStyleTests', 'AppearanceTests', 'SupportTests', 'ProfileTests', 'SnapshotUiTests', 'StandsTests','StandsScaleTests','StandsHierarchyTests','HtmlWorkspaceTests',
-             'RequestQueueTests','Stage1InteractionTests','Stage2InteractionTests','VirtualLibraryTests','Stage3LifecycleTests','AnimationClockTests','WindowEntranceTests','MotionLifecycleTests','BackdropContinuityTests','DialogResponseTests','InputGlyphTests','EditLayoutTests','StateWordTransitionTests','ReadUiLifecycleTests']
+             'RequestQueueTests','Stage1InteractionTests','Stage2InteractionTests','VirtualLibraryTests','Stage3LifecycleTests','AnimationClockTests','WindowEntranceTests','MotionLifecycleTests','BackdropContinuityTests','DialogResponseTests','InputGlyphTests','EditLayoutTests','StateWordTransitionTests','ReadUiLifecycleTests','TaskbarLaunchTests']
     if include_qemu:
         names.append('GuiTests')
         names.append('SnapshotRpcTests')
@@ -59,7 +59,7 @@ def gui_tests(include_qemu=False,only=None):
             if name == 'SupportTests':
                 args = [str(output), str(root)]
             elif name in ('AppearanceTests', 'ProfileTests', 'StandsTests','StandsScaleTests','StandsHierarchyTests','HtmlWorkspaceTests',
-                          'Stage1InteractionTests','Stage2InteractionTests','VirtualLibraryTests','Stage3LifecycleTests','AnimationClockTests','WindowEntranceTests','MotionLifecycleTests','BackdropContinuityTests','DialogResponseTests','InputGlyphTests','EditLayoutTests','StateWordTransitionTests','ReadUiLifecycleTests'):
+                          'Stage1InteractionTests','Stage2InteractionTests','VirtualLibraryTests','Stage3LifecycleTests','AnimationClockTests','WindowEntranceTests','MotionLifecycleTests','BackdropContinuityTests','DialogResponseTests','InputGlyphTests','EditLayoutTests','StateWordTransitionTests','ReadUiLifecycleTests','TaskbarLaunchTests'):
                 args = [str(root), str(output), sys.executable]
             elif name in ('GuiTests','SnapshotRpcTests'):
                 args = [str(output), str(root), sys.executable]
