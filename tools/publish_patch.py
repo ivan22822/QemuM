@@ -2,6 +2,7 @@
 import argparse
 import hashlib
 import json
+import os
 import subprocess
 import urllib.error
 import urllib.request
@@ -10,6 +11,21 @@ from release import ROOT, OUT, VERSION, BUILD_NUMBER, hash_file
 
 REPOSITORY = 'repos/ivan22822/QemuM'
 CHANNEL_BRANCH = 'codex/alpha-update-channel'
+
+
+
+def ci_ready(checks, commit, environment=None):
+    environment = os.environ if environment is None else environment
+    def completed(item):
+        return item['status'] == 'completed' and item['conclusion'] in ('success', 'neutral', 'skipped')
+    def own_publication_job(item):
+        run = environment.get('GITHUB_RUN_ID', '')
+        return (environment.get('GITHUB_ACTIONS') == 'true' and environment.get('GITHUB_SHA') == commit
+                and environment.get('GITHUB_JOB') == 'publish-alpha7-build1'
+                and run.isdigit() and item.get('name') == 'publish-alpha7-build1'
+                and item['status'] == 'in_progress'
+                and item.get('details_url', '').startswith('https://github.com/ivan22822/QemuM/actions/runs/'+run+'/job/'))
+    return bool(checks) and any(completed(item) for item in checks) and all(completed(item) or own_publication_job(item) for item in checks)
 
 
 def main():
@@ -35,10 +51,13 @@ def main():
     print(json.dumps(plan, indent=2), flush=True)
     if not args.publish:
         return
-    credential = subprocess.run(['git', 'credential', 'fill'], input='protocol=https\nhost=github.com\n\n',
-                                capture_output=True, text=True, check=True, timeout=30)
-    fields = dict(line.split('=', 1) for line in credential.stdout.splitlines() if '=' in line)
-    headers = {'Authorization': 'Bearer '+fields['password'],
+    token = os.environ.get('GH_TOKEN') or os.environ.get('GITHUB_TOKEN')
+    if not token:
+        credential = subprocess.run(['git', 'credential', 'fill'], input='protocol=https\nhost=github.com\n\n',
+                                    capture_output=True, text=True, check=True, timeout=30)
+        fields = dict(line.split('=', 1) for line in credential.stdout.splitlines() if '=' in line)
+        token = fields['password']
+    headers = {'Authorization': 'Bearer '+token,
                'Accept': 'application/vnd.github+json', 'User-Agent': 'QemuM-patch-publisher'}
 
     def api(path, method='GET', body=None, content=None):
@@ -53,7 +72,7 @@ def main():
             return json.load(response)
 
     checks = api('commits/'+args.commit+'/check-runs')['check_runs']
-    if not checks or any(item['status'] != 'completed' or item['conclusion'] not in ('success', 'neutral', 'skipped') for item in checks):
+    if not ci_ready(checks, args.commit):
         raise RuntimeError('Successful GitHub CI for the exact commit is required')
     release = api('releases/tags/v'+VERSION)
     if release['draft'] or release['prerelease']:

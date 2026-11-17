@@ -46,6 +46,13 @@ def main():
             if not content.startswith(b'\x89PNG\r\n\x1a\n'):
                 findings.append(dict(path=name, category='invalid bundled PNG'))
             continue
+        # Curated bundled font faces; all other binary files remain rejected.
+        if path.suffix.lower() == '.ttf':
+            import hashlib
+            fonts = {'assets/fonts/Unbounded-400.ttf': 'b5decd19a5fc6c5942c6c52a258384dbf99af09d1f082430f285b4402a5fc267', 'assets/fonts/Unbounded-500.ttf': '7ac0baee243b4d54ea0282ceb7e017a455f064462989620720215727e1b9129c', 'assets/fonts/Unbounded-600.ttf': '5d85f700bcc2a4be1b69c30c6d00c57f0d3848a505aceaaa1a22ba61ebc5b394', 'assets/fonts/Unbounded-700.ttf': '0587b7ea8407976e5feda03dcba410dde297fa203ae115eb1098d64186efef5c', 'assets/fonts/Unbounded-800.ttf': '2f1f467b85c320c52e054b6d937fc98b0b2e8319bd181f3857e3ab844255bf42', 'assets/fonts/Unbounded-900.ttf': '4e308d4d3fb0bef4a5507f4ba2443a65b1e865b2ffb04468997f7a154103a0b7'}
+            if name not in fonts or hashlib.sha256(content).hexdigest() != fonts[name]:
+                findings.append(dict(path=name, category='unrecognized curated bundled font'))
+            continue
         if b'\0' in content:
             findings.append(dict(path=name, category='unexpected binary'))
             continue

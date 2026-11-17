@@ -15,6 +15,7 @@ def main(patch=False):
                      for path in (ROOT / 'assets' / 'visual-assets').iterdir() if path.is_file()})
     for name in ('ALPHA-GUIDE.md', 'UPDATE-PROTOCOL.md','SNAPSHOTS.md','STANDS.md','CORE-ULTRA-WHPX.md'):
         expected[name] = ROOT / 'docs' / name
+    expected['Unbounded-OFL.txt'] = ROOT / 'assets/fonts/Unbounded-OFL.txt'
     expected.update({'QemuM.Switch.exe':None,'switch-manifest.json':None,
                      'VMManager.exe.config':ROOT / 'src' / 'gui' / 'VMManager.exe.config'})
     findings = []

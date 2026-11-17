@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
@@ -14,7 +14,7 @@ static class ProfileTests {
     [STAThread]static int Main(string[] args){
         Application.EnableVisualStyles();Application.SetCompatibleTextRenderingDefault(false);Program.TestMode=true;
         try{
-            using(var backend=new Backend(args[0])){
+            using(var backend=new Backend(args[0],args.Length>2?args[2]:null)){
                 backend.Open();string vmPath=Path.Combine(args[0],"machines","test.json");byte[] before=File.ReadAllBytes(vmPath);object selected;
                 using(var dialog=new LaunchProfileDialog(backend,"whpx-qemu64")){
                     dialog.Show();Application.DoEvents();

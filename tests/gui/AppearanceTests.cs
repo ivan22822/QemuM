@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
@@ -44,6 +44,13 @@ static class AppearanceTests {
                     dialog.Show();Field<FieldInput>(dialog,"name").Text="Моя лабораторная ОС";Field<FieldInput>(dialog,"png").Text=Path.Combine(root,"visual-assets","ubuntu.png");Click(dialog,"Добавить");custom=dialog.Value;
                 }
                 Check(custom!=null&&File.Exists(custom.File),"custom distro is copied through the actual graphical form");
+                using(var oldLogo=store.AcquireLogo(custom,64)){
+                    using(var replacement=new Bitmap(32,16)){using(var g=Graphics.FromImage(replacement))g.Clear(Color.Magenta);replacement.Save(custom.File,System.Drawing.Imaging.ImageFormat.Png);}
+                    File.SetLastWriteTimeUtc(custom.File,DateTime.UtcNow.AddSeconds(2));
+                    using(var fresh=store.AcquireLogo(custom,64)){Check(((Bitmap)fresh).GetPixel(fresh.Width/2,fresh.Height/2).ToArgb()==Color.Magenta.ToArgb(),"replaced PNG refreshes its cached thumbnail without restarting");
+                    using(var emblem=new MonitorEmblem{Size=new Size(80,80),ReferenceIcon="cpu",Logo=(Image)fresh.Clone()})using(var frame=new Bitmap(80,80)){emblem.DrawToBitmap(frame,emblem.ClientRectangle);Check(frame.GetPixel(40,40).ToArgb()==Color.Magenta.ToArgb(),"PNG takes priority over automatic fallback emblem");}
+                    using(var card=new LibraryCard("test","Test",Color.Gray){Size=new Size(200,50),ReferenceIcon="cpu",Logo=(Image)fresh.Clone()})using(var frame=new Bitmap(200,50)){card.DrawToBitmap(frame,card.ClientRectangle);Check(frame.GetPixel(18,25).ToArgb()==Color.Magenta.ToArgb(),"library uses PNG before fallback symbol");}
+                }}
                 store.SaveChoice("existing",custom.Id);
                 using(var reopened=new AppearanceStore(root)){
                     Check(reopened.Choice("existing")==custom.Id&&reopened.Choices().Any(row=>row.Id==custom.Id),"custom catalogue and per-VM choice survive reopening");
@@ -52,7 +59,7 @@ static class AppearanceTests {
                 store.SaveChoice("existing","auto");Check(store.Choice("existing")=="auto","automatic mode removes the per-VM override");
                 File.WriteAllText(Path.Combine(root,"not-png.png"),"not an image");bool rejected=false;try{store.AddCustom("Broken",Path.Combine(root,"not-png.png"));}catch(InvalidOperationException){rejected=true;}Check(rejected,"fake PNG is rejected without adding a catalogue entry");
             }
-            using(var backend=new Backend(root))using(var main=new MainWindow(root,null,true,false)){
+            using(var backend=new Backend(root,args.Length>2?args[2]:null))using(var main=new MainWindow(root,null,true,false)){
                 backend.Open();main.Backend=backend;main.Show();main.Demo();Wait();Save(main,Path.Combine(output,"appearance-main.png"));
                 var search=Field<FieldInput>(main,"search");Check(search.SearchIcon&&search.Height>=40,"search uses a spacious themed field with a drawn icon");
                 search.Text="ubuntu-server";Check(Field<FlowLayoutPanel>(main,"cards").Controls.Count==1,"new search field filters the existing library");search.Clear();
@@ -87,7 +94,7 @@ static class AppearanceTests {
                     Check(!File.Exists(custom.File)&&!main.Visuals.Choices().Any(row=>row.Id==custom.Id),"confirmed graphical removal deletes the custom catalogue entry and private PNG");
                     Check(main.Visuals.Choice("test")=="generic"&&main.Visuals.Choice("second-vm")=="generic","all explicit references to the deleted distro become neutral icons");
                     Check(view.Choice=="generic"&&!button.Enabled&&!view.selector.Items.Cast<Distro>().Any(row=>row.Id==custom.Id),"open appearance selector immediately refreshes after deletion");
-                    main.Visuals.SaveChoice("ubuntu-desktop","ubuntu");Wait();
+                    main.Visuals.SaveChoice(Field<string>(main,"selected"),"ubuntu");Wait();
                     Check(Field<MonitorEmblem>(main,"emblem").Logo!=null,"main window initially displays the selected built-in logo");
                     view.selector.SelectedItem=view.selector.Items.Cast<Distro>().First(row=>row.Id=="ubuntu");
                     Check(main.Visuals.RemoveDistro("ubuntu")==null,"built-in distro is removable from the catalogue");Wait();

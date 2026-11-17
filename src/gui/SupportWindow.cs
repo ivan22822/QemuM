@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
@@ -43,7 +43,7 @@ static class AlphaIntegration {
     }
 }
 
-sealed class SupportWindow : Form {
+sealed class SupportWindow : MotionDialog {
     readonly MainWindow main;
     readonly ThemedSelector machine=new ThemedSelector();
     readonly ThemedEditor description=new ThemedEditor();
@@ -56,7 +56,7 @@ sealed class SupportWindow : Form {
     public SupportWindow(MainWindow main,string selected,bool snapshotJournalSupported=false) {
         this.main=main;Text="Сообщить о проблеме · QemuM";Theme.Form(this,800,770);MinimumSize=new Size(720,650);
         var body=Theme.Flow(true);body.Dock=DockStyle.Top;body.Padding=new Padding(24);body.WrapContents=false;
-        var title=Theme.Label("Помочь улучшить QemuM",22,null,true);body.Controls.Add(title);
+        var title=Theme.Label("Помочь улучшить QemuM",22,null,true);
         var instruction=Theme.Label("1. Опиши, что делал и что ожидал.\n2. Выбери данные и сохрани отчёт.\n3. Проверь файлы и приложи ZIP к GitHub Issue.",11,Theme.Muted);
         instruction.Margin=new Padding(0,12,0,18);body.Controls.Add(instruction);
         body.Controls.Add(Theme.Button("FAQ · как пользоваться QemuM",()=>{using(var faq=new FaqWindow())faq.ShowDialog(this);}));
@@ -78,9 +78,9 @@ sealed class SupportWindow : Form {
         warning.Margin=new Padding(0,0,0,16);body.Controls.Add(warning);
         var buttons=Theme.Flow();
         save=Theme.Button("Сохранить отчёт…",()=>Export(),true);
-        buttons.Controls.Add(save);buttons.Controls.Add(Theme.Button("Открыть GitHub Issues",AlphaIntegration.OpenIssues));body.Controls.Add(buttons);
+        buttons.Controls.Add(save);buttons.Controls.Add(Theme.Button("Открыть GitHub Issues",AlphaIntegration.OpenIssues));
         result.MaximumSize=new Size(690,0);result.Margin=new Padding(0,12,0,8);body.Controls.Add(result);
-        Controls.Add(new ScrollSurface(body));
+        body.Padding=Padding.Empty;Theme.AuxiliaryDialog(this,new ScrollSurface(body),buttons,title.Text,"Описание проблемы и локальный отчёт","ОТЧЁТ ДЛЯ ПОДДЕРЖКИ");title.Dispose();
         body.SizeChanged+=(sender,args)=>{int width=Math.Max(1,body.ClientSize.Width-body.Padding.Horizontal);machine.Width=description.Width=width;result.MaximumSize=warning.MaximumSize=instruction.MaximumSize=new Size(width,0);};
         FormClosing+=(sender,args)=>{if(collecting)args.Cancel=true;};
     }
@@ -113,7 +113,7 @@ sealed class FaqEntry {
     public override string ToString(){return Question;}
 }
 
-sealed class FaqWindow : Form {
+sealed class FaqWindow : MotionDialog {
     internal static readonly FaqEntry[] Entries={
         new FaqEntry("Стенды","Как объединить три VM в одну общую сеть?","Открой стенд и нажми «Сеть и соединения». В отдельном окне выбери «Коммутаторы», добавь сеть, задай название и отметь по одному адаптеру каждой VM. Схема слева сразу показывает черновик; нажми «Сохранить стенд», чтобы применить изменения. Отдельный локальный коммутатор соединяет участников; TCP-слушатель внутри VM не нужен. Для Интернета оставь дополнительный NAT-адаптер. IP/DHCP настраиваются внутри гостей. Подключение QEMU не доказывает IP-связность ОС. Перед изменением работающей топологии останови стенд. При потере коммутатора с работающими VM сначала выключи участников и проведи сверку. Пока коммутатор работает, обновление приложения блокируется."),
         new FaqEntry("Стенды","Как проверить общую сеть и насколько она изолирована?","На встроенной схеме стенда нажми «Обновить», чтобы получить срез состояния VM и коммутаторов. Для VM/NIC/MAC, портов, счётчиков кадров и событий без содержимого пакетов открой «Сеть и соединения» → «Состояние» или кнопку «Диагностика общих сетей» в стенде: обе ведут в одно окно. Коммутатор запущен и QEMU подключён — разные состояния; связь гостевых ОС проверяется только внутри гостей. При конфликте исправь NIC/MAC, при потере помощника выключи участников и выполни сверку. Слушатели доступны только через loopback; это не защита от администратора хоста и не firewall. Сегмент не выдаёт IP/DHCP и не маршрутизирует трафик."),
@@ -142,8 +142,8 @@ sealed class FaqWindow : Form {
         new FaqEntry("Экран и устройства","Что делают VGA, разрешение и USB tablet?","VGA выбирает виртуальный видеоадаптер; для некоторых вариантов гостю нужны драйверы. Разрешение задаёт параметры экрана, но гостевая ОС может выбирать режим самостоятельно. usb-tablet передаёт абсолютные координаты указателя и часто удобнее относительной USB-мыши. Это виртуальное устройство, не проброс физической мыши."),
         new FaqEntry("Сеть","Что такое NAT и проброс портов?","NAT даёт гостю выход в сеть через хост. Для доступа с хоста к службе гостя настрой правило hostfwd, например tcp:127.0.0.1:2222-:22 для SSH. В госте должна работать соответствующая служба. Адрес 127.0.0.1 ограничивает вход локальным компьютером; открытие на других адресах меняет доступность службы."),
         new FaqEntry("Сеть","Можно ли использовать несколько адаптеров, TCP и TAP?","В разделе «Сеть» можно задать несколько адаптеров, их ID, модель, MAC и backend. TCP связывает сетевые сегменты VM через указанный адрес/порт. Для TAP нужен заранее настроенный адаптер и подходящий драйвер Windows. Пустой MAC позволяет автоматический выбор. Совпадающие ID и конфликтующие параметры не допускаются."),
-        new FaqEntry("Extra args","Для чего нужны Extra args?","Это дополнительные аргументы командной строки QEMU. Встроенная справка содержит примеры. Сохраняй границы аргументов и кавычки в путях с пробелами. Не дублируй устройства и сетевые ID, уже заданные интерфейсом. Произвольные устройства могут ограничить доступность снимков или полного состояния."),
-        new FaqEntry("Extra args","Как настроить общий буфер обмена и указатель?","Пример для поддерживающей его сборки QEMU:\r\n\r\n-usb -device usb-tablet -device virtio-serial-pci -chardev qemu-vdagent,id=vdagent,clipboard=on,mouse=off -device virtserialport,chardev=vdagent,name=com.redhat.spice.0 -display gtk,clipboard=on\r\n\r\nВ госте нужен совместимый spice-vdagent. Не создавай второй контроллер или канал с тем же ID. Поддержка GTK/clipboard зависит от сборки QEMU. Захват сочетаний клавиш регулируется окном отображения; этот пример не гарантирует передачу всех системных сочетаний Windows."),
+        new FaqEntry("Аргументы QEMU","Для чего нужны Extra args?","Это дополнительные аргументы командной строки QEMU. Встроенная справка содержит примеры. Сохраняй границы аргументов и кавычки в путях с пробелами. Не дублируй устройства и сетевые ID, уже заданные интерфейсом. Произвольные устройства могут ограничить доступность снимков или полного состояния."),
+        new FaqEntry("Аргументы QEMU","Как настроить общий буфер обмена и указатель?","Пример для поддерживающей его сборки QEMU:\r\n\r\n-usb -device usb-tablet -device virtio-serial-pci -chardev qemu-vdagent,id=vdagent,clipboard=on,mouse=off -device virtserialport,chardev=vdagent,name=com.redhat.spice.0 -display gtk,clipboard=on\r\n\r\nВ госте нужен совместимый spice-vdagent. Не создавай второй контроллер или канал с тем же ID. Поддержка GTK/clipboard зависит от сборки QEMU. Захват сочетаний клавиш регулируется окном отображения; этот пример не гарантирует передачу всех системных сочетаний Windows."),
         new FaqEntry("Guest Agent","Что такое QEMU Guest Agent и зачем он нужен?","Это служба внутри гостевой ОС и отдельный канал связи с QEMU. В поддерживаемых сценариях она позволяет получать сведения о госте, запрашивать выключение и подготавливать файловые системы перед снимком. Для обычного запуска VM агент не обязателен. QemuM не устанавливает его внутрь гостя автоматически."),
         new FaqEntry("Guest Agent","Что агент делает перед снимком дисков?","Гостевая ОС сбрасывает накопленные записи и временно замораживает запись в поддерживаемые файловые системы (freeze). QEMU создаёт снимок, после чего агент возобновляет запись (thaw). Это повышает согласованность файловой системы, но не сохраняет RAM и открытые программы. Базам данных может потребоваться отдельная подготовка самим приложением."),
         new FaqEntry("Guest Agent","Как агент подключается и что делать при ошибке thaw?","Нужны установленная служба qemu-guest-agent внутри ОС и явно настроенный отдельный канал Guest Agent в конфигурации QemuM. Общий буфер обмена через spice-vdagent — другой механизм. В QemuM независимый защитник ограничивает время freeze и пытается выполнить thaw при ошибке. Если thaw не подтверждён, проверь журнал и состояние гостя: продолжение блокируется. Проверки с тестовым агентом не означают аттестацию всех гостевых файловых систем."),
@@ -181,7 +181,7 @@ sealed class FaqWindow : Form {
         category.Items.Add("Все темы");foreach(string item in Entries.Select(entry=>entry.Category).Distinct())category.Items.Add(item);category.SelectedIndex=0;
         var body=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=2,Margin=new Padding(0,12,0,0)};body.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,40));body.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,60));questions.Dock=DockStyle.Fill;questions.Margin=new Padding(0,0,16,0);answer.ReadOnly=true;body.Controls.Add(questions,0,0);body.Controls.Add(answer,1,0);content.Controls.Add(body,0,2);
         var buttons=Theme.Flow();var close=Theme.Button("Закрыть",Close);buttons.Controls.Add(close);CancelButton=close;
-        Theme.Dialog(this,content,buttons,"Ответы на вопросы","Поиск по вопросам и ответам · работает без интернета");
+        Theme.AuxiliaryDialog(this,content,buttons,"Ответы на вопросы","Поиск по вопросам и ответам · работает без интернета");
         search.TextChanged+=(sender,args)=>Filter();category.SelectedIndexChanged+=(sender,args)=>Filter();questions.SelectedIndexChanged+=(sender,args)=>ShowAnswer();
         KeyPreview=true;KeyDown+=(sender,args)=>{if(args.Control&&args.KeyCode==Keys.F){search.Focus();args.Handled=true;}};Shown+=(sender,args)=>search.Focus();Filter();
     }

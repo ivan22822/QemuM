@@ -33,8 +33,10 @@ def compile_launcher(output, main, sources, resources=()):
     icon = ROOT / 'build' / 'tools' / 'app.ico'
     if icon.is_file():
         args.append('/win32icon:' + str(icon))
+    args.extend('/resource:' + str(ROOT / 'assets' / 'fonts' / ('Unbounded-'+str(weight)+'.ttf')) + ',QemuM.Unbounded.'+str(weight) for weight in (400,500,600,700,800,900))
+    args.append('/resource:'+str(ROOT/'assets/fonts/Unbounded-OFL.txt')+',QemuM.Unbounded.License')
     args.extend('/resource:' + str(path) + ',' + name for path, name in resources)
-    subprocess.run(args + [str(LAUNCHER / 'UpdateCore.cs'), str(LAUNCHER / 'BootstrapUI.cs')] + [str(path) for path in sources], check=True)
+    subprocess.run(args + [str(LAUNCHER / 'UpdateCore.cs'), str(LAUNCHER / 'BootstrapUI.cs'), str(GUI / 'UiTypography.cs')] + [str(path) for path in sources], check=True)
 
 
 def release(patch=False):

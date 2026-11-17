@@ -1,0 +1,26 @@
+﻿using System;using System.IO;using System.Linq;using System.Collections.Generic;using System.Reflection;using System.Drawing;using System.Windows.Forms;
+static class NetworkReferenceTests {
+ static int checks;static void Check(bool v,string label){if(!v)throw new Exception(label);checks++;}
+ static T Field<T>(object o,string name){return (T)o.GetType().GetField(name,BindingFlags.NonPublic|BindingFlags.Instance).GetValue(o);}
+ static IEnumerable<Control> All(Control root){foreach(Control c in root.Controls){yield return c;foreach(var x in All(c))yield return x;}}
+ [STAThread]static int Main(string[] args){Application.EnableVisualStyles();Program.TestMode=true;try{
+ var names=new[]{"a","b","c"};var rows=names.Select((name,index)=>new {name,data=(object)J.O("data",J.O("network_adapters",new[]{J.O("id","lan","model","e1000e","type","user","mac","52:54:00:00:0"+index+":01"),J.O("id","free","model","e1000e","type","user","mac","52:54:00:00:0"+index+":02"),J.O("id","mcast","model","e1000e","type","user","mac","52:54:00:00:0"+index+":03")}))}).ToDictionary(x=>x.name,x=>x.data);
+ var stand=J.O("id","reference-test","name","Test laboratory","members",names,"order",names,"links",new object[0],"switches",new[]{J.O("id","network","name","LAN","members",new[]{J.O("vm","a","nic","lan"),J.O("vm","b","nic","lan")})},"multicast",new object[0]);var before=J.Json().Serialize(stand);
+ using(var statusFirst=new StandNetworkEditorWindow(stand,n=>rows[n],(w,v)=>{},openStatus:true)){
+  statusFirst.Show();Application.DoEvents();var lazyTabs=Field<WorkspaceTabs>(statusFirst,"tabs");
+  foreach(int tab in new[]{2,1,0,3,4,5}){lazyTabs.SelectedIndex=tab;Application.DoEvents();if(tab==1){Field<ThemedList>(statusFirst,"switchList").SelectedIndex=0;Check(Field<FieldInput>(statusFirst,"switchName").Text=="LAN","group selection before TCP creation");}Check(J.A(J.V(statusFirst.Result(),"links")).Length==0,"status-first tab preserves draft "+tab);}
+  var groups=Field<ThemedList>(statusFirst,"switchList");groups.SelectedIndex=-1;groups.SelectedIndex=0;
+  Check(Field<FieldInput>(statusFirst,"switchName").Text=="LAN","group selection works before and after lazy TCP creation");
+  Check(J.Json().Serialize(stand)==before,"status-first navigation leaves original unchanged");statusFirst.Close();
+ }
+ using(var editor=new StandNetworkEditorWindow(stand,n=>rows[n],(w,v)=>{})){editor.Show();Application.DoEvents();Check(editor.ClientSize==new Size(1240,865),"reference window geometry");Check(All(editor).OfType<ReferenceHeader>().Single().Height==160,"reference hero remains160 after layout");Check(All(editor).OfType<SplitContainer>().Single().SplitterDistance==548,"left panel548");
+ using(var initial=new Bitmap(editor.Width,editor.Height)){editor.DrawToBitmap(initial,editor.ClientRectangle);initial.Save(Path.Combine(args[0],"network-reference-initial.png"));}
+ var from=Field<ThemedList>(editor,"from");var to=Field<ThemedList>(editor,"to");var a=Field<ThemedSelector>(editor,"fromChoice");var b=Field<ThemedSelector>(editor,"toChoice");Check(a.Items.Count==9&&b.Items.Count==9,"all NICs retained");Check(a.PointToScreen(Point.Empty).Y==b.PointToScreen(Point.Empty).Y,"NIC selectors share one row");a.SelectedIndex=0;b.SelectedIndex=3;var add=All(editor).OfType<Button>().Single(x=>x.Text=="Добавить TCP");add.PerformClick();Check(Field<Label>(editor,"errorNotice").Text.Contains("занят")||Field<Label>(editor,"errorNotice").Text.Contains("использует"),"occupied NIC is rejected");
+ a.SelectedIndex=1;b.SelectedIndex=4;Check(from.SelectedIndex==1&&to.SelectedIndex==4,"selector updates original selection model");add.PerformClick();Check(J.A(J.V(editor.Result(),"links")).Length==1,"free NICs create draft TCP link");Check(J.Json().Serialize(stand)==before,"original stand unchanged");from.SelectedIndex=7;Check(a.SelectedIndex==7,"original selection model updates selector");
+ var order=Field<List<string>>(editor,"order");order.Reverse();bool rejected=false;try{editor.Result();}catch(InvalidOperationException){rejected=true;}Check(rejected,"listener ordering guard retained");order.Reverse();var tabs=Field<WorkspaceTabs>(editor,"tabs");for(int i=0;i<6;i++){tabs.SelectedIndex=i;Application.DoEvents();Check(J.A(J.V(editor.Result(),"links")).Length==1,"tab retains draft"+i);}tabs.SelectedIndex=0;
+ var zoom=All(editor).OfType<Button>().Where(x=>x.AccessibleName=="Уменьшить схему"||x.AccessibleName=="Увеличить схему"||x.AccessibleName=="Сбросить масштаб схемы").ToArray();Check(zoom.Length==3&&zoom.Select(x=>x.Top).Distinct().Count()==1,"zoom controls stay on one row");
+ using(var bitmap=new Bitmap(editor.Width,editor.Height)){editor.DrawToBitmap(bitmap,editor.ClientRectangle);bitmap.Save(Path.Combine(args[0],"network-reference-fixture.png"));}
+ editor.ClientSize=new Size(990,650);Application.DoEvents();Check(All(editor).OfType<Button>().Where(x=>x.Text=="Отмена"||x.Text=="Сохранить стенд").All(x=>editor.ClientRectangle.Contains(editor.RectangleToClient(x.RectangleToScreen(x.ClientRectangle)))),"footer remains visible at existing minimum size");editor.Close();}
+ File.WriteAllText(Path.Combine(args[0],"network-reference-results.json"),"{\"passed\":"+checks+"}");return 0;
+ }catch(Exception e){File.WriteAllText(Path.Combine(args[0],"network-reference-error.txt"),e.ToString());return 1;}}
+}

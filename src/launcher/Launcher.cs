@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Diagnostics;
 using System.Drawing;
 using System.IO;
@@ -84,10 +84,10 @@ sealed class UpdateWindow : Form {
     readonly ComponentProgress progress=new ComponentProgress("Пакет приложения"){Dock=DockStyle.Bottom,Visible=false};
     Feed feed;string work;bool busy;
     public UpdateWindow(string root,bool autoCheck=true){
-        this.root=root;BootstrapUI.Style(this,"Обновления QemuM · Alpha",460);install.Enabled=false;
+        this.root=root;BootstrapUI.Style(this,"Обновления QemuM · Alpha",560);install.Enabled=false;
         var body=new Panel{Dock=DockStyle.Fill,Padding=new Padding(28,24,28,12)};
         var header=BootstrapUI.Header("Обновления приложения");
-        status.BackColor=BootstrapUI.Panel;status.Padding=new Padding(18);status.Font=new Font("Segoe UI",11);status.Text="Нажми «Проверить», чтобы найти новую сборку.";
+        status.BackColor=BootstrapUI.Panel;status.Padding=new Padding(18);status.Font=UiTypography.Make(11);status.Text="Нажми «Проверить», чтобы найти новую сборку.";
         installed.Dock=DockStyle.Top;installed.AutoSize=false;installed.Height=38;installed.ForeColor=BootstrapUI.Accent;
         body.Controls.Add(status);body.Controls.Add(progress);body.Controls.Add(installed);body.Controls.Add(header);
         Controls.Add(body);Controls.Add(BootstrapUI.Buttons(check,install,close));close.Click+=(sender,args)=>Close();

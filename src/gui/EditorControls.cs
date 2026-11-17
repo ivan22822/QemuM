@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.ObjectModel;
 using System.Drawing;
 using System.Linq;
@@ -6,16 +6,18 @@ using System.Runtime.InteropServices;
 using System.Windows.Forms;
 
 class FieldInput : UserControl {
-    protected readonly TextBox input=new TextBox{BorderStyle=BorderStyle.None,BackColor=Theme.Field,ForeColor=Theme.Text};
+    protected override CreateParams CreateParams{get{var value=base.CreateParams;value.ExStyle|=0x02000000;return value;}}
+    protected readonly TextBox input=new TextBox{AutoSize=false,BorderStyle=BorderStyle.None,BackColor=Theme.Field,ForeColor=Theme.Text};
     string placeholder="";
     [DllImport("user32.dll",CharSet=CharSet.Unicode)]static extern IntPtr SendMessage(IntPtr window,int message,IntPtr wParam,string text);
     public string Placeholder {get{return placeholder;}set{placeholder=value??"";if(input.IsHandleCreated)SendMessage(input.Handle,0x1501,new IntPtr(1),placeholder);}}
     public bool SearchIcon {get;set;}
+    public int CornerRadius=4;
     internal TextBox Input {get{return input;}}
     public override string Text {get{return input==null?base.Text:input.Text;}set{if(input==null)base.Text=value;else input.Text=value??"";}}
     public FieldInput(){
         SetStyle(ControlStyles.UserPaint|ControlStyles.OptimizedDoubleBuffer|ControlStyles.ResizeRedraw,true);
-        Height=40;Dock=DockStyle.Fill;BackColor=Theme.Field;ForeColor=Theme.Text;Font=new Font("Segoe UI",10F);TabStop=false;
+        Height=40;Dock=DockStyle.Fill;BackColor=MotionPaint.Hex("#fcf9f3");input.BackColor=BackColor;ForeColor=Theme.Text;Font=MotionPaint.Font("Segoe UI",12);TabStop=false;
         input.Font=Font;Controls.Add(input);
         input.HandleCreated+=(sender,args)=>SendMessage(input.Handle,0x1501,new IntPtr(1),placeholder);
         input.TextChanged+=(sender,args)=>{OnTextChanged(EventArgs.Empty);Invalidate();};
@@ -24,14 +26,30 @@ class FieldInput : UserControl {
     }
     protected override void OnFontChanged(EventArgs e){base.OnFontChanged(e);if(input!=null)input.Font=Font;PerformLayout();}
     protected override void OnPaint(PaintEventArgs e){
+        if(CornerRadius>4)e.Graphics.Clear(Parent==null?Theme.Bg:Parent.BackColor);
         e.Graphics.SmoothingMode=System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-        using(var path=Drawing.Rounded(new Rectangle(0,0,Width-1,Height-1),8))using(var fill=new SolidBrush(Theme.Field))using(var pen=new Pen(ContainsFocus?Theme.Accent:Theme.Line)){e.Graphics.FillPath(fill,path);e.Graphics.DrawPath(pen,path);}
+        using(var path=Drawing.Rounded(new Rectangle(0,0,Width-1,Height-1),CornerRadius))using(var fill=new SolidBrush(MotionPaint.Hex("#fcf9f3")))using(var pen=new Pen(ContainsFocus?Theme.Accent:MotionPaint.Hex("#c6bba9"))){e.Graphics.FillPath(fill,path);e.Graphics.DrawPath(pen,path);}
         if(SearchIcon)using(var pen=new Pen(Theme.Muted,1.4F)){int y=Height/2;e.Graphics.DrawEllipse(pen,12,y-6,9,9);e.Graphics.DrawLine(pen,20,y+2,25,y+7);}
     }
     public void Clear(){input.Clear();}
     public new bool Focus(){return input.Focus();}
     protected override void OnEnter(EventArgs e){base.OnEnter(e);input.Focus();}
-    protected override void OnLayout(LayoutEventArgs e){base.OnLayout(e);if(input!=null){input.AccessibleName=AccessibleName;input.SetBounds(SearchIcon?34:12,Math.Max(3,(Height-input.PreferredHeight)/2),Math.Max(1,Width-(SearchIcon?46:24)),input.PreferredHeight);}}
+    protected override void OnLayout(LayoutEventArgs e){base.OnLayout(e);if(input!=null){input.AccessibleName=AccessibleName;NativeInputLayout.Arrange(input,ClientSize,SearchIcon?34:12,12,DeviceDpi);}}
+}
+
+static class NativeInputLayout {
+    internal static void Arrange(TextBox input,Size client,int left,int right,int dpi){
+        // Borderless single-line Edit HWNDs can clip Unbounded descenders at
+        // PreferredHeight. Reserve real rasterization space instead of letting
+        // AutoSize force that short height back after SetBounds.
+        int inset=Math.Max(2,(int)Math.Ceiling(3*dpi/96F));
+        int height=Math.Max(input.PreferredHeight,input.Font.Height)+2*inset;
+        height=Math.Max(1,Math.Min(height,client.Height-2*inset));
+        // Native Edit's baseline sits slightly below the padded line box center.
+        int top=(client.Height-height)/2-(int)Math.Round(dpi/96F);
+        top=Math.Max(inset,Math.Min(top,client.Height-height-inset));
+        input.SetBounds(left,top,Math.Max(1,client.Width-left-right),height);
+    }
 }
 
 sealed class NumberInput : FieldInput {
@@ -50,17 +68,27 @@ sealed class ThemedSelector : UserControl {
     public sealed class ItemCollection : Collection<object> {
         readonly ThemedSelector owner;
         internal ItemCollection(ThemedSelector owner){this.owner=owner;}
-        public void AddRange(object[] items){foreach(object item in items)Add(item);}
+        public void AddRange(object[] items){
+            foreach(object item in items)Items.Add(item);
+            owner.ItemsChanged();
+        }
+        internal void ReplaceAll(object[] items){
+            owner.SelectedIndex=-1;
+            Items.Clear();
+            AddRange(items);
+        }
         protected override void InsertItem(int index,object item){base.InsertItem(index,item);owner.ItemsChanged();}
         protected override void ClearItems(){base.ClearItems();owner.SelectedIndex=-1;owner.ItemsChanged();}
         protected override void RemoveItem(int index){base.RemoveItem(index);if(owner.selected>=Count)owner.SelectedIndex=-1;owner.ItemsChanged();}
         protected override void SetItem(int index,object item){base.SetItem(index,item);owner.ItemsChanged();}
     }
-    readonly TextBox input=new TextBox{BorderStyle=BorderStyle.None,BackColor=Theme.Field,ForeColor=Theme.Text,Visible=false};
+    readonly TextBox input=new TextBox{AutoSize=false,BorderStyle=BorderStyle.None,BackColor=Theme.Field,ForeColor=Theme.Text,Visible=false};
     readonly ToolStripDropDown popup=new ToolStripDropDown{AutoSize=false,Padding=new Padding(1),BackColor=Theme.Line,Renderer=new ToolStripProfessionalRenderer(new NightMenuColors())};
     readonly ThemedList choices=new ThemedList{BackColor=Theme.Field,ItemHeight=38};
     readonly ToolStripControlHost host;
-    int selected=-1;bool updating,hover;
+    int selected=-1;bool updating;
+    public int CornerRadius=4;
+    internal int TextOffsetY;
     ComboBoxStyle style=ComboBoxStyle.DropDownList;
     public ItemCollection Items {get;private set;}
     public event EventHandler SelectedIndexChanged;
@@ -77,7 +105,7 @@ sealed class ThemedSelector : UserControl {
     internal bool PopupVisible {get{return popup.Visible;}}
     public ThemedSelector(){
         SetStyle(ControlStyles.UserPaint|ControlStyles.OptimizedDoubleBuffer|ControlStyles.ResizeRedraw|ControlStyles.Selectable,true);
-        Items=new ItemCollection(this);Height=40;Dock=DockStyle.Fill;BackColor=Theme.Field;ForeColor=Theme.Text;Font=new Font("Segoe UI",10F);TabStop=true;Cursor=Cursors.Hand;AccessibleRole=AccessibleRole.ComboBox;
+        Items=new ItemCollection(this);Height=40;Dock=DockStyle.Fill;BackColor=Theme.Field;ForeColor=Theme.Text;Font=MotionPaint.Font("Segoe UI",12);TabStop=true;Cursor=Cursors.Hand;AccessibleRole=AccessibleRole.ComboBox;
         Controls.Add(input);input.Font=Font;
         host=new ToolStripControlHost(choices){AutoSize=false,Margin=Padding.Empty,Padding=Padding.Empty};popup.Items.Add(host);
         popup.Closed+=(sender,args)=>Invalidate();
@@ -99,10 +127,10 @@ sealed class ThemedSelector : UserControl {
         choices.Size=host.Size=new Size(width-2,height);popup.Size=new Size(width,height+2);choices.SelectedIndex=selected;
         popup.Show(this,new Point(0,Height+3));choices.Focus();Invalidate();
     }
-    protected override void OnLayout(LayoutEventArgs e){base.OnLayout(e);if(input!=null)input.SetBounds(12,Math.Max(3,(Height-input.PreferredHeight)/2),Math.Max(1,Width-52),input.PreferredHeight);}
+    protected override void OnLayout(LayoutEventArgs e){base.OnLayout(e);if(input!=null)NativeInputLayout.Arrange(input,ClientSize,12,40,DeviceDpi);}
     protected override void OnMouseDown(MouseEventArgs e){base.OnMouseDown(e);if(e.Button==MouseButtons.Left){FocusInput();ShowChoices();}}
-    protected override void OnMouseEnter(EventArgs e){base.OnMouseEnter(e);hover=true;Invalidate();}
-    protected override void OnMouseLeave(EventArgs e){base.OnMouseLeave(e);hover=false;Invalidate();}
+    protected override void OnMouseEnter(EventArgs e){base.OnMouseEnter(e);Invalidate();}
+    protected override void OnMouseLeave(EventArgs e){base.OnMouseLeave(e);Invalidate();}
     protected override void OnGotFocus(EventArgs e){base.OnGotFocus(e);Invalidate();}
     protected override void OnLostFocus(EventArgs e){base.OnLostFocus(e);Invalidate();}
     protected override bool IsInputKey(Keys key){return key==Keys.Up||key==Keys.Down||key==Keys.Home||key==Keys.End||base.IsInputKey(key);}
@@ -113,11 +141,12 @@ sealed class ThemedSelector : UserControl {
         }
     }
     protected override void OnPaint(PaintEventArgs e){
+        if(CornerRadius>4)e.Graphics.Clear(Parent==null?Theme.Bg:Parent.BackColor);
         e.Graphics.SmoothingMode=System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-        using(var path=Drawing.Rounded(new Rectangle(0,0,Width-1,Height-1),8))using(var fill=new SolidBrush(Theme.Field))using(var line=new Pen(ContainsFocus||popup.Visible?Theme.Accent:hover?Theme.Muted:Theme.Line)){
+        using(var path=Drawing.Rounded(new Rectangle(0,0,Width-1,Height-1),CornerRadius))using(var fill=new SolidBrush(MotionPaint.Hex("#fcf9f3")))using(var line=new Pen(ContainsFocus||popup.Visible?Theme.Accent:MotionPaint.Hex("#c6bba9"))){
             e.Graphics.FillPath(fill,path);e.Graphics.DrawPath(line,path);
         }
-        if(!input.Visible)TextRenderer.DrawText(e.Graphics,Text,Font,new Rectangle(12,0,Math.Max(1,Width-49),Height),Enabled?Theme.Text:Theme.Muted,TextFormatFlags.Left|TextFormatFlags.VerticalCenter|TextFormatFlags.EndEllipsis);
+        if(!input.Visible)TextRenderer.DrawText(e.Graphics,Text,Font,new Rectangle(12,(int)(TextOffsetY*DeviceDpi/96F),Math.Max(1,Width-49),Height),Enabled?Theme.Text:Theme.Muted,TextFormatFlags.Left|TextFormatFlags.VerticalCenter|TextFormatFlags.EndEllipsis);
         using(var pen=new Pen(Enabled?Theme.Accent:Theme.Muted,1.6F)){int x=Width-23,y=Height/2;e.Graphics.DrawLines(pen,popup.Visible?new[]{new Point(x-4,y+2),new Point(x,y-2),new Point(x+4,y+2)}:new[]{new Point(x-4,y-2),new Point(x,y+2),new Point(x+4,y-2)});}
     }
     protected override void OnFontChanged(EventArgs e){base.OnFontChanged(e);if(input!=null)input.Font=Font;if(choices!=null)choices.Font=Font;PerformLayout();}
@@ -166,8 +195,8 @@ sealed class ThemedEditor : UserControl {
     public string[] Lines { get { return input.Lines; } set { input.Lines=value; } }
     public ThemedEditor(string value="") {
         SetStyle(ControlStyles.UserPaint|ControlStyles.OptimizedDoubleBuffer|ControlStyles.ResizeRedraw,true);
-        BorderVisible=true;Dock=DockStyle.Fill;Height=100;BackColor=Theme.Field;Padding=new Padding(12);
-        Font=new Font("Segoe UI",10F);input.Font=Font;
+        BorderVisible=true;Dock=DockStyle.Fill;Height=100;BackColor=MotionPaint.Hex("#fcf9f3");Padding=new Padding(12);
+        Font=MotionPaint.Font("Segoe UI",12);input.Font=Font;
         bar.Dock=DockStyle.Fill;track.Controls.Add(bar);Controls.Add(input);Controls.Add(track);
         input.TextChanged+=(sender,args)=>{OnTextChanged(EventArgs.Empty);UpdateViewport();};
         input.GotFocus+=(sender,args)=>Invalidate();input.LostFocus+=(sender,args)=>Invalidate();
@@ -197,7 +226,7 @@ sealed class ThemedEditor : UserControl {
     public void Clear() { input.Clear(); }
     public void ScrollToCaret() { input.ScrollToCaret();UpdateViewport(); }
     public new bool Focus() { return input.Focus(); }
-    protected override void OnPaint(PaintEventArgs e){base.OnPaint(e);if(!BorderVisible)return;e.Graphics.SmoothingMode=System.Drawing.Drawing2D.SmoothingMode.AntiAlias;using(var path=Drawing.Rounded(new Rectangle(0,0,Width-1,Height-1),8))using(var pen=new Pen(ContainsFocus&&!ReadOnly?Theme.Accent:Theme.Line))e.Graphics.DrawPath(pen,path);}
+    protected override void OnPaint(PaintEventArgs e){base.OnPaint(e);if(!BorderVisible)return;e.Graphics.SmoothingMode=System.Drawing.Drawing2D.SmoothingMode.AntiAlias;using(var path=Drawing.Rounded(new Rectangle(0,0,Width-1,Height-1),4))using(var pen=new Pen(ContainsFocus&&!ReadOnly?Theme.Accent:MotionPaint.Hex("#c6bba9")))e.Graphics.DrawPath(pen,path);}
     protected override void OnEnter(EventArgs e) { base.OnEnter(e);input.Focus(); }
     protected override void OnFontChanged(EventArgs e) { base.OnFontChanged(e);if(input!=null){input.Font=Font;UpdateViewport();} }
     protected override void OnBackColorChanged(EventArgs e) { base.OnBackColorChanged(e);if(input!=null)input.BackColor=BackColor;if(bar!=null)bar.BackColor=BackColor;if(track!=null)track.BackColor=BackColor; }
@@ -205,20 +234,28 @@ sealed class ThemedEditor : UserControl {
 }
 
 class ThemedList : UserControl {
+    public Color SelectionForeColor=Theme.Accent;
     public sealed class ItemCollection : Collection<object> {
         readonly ThemedList owner;
         internal ItemCollection(ThemedList owner) { this.owner=owner; }
-        public void AddRange(object[] values) { foreach(object value in values)Add(value); }
+        public void AddRange(object[] values) { owner.BeginUpdate();try{foreach(object value in values)Add(value);}finally{owner.EndUpdate();} }
         protected override void InsertItem(int index,object value) { base.InsertItem(index,value);owner.ItemsChanged(); }
         protected override void ClearItems() { base.ClearItems();owner.ItemsChanged(); }
         protected override void RemoveItem(int index) { base.RemoveItem(index);owner.ItemsChanged(); }
         protected override void SetItem(int index,object value) { base.SetItem(index,value);owner.ItemsChanged(); }
     }
     readonly SlimScrollBar bar=new SlimScrollBar { Dock=DockStyle.Right };
-    int selected=-1,itemHeight=44;
+    readonly SelectionMotion selectionMotion=new SelectionMotion();
+    protected float SelectionAmount{get{return selectionMotion.Amount(this);}}
+    int selected=-1,itemHeight=44,updateDepth;bool rangeDirty,selectionDirty;
+    public void BeginUpdate(){updateDepth++;}
+    public void EndUpdate(){if(updateDepth==0)throw new InvalidOperationException("BeginUpdate is required.");if(--updateDepth!=0)return;bool changed=selectionDirty;selectionDirty=false;if(rangeDirty){rangeDirty=false;UpdateRange();}EnsureSelectionVisible();Invalidate();if(changed&&SelectedIndexChanged!=null)SelectedIndexChanged(this,EventArgs.Empty);}
+    void SelectionChanged(){if(updateDepth>0){selectionDirty=true;return;}EnsureSelectionVisible();Invalidate();if(SelectedIndexChanged!=null)SelectedIndexChanged(this,EventArgs.Empty);}
+    void EnsureSelectionVisible(){if(selected<0)return;int top=selected*ItemHeight;if(top<bar.Value)bar.Value=top;if(top+ItemHeight>bar.Value+Height-HeaderHeight)bar.Value=top+ItemHeight-(Height-HeaderHeight);}
     public ItemCollection Items { get;private set; }
     public event EventHandler SelectedIndexChanged;
     public int ItemHeight { get { return itemHeight; } set { itemHeight=Math.Max(20,value);UpdateRange(); } }
+    protected int ContentOffset { get { return bar.Value; } }
     protected virtual int HeaderHeight { get { return 0; } }
     protected int ContentWidth { get { return Math.Max(1,ClientSize.Width-bar.Width); } }
     public object SelectedItem { get { return selected<0?null:Items[selected]; } }
@@ -227,12 +264,8 @@ class ThemedList : UserControl {
         set {
             if(value< -1||value>=Items.Count)throw new ArgumentOutOfRangeException("value");
             if(value==selected)return;selected=value;
-            if(selected>=0) {
-                int top=selected*ItemHeight;
-                if(top<bar.Value)bar.Value=top;
-                if(top+ItemHeight>bar.Value+Height-HeaderHeight)bar.Value=top+ItemHeight-(Height-HeaderHeight);
-            }
-            Invalidate();if(SelectedIndexChanged!=null)SelectedIndexChanged(this,EventArgs.Empty);
+            selectionMotion.Start(this,this,updateDepth==0&&Focused&&value>=0);
+            SelectionChanged();
         }
     }
     public ThemedList() {
@@ -243,10 +276,10 @@ class ThemedList : UserControl {
     }
     void ItemsChanged() {
         bool cleared=selected>=Items.Count;if(cleared)selected=-1;
-        UpdateRange();if(cleared&&SelectedIndexChanged!=null)SelectedIndexChanged(this,EventArgs.Empty);
+        UpdateRange();if(cleared)SelectionChanged();
     }
-    void UpdateRange() { if(bar==null||Items==null)return;bar.SetRange(Items.Count*ItemHeight,Math.Max(0,Height-HeaderHeight));bar.Visible=bar.Maximum>0;Invalidate(); }
-    protected override void OnSizeChanged(EventArgs e) { base.OnSizeChanged(e);UpdateRange(); }
+    void UpdateRange() { if(updateDepth>0){rangeDirty=true;return;}if(bar==null||Items==null)return;bar.SetRange(Items.Count*ItemHeight,Math.Max(0,Height-HeaderHeight));bar.Visible=bar.Maximum>0;Invalidate(); }
+    protected override void OnSizeChanged(EventArgs e) { base.OnSizeChanged(e);UpdateRange();if(selected>=0&&Height>HeaderHeight){int top=selected*ItemHeight;if(top<bar.Value)bar.Value=top;else if(top+ItemHeight>bar.Value+Height-HeaderHeight)bar.Value=Math.Max(0,top+ItemHeight-(Height-HeaderHeight));} }
     protected override void OnBackColorChanged(EventArgs e) { base.OnBackColorChanged(e);if(bar!=null)bar.BackColor=BackColor; }
     protected override void OnPaint(PaintEventArgs e) {
         e.Graphics.Clear(BackColor);DrawHeader(e.Graphics);
@@ -261,8 +294,8 @@ class ThemedList : UserControl {
     protected virtual void DrawHeader(Graphics graphics) { }
     protected virtual void DrawItem(Graphics graphics,int index,Rectangle bounds,bool active) {
         using(var brush=new SolidBrush(active?Theme.Card:BackColor))graphics.FillRectangle(brush,bounds);
-        if(active)using(var brush=new SolidBrush(Theme.Accent))graphics.FillRectangle(brush,bounds.Left,bounds.Top+10,3,bounds.Height-20);
-        TextRenderer.DrawText(graphics,Convert.ToString(Items[index]),Font,new Rectangle(bounds.Left+15,bounds.Top,bounds.Width-25,bounds.Height),active?Theme.Accent:ForeColor,TextFormatFlags.Left|TextFormatFlags.VerticalCenter|TextFormatFlags.EndEllipsis);
+        if(active)using(var brush=new SolidBrush(MotionPaint.Mix(Theme.Card,Theme.Accent,SelectionAmount)))graphics.FillRectangle(brush,bounds.Left,bounds.Top+10,3,bounds.Height-20);
+        TextRenderer.DrawText(graphics,Convert.ToString(Items[index]),Font,new Rectangle(bounds.Left+15,bounds.Top,bounds.Width-25,bounds.Height),active?SelectionForeColor:ForeColor,TextFormatFlags.Left|TextFormatFlags.VerticalCenter|TextFormatFlags.EndEllipsis);
         if(active&&Focused&&ShowFocusCues)ControlPaint.DrawFocusRectangle(graphics,Rectangle.Inflate(bounds,-4,-4));
     }
     protected override void OnMouseDown(MouseEventArgs e) {
@@ -283,23 +316,10 @@ sealed class AdapterRow {
     public AdapterRow(string[] cells) { Cells=cells; }
 }
 sealed class AdapterList : ThemedList {
-    static readonly string[] headings={"ID","Подключение","Модель","MAC","Подсеть / узел"};
-    protected override int HeaderHeight { get { return 34; } }
-    public AdapterList() { ItemHeight=48;Font=new Font("Segoe UI",9F); }
-    protected override void DrawHeader(Graphics graphics) {
-        using(var fill=new SolidBrush(Theme.Panel))graphics.FillRectangle(fill,0,0,ContentWidth,HeaderHeight);
-        DrawCells(graphics,headings,new Rectangle(0,0,ContentWidth,HeaderHeight),Theme.Muted);
-    }
-    protected override void DrawItem(Graphics graphics,int index,Rectangle bounds,bool active) {
-        using(var fill=new SolidBrush(active?Theme.Card:BackColor))graphics.FillRectangle(fill,bounds);
-        DrawCells(graphics,((AdapterRow)Items[index]).Cells,bounds,active?Theme.Accent:Theme.Text);
-    }
-    void DrawCells(Graphics graphics,string[] cells,Rectangle bounds,Color color) {
-        double[] widths={.12,.19,.22,.24,.23};int left=0;
-        for(int index=0;index<5;index++) {
-            int width=index==4?bounds.Width-left:(int)(bounds.Width*widths[index]);
-            TextRenderer.DrawText(graphics,cells[index],Font,new Rectangle(left+7,bounds.Top,Math.Max(1,width-12),bounds.Height),color,TextFormatFlags.Left|TextFormatFlags.VerticalCenter|TextFormatFlags.EndEllipsis);
-            left+=width;
-        }
-    }
+    public event EventHandler ConfigureRequested{add{DoubleClick+=value;}remove{DoubleClick-=value;}}
+    protected override int HeaderHeight{get{return (int)(40*DeviceDpi/96F);}}
+    public AdapterList(){ItemHeight=48;Font=UiTypography.Make(10);}
+    protected override void DrawHeader(Graphics graphics){var bounds=new Rectangle(0,0,ContentWidth,HeaderHeight);using(var brush=new SolidBrush(MotionPaint.Hex("#e9e3d8")))graphics.FillRectangle(brush,bounds);DrawCells(graphics,new[]{"ID","Подключение","Модель","MAC","Подсеть / узел"},bounds,true);using(var pen=new Pen(MotionPaint.Hex("#c2b6a5"))){graphics.DrawLine(pen,0,0,ContentWidth,0);graphics.DrawLine(pen,0,HeaderHeight-1,ContentWidth,HeaderHeight-1);}}
+    protected override void DrawItem(Graphics graphics,int index,Rectangle bounds,bool active){using(var brush=new SolidBrush(active?MotionPaint.Hex("#eee0ce"):Theme.Bg))graphics.FillRectangle(brush,bounds);if(active)using(var brush=new SolidBrush(MotionPaint.Mix(Theme.Card,Theme.Accent,SelectionAmount)))graphics.FillRectangle(brush,bounds.Left,bounds.Top,3,bounds.Height);DrawCells(graphics,((AdapterRow)Items[index]).Cells,bounds,false);using(var pen=new Pen(MotionPaint.Hex("#ddd4c7")))graphics.DrawLine(pen,bounds.Left,bounds.Bottom-1,bounds.Right,bounds.Bottom-1);}
+    void DrawCells(Graphics graphics,string[] cells,Rectangle bounds,bool header){float[] widths={.16F,.21F,.125F,.28F,.225F};int left=bounds.Left;using(var font=UiTypography.Make((header?8:10)*DeviceDpi/96F)){for(int i=0;i<5;i++){int width=i==4?bounds.Right-left:(int)(bounds.Width*widths[i]);TextRenderer.DrawText(graphics,cells[i],font,new Rectangle(left+9,bounds.Top,Math.Max(1,width-18),bounds.Height),header?MotionPaint.Hex("#6c5a47"):Theme.Text,TextFormatFlags.VerticalCenter|TextFormatFlags.EndEllipsis);left+=width;}}}
 }

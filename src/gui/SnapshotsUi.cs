@@ -1,9 +1,10 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
 using System.Linq;
 using System.Text;
+using System.Threading;
 using System.Threading.Tasks;
 using System.Windows.Forms;
 
@@ -21,14 +22,17 @@ sealed class SnapshotUiRequest {
 sealed class SnapshotUiProgress {
     public string OperationId {get;set;}public string Phase {get;set;}public long? Done {get;set;}public long? Total {get;set;}public bool CanCancel {get;set;}
 }
-sealed class LegacySnapshotUiService : ISnapshotUiService {
+interface ISnapshotReadLifetime {void CancelLoad();}
+sealed class LegacySnapshotUiService : ISnapshotUiService,ISnapshotReadLifetime {
     readonly MainWindow main;readonly string name;
     string[] capabilities=new string[0];
     int revision;
+    CancellationTokenSource loadCancellation=new CancellationTokenSource();
     public LegacySnapshotUiService(MainWindow main,string name){this.main=main;this.name=name;}
     public event Action<SnapshotUiProgress> Progress;
     public bool Supports(string feature){return new[]{"create_live","restore_start","refresh"}.Contains(feature)||capabilities.Contains(feature);}
     Task<object> Call(string message,string command,Dictionary<string,object> args){
+        if(command=="snapshots"&&main.Backend!=null){if(loadCancellation==null)loadCancellation=new CancellationTokenSource();return main.Backend.CallAsync(command,args,false,loadCancellation.Token);}
         var completion=new TaskCompletionSource<object>();
         if(main.Backend==null||main.Busy){completion.SetException(new InvalidOperationException(main.Busy?"Дождись завершения текущей операции.":"Служба менеджера не подключена."));return completion.Task;}
         main.Run(message,()=>main.Backend.Call(command,args),result=>completion.SetResult(result),error=>completion.SetException(error),false);
@@ -60,8 +64,9 @@ sealed class LegacySnapshotUiService : ISnapshotUiService {
         revision=J.N(result,"revision");
         var catalog=new Dictionary<string,object>(J.D(result));catalog["context"]=J.V(main.Row(name),"data");
         string state=main.State(name);catalog["vm_state"]=J.B(result,"online")?(new[]{"paused","prelaunch","shutdown"}.Contains(state)?state:"running"):"stopped";
-        return catalog;
+        main.RememberSnapshots(name,catalog);return catalog;
     }
+    public void CancelLoad(){if(loadCancellation!=null){loadCancellation.Cancel();loadCancellation.Dispose();loadCancellation=null;}}
     public async Task<object> Execute(SnapshotUiRequest request){
         if(request.Action=="create"){
             var plan=await Call("Проверяю план снимка…","snapshot_plan",J.O("name",name,"options",request.Options));
@@ -100,13 +105,13 @@ sealed class LegacySnapshotUiService : ISnapshotUiService {
         throw new InvalidOperationException("Эта операция ещё не подключена к службе снимков.");
     }
 }
-sealed class SnapshotPlanDialog : Form {
+sealed class SnapshotPlanDialog : MotionDialog {
     public SnapshotPlanDialog(string text){
         Text="План снимка";Theme.Form(this,820,640);var content=new Panel{Dock=DockStyle.Fill,Padding=new Padding(24)};
         var details=Theme.Editor(text);details.ReadOnly=true;content.Controls.Add(details);var buttons=Theme.Flow();
         var accept=Theme.Button("Подтвердить действие",()=>{DialogResult=DialogResult.OK;Close();},true);var cancel=Theme.Button("Отмена",Close);
         buttons.Controls.Add(accept);buttons.Controls.Add(cancel);AcceptButton=accept;CancelButton=cancel;
-        Theme.Dialog(this,content,buttons,"Проверка перед изменением","Состав дисков подтверждён службой · план действует две минуты");Shown+=(sender,args)=>details.Input.Select(0,0);
+        Theme.AuxiliaryDialog(this,content,buttons,"Проверка перед изменением","Состав дисков подтверждён службой · план действует две минуты");Shown+=(sender,args)=>details.Input.Select(0,0);
     }
 }
 sealed class SnapshotUiEntry {
@@ -121,30 +126,71 @@ sealed class SnapshotUiEntry {
     public bool Protected {get{return J.D(Raw).ContainsKey("protected")?J.B(Raw,"protected"):J.B(Raw,"checkpoint")||J.S(Raw,"name").StartsWith("before-restore-",StringComparison.Ordinal);}}
     public override string ToString(){return Name;}
 }
+sealed class SnapshotDetailsCard : BufferedPanel {
+    SnapshotUiEntry entry;
+    const TextFormatFlags wrap=TextFormatFlags.WordBreak|TextFormatFlags.NoPrefix|TextFormatFlags.NoPadding;
+    public SnapshotDetailsCard(){Dock=DockStyle.Fill;BackColor=Theme.Bg;SetStyle(ControlStyles.ResizeRedraw,true);}
+    int Px(float value){return (int)Math.Ceiling(value*DeviceDpi/96F);}
+    int Measure(string text,int width,float pixels,int weight){if(String.IsNullOrWhiteSpace(text))return 0;using(var font=UiTypography.Make(pixels*DeviceDpi/96F,weight))return TextRenderer.MeasureText(text,font,new Size(Math.Max(1,width),Int32.MaxValue),wrap).Height;}
+    int TitleHeight(int width){return entry==null?0:Math.Min(Px(96),Measure(entry.Name,width,15,600));}
+    public override Size GetPreferredSize(Size proposedSize){
+        int width=Math.Max(1,proposedSize.Width-2*Px(18));int description=entry==null?0:Measure(entry.Description,width,11,400);
+        return new Size(Math.Max(1,proposedSize.Width),Px(18+18+8+12+4*32+18)+TitleHeight(width)+(description>0?Px(12)+description:0));
+    }
+    public void ShowEntry(SnapshotUiEntry value){bool selectionChanged=entry==null||value==null||entry.Id!=value.Id;entry=value;AccessibleName=value==null?Text:SnapshotUiText.Details(value,null);
+        for(Control parent=Parent;parent!=null;parent=parent.Parent){var scroll=parent as ScrollSurface;if(scroll!=null){scroll.PerformLayout();if(selectionChanged)scroll.ScrollOffset=0;break;}}Invalidate();}
+    protected override void OnPaint(PaintEventArgs e){
+        base.OnPaint(e);if(Width<2||Height<2)return;var g=e.Graphics;g.SmoothingMode=System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+        using(var path=Drawing.Rounded(new Rectangle(0,0,Width-1,Height-1),Px(10)))using(var fill=new SolidBrush(MotionPaint.Hex("#faf6ee")))using(var pen=new Pen(MotionPaint.Hex("#c7bcac"))){g.FillPath(fill,path);g.DrawPath(pen,path);}if(entry==null)return;
+        float dpi=DeviceDpi/96F;int pad=Px(18),width=Math.Max(1,Width-2*pad),top=pad;
+        using(var font=UiTypography.Make(9*dpi,400))TextRenderer.DrawText(g,"СНИМОК",font,new Rectangle(pad,top,width,Px(18)),Theme.Muted,TextFormatFlags.NoPrefix|TextFormatFlags.NoPadding|TextFormatFlags.VerticalCenter);
+        top+=Px(18+8);int titleHeight=TitleHeight(width);
+        using(var font=UiTypography.Make(15*dpi,600))TextRenderer.DrawText(g,entry.Name,font,new Rectangle(pad,top,width,titleHeight),Theme.Text,wrap|TextFormatFlags.EndEllipsis);
+        top+=titleHeight+Px(12);
+        string[] labels={"Тип","Создан","Размер","Защита"};string[] values={entry.Kind=="ram"?"Полное состояние":entry.Kind=="external"?"Внешний снимок":"Снимок дисков",entry.Date.HasValue?entry.Date.Value.ToString("dd.MM.yyyy · HH:mm"):"Нет данных",J.S(entry.Raw,"size","Нет данных"),entry.Protected?"Включена":"Выключена"};
+        using(var font=UiTypography.Make(11*dpi,400))using(var pen=new Pen(MotionPaint.Hex("#ddd4c7"))){for(int i=0;i<labels.Length;i++){
+            int rowHeight=Px(32),labelWidth=Px(64);var flags=TextFormatFlags.VerticalCenter|TextFormatFlags.SingleLine|TextFormatFlags.NoPrefix|TextFormatFlags.NoPadding|TextFormatFlags.EndEllipsis;
+            TextRenderer.DrawText(g,labels[i],font,new Rectangle(pad,top,labelWidth,rowHeight),Theme.Muted,flags);
+            TextRenderer.DrawText(g,values[i],font,new Rectangle(pad+labelWidth+Px(8),top,Math.Max(1,width-labelWidth-Px(8)),rowHeight),Theme.Text,flags|TextFormatFlags.Right);
+            if(i<labels.Length-1)g.DrawLine(pen,pad,top+rowHeight,Width-pad,top+rowHeight);top+=rowHeight;
+        }}
+        if(!String.IsNullOrWhiteSpace(entry.Description))using(var font=UiTypography.Make(11*dpi,400))TextRenderer.DrawText(g,entry.Description,font,new Rectangle(pad,top+Px(12),width,Math.Max(1,Height-top-Px(12)-pad)),Theme.Muted,wrap|TextFormatFlags.EndEllipsis);
+    }
+}
+
 sealed class SnapshotUiList : ThemedList {
-    public SnapshotUiList(){ItemHeight=96;}
+    public SnapshotUiList(){ItemHeight=79;}
     protected override void DrawItem(Graphics graphics,int index,Rectangle bounds,bool active){
-        var item=(SnapshotUiEntry)Items[index];using(var fill=new SolidBrush(active?Theme.Card:Theme.Panel))graphics.FillRectangle(fill,Rectangle.Inflate(bounds,-2,-3));
-        if(active)using(var fill=new SolidBrush(Theme.Accent))graphics.FillRectangle(fill,bounds.X+2,bounds.Y+13,3,bounds.Height-26);
-        TextRenderer.DrawText(graphics,item.Name,Font,new Rectangle(bounds.X+16,bounds.Y+12,bounds.Width-34,24),active?Theme.Accent:Theme.Text,TextFormatFlags.EndEllipsis|TextFormatFlags.SingleLine);
-        string detail=item.DateText+"  ·  "+item.TypeText;
-        TextRenderer.DrawText(graphics,detail,Font,new Rectangle(bounds.X+16,bounds.Y+40,bounds.Width-34,23),item.State=="ready"?Theme.Muted:Theme.Yellow,TextFormatFlags.EndEllipsis|TextFormatFlags.SingleLine);
-        TextRenderer.DrawText(graphics,item.StateText+(item.Protected?" · защищён":""),Font,new Rectangle(bounds.X+16,bounds.Y+65,bounds.Width-34,22),item.State=="ready"?Theme.Muted:Theme.Yellow,TextFormatFlags.EndEllipsis|TextFormatFlags.SingleLine);
+        var item=(SnapshotUiEntry)Items[index];float scale=DeviceDpi/96F;int pad=(int)(16*scale),top=bounds.Top;
+        graphics.SmoothingMode=System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+        var card=new Rectangle(bounds.X,top,bounds.Width-1,bounds.Height-(int)(9*scale));
+        using(var path=Drawing.Rounded(card,(int)(8*scale)))using(var fill=new SolidBrush(MotionPaint.Hex(active?"#eee0cb":"#ede7dd")))using(var pen=new Pen(MotionPaint.Hex(active?"#c8a67b":"#c5baaa"))){graphics.FillPath(fill,path);graphics.DrawPath(pen,path);}
+        if(active)using(var fill=new SolidBrush(Theme.Accent))graphics.FillRectangle(fill,card.X+1,card.Y+6,2*scale,Math.Max(1,card.Height-12));
+        ReferenceIcons.Draw(graphics,item.Kind=="ram"?"dialog:monitor":"dialog:layers",new RectangleF(bounds.X+pad,top+27*scale,16*scale,16*scale),MotionPaint.Hex("#987347"));
+        int left=bounds.X+(int)(47*scale),right=(int)(77*scale);
+        using(var font=MotionPaint.Font("Segoe UI",12*scale))TextRenderer.DrawText(graphics,item.Name,font,new Rectangle(left,top+(int)(17*scale),Math.Max(1,bounds.Width-left-right),(int)(22*scale)),Theme.Text,TextFormatFlags.EndEllipsis|TextFormatFlags.SingleLine);
+        string detail=item.Date.HasValue?item.Date.Value.ToString("dd MMM yyyy · HH:mm",System.Globalization.CultureInfo.GetCultureInfo("ru-RU")):"Нет данных";
+        if(item.State!="ready")detail+=" · "+item.StateText;
+        using(var font=MotionPaint.Font("Courier New",9*scale))TextRenderer.DrawText(graphics,detail,font,new Rectangle(left,top+(int)(39*scale),Math.Max(1,bounds.Width-left-right),(int)(20*scale)),item.State=="ready"?Theme.Muted:Theme.Yellow,TextFormatFlags.EndEllipsis|TextFormatFlags.SingleLine);
+        string tag=item.Protected?"ЗАЩИТА":item.Kind=="ram"?"RAM":item.Kind=="external"?"СЛОЙ":"ДИСК";
+        var tagBox=new Rectangle(bounds.Right-(int)(62*scale),top+(int)(25*scale),(int)(45*scale),(int)(21*scale));
+        using(var path=Drawing.Rounded(tagBox,(int)(3*scale)))using(var pen=new Pen(MotionPaint.Hex("#c7b49b")))graphics.DrawPath(pen,path);
+        using(var font=MotionPaint.Font("Courier New",8*scale))TextRenderer.DrawText(graphics,tag,font,tagBox,MotionPaint.Hex("#736045"),TextFormatFlags.HorizontalCenter|TextFormatFlags.VerticalCenter|TextFormatFlags.NoPadding);
     }
 }
 
 // Future capabilities unlock the existing forms; unsupported requests never reach Execute.
-sealed class SnapshotOperationDialog : Form {
+sealed class SnapshotOperationDialog : MotionDialog {
     readonly ISnapshotUiService service;readonly string action;readonly SnapshotUiEntry entry;readonly object catalog;
     readonly Dictionary<string,Control> fields=new Dictionary<string,Control>();readonly Label reason=Theme.Label("",10,Theme.Yellow);
     readonly Button apply;readonly FlowLayoutPanel buttons=Theme.Flow();readonly TableLayoutPanel form=Theme.Fields();
     public SnapshotUiRequest Request {get;private set;}
     public SnapshotOperationDialog(ISnapshotUiService service,string action,SnapshotUiEntry entry,object catalog){
         this.service=service;this.action=action;this.entry=entry;this.catalog=catalog;
-        string title=Title(action);Text=title;Theme.Form(this,820,760);
+        string title=Title(action);Text=title;Theme.Form(this,700,760);
         Build();Theme.Row(form,"",reason,true);apply=Theme.Button(ApplyText(action),Accept,true);apply.Enabled=false;
-        buttons.Controls.Add(apply);var dismiss=Theme.Button("Отмена",Close);buttons.Controls.Add(dismiss);AcceptButton=apply;CancelButton=dismiss;
-        Theme.Dialog(this,form,buttons,title,entry==null?"Настройки операции · изменения выполняются только после подтверждения":entry.Name);
+        var dismiss=Theme.Button("Отмена",Close);buttons.Controls.Add(dismiss);buttons.Controls.Add(apply);AcceptButton=apply;CancelButton=dismiss;
+        if(action!="create")Theme.AuxiliaryDialog(this,form,buttons,title,entry==null?"Настройки операции":entry.Name,"ОПЕРАЦИЯ СО СНИМКАМИ");else Theme.Dialog(this,form,buttons,title,action=="create"?J.S(J.V(catalog,"context"),"label",J.S(catalog,"name","")):entry==null?"Настройки операции · изменения выполняются только после подтверждения":entry.Name,action=="create"?"СОЗДАНИЕ СНИМКА":"");
         foreach(Control control in fields.Values){control.TextChanged+=(sender,args)=>ValidateRequest();var check=control as CheckBox;if(check!=null)check.CheckedChanged+=(sender,args)=>ValidateRequest();var selector=control as ThemedSelector;if(selector!=null)selector.SelectedIndexChanged+=(sender,args)=>ValidateRequest();}
         Shown+=(sender,args)=>{var first=fields.Values.FirstOrDefault(control=>control.Enabled);if(first!=null)first.Focus();};
         ValidateRequest();
@@ -160,10 +206,12 @@ sealed class SnapshotOperationDialog : Form {
         string feature=action=="edit"?"metadata":action;
         if(action!="create"&&action!="restore"&&!service.Supports(feature))Note("Эта возможность появится после обновления службы снимков. Пока можно посмотреть настройки; сохранение отключено.");
         if(action=="create"||action=="edit"){
-            var title=Input("label","Название",action=="edit"&&entry!=null?entry.Name:"");title.Placeholder="Автоматическое имя, если оставить пустым";
-            var description=Theme.Editor(action=="edit"&&entry!=null?entry.Description:"");description.Height=105;fields["description"]=description;Theme.Row(form,"Описание",description,true);
+            var title=Input("label","Название снимка",action=="edit"&&entry!=null?entry.Name:"",action!="create");title.Placeholder="Автоматическое имя, если оставить пустым";
+            if(action=="create"){var kind=Theme.Combo("Снимок дисков","Полное состояние / RAM","Внешний слой диска");kind.SelectedIndex=J.S(catalog,"default_snapshot_kind")=="external"?2:0;fields["kind"]=kind;Theme.Row(form,"Тип снимка",kind);}
+            var description=Theme.Editor(action=="edit"&&entry!=null?entry.Description:"");description.Height=72;fields["description"]=description;Theme.Row(form,"Описание",description,true);
             if(action=="create"){
-                var kind=Select("kind","Тип снимка","Диски · без RAM","Диски и оперативная память","Внешний слой диска");kind.SelectedIndex=J.S(catalog,"default_snapshot_kind")=="external"?2:0;
+                var protection=Theme.Button("Защитить от удаления",()=>{});protection.Enabled=false;protection.AccessibleDescription="Защиту можно включить у готового снимка. Защита при создании пока не поддерживается службой.";var protectionRow=Theme.Flow();protectionRow.Controls.Add(protection);Theme.Row(form,"Защита",protectionRow,true);Note(protection.AccessibleDescription);
+                var context=J.V(catalog,"context");var details=new ReferenceDataCard();details.Present(new[]{"Состояние машины","Диск","Свободное место"},new[]{Theme.State(J.S(catalog,"vm_state","checking")),J.S(context,"disk_path","Нет данных"),J.S(catalog,"available_space","Нет данных")});Theme.Row(form,"",details,true);
                 Check("include_config","Сохранить параметры VM вместе со снимком");
                 Select("consistency","Подготовка гостя","Без подготовки гостевой файловой системы","Подготовить через QEMU Guest Agent");
                 Note("Снимок дисков не сохраняет открытые программы. Внутренний снимок находится в образе и не заменяет независимую резервную копию.\r\nRAM может содержать пароли и другие личные данные. Её место хранения и необходимое свободное место проверяются службой перед записью.");
@@ -295,80 +343,114 @@ static class SnapshotUiText {
     public static string Operations(object catalog){var operations=J.A(J.V(catalog,"operations"));if(operations.Length==0)return J.D(catalog).ContainsKey("operations")?"Служба не сообщает о незавершённых операциях.":"Служба ещё не передаёт журнал незавершённых операций. Это не подтверждение отсутствия проблем.";return String.Join("\r\n\r\n",operations.Select(item=>"ID: "+J.S(item,"id")+"\r\n"+J.S(item,"phase")+"\r\n"+J.S(item,"detail")));}
 }
 
-sealed class SnapshotsWindow : Form {
+sealed class SnapshotsWindow : MotionDialog {
+    internal readonly SnapshotCatalogView View;
+    internal static int CatalogLoadTimeoutMilliseconds{get{return SnapshotCatalogView.CatalogLoadTimeoutMilliseconds;}set{SnapshotCatalogView.CatalogLoadTimeoutMilliseconds=value;}}
+    internal SnapshotsWindow(ISnapshotUiService service,string name,object initial=null,bool boot=false){
+        Text="Снимки | "+name;Theme.Form(this,1000,700);View=new SnapshotCatalogView(service,name,initial,boot);Controls.Add(View);
+        var header=View.Controls.OfType<ReferenceHeader>().Single();new ReferenceDialogChrome(this,header);new ReferenceDialogBackdrop(this);Presentation.Header=header;
+        View.CloseRequested+=Close;Shown+=(s,e)=>View.SetHostVisible(true);VisibleChanged+=(s,e)=>{if(IsHandleCreated)View.SetHostVisible(Visible&&WindowState!=FormWindowState.Minimized);};Resize+=(s,e)=>{if(IsHandleCreated)View.SetHostVisible(Visible&&WindowState!=FormWindowState.Minimized);};
+        FormClosing+=(s,e)=>{if(!View.CanClose())e.Cancel=true;};FormClosed+=(s,e)=>View.SetHostVisible(false);KeyPreview=true;
+    }
+    public SnapshotsWindow(MainWindow main,string name,object result,bool boot=false):this(new LegacySnapshotUiService(main,name),name,result,boot){}
+    internal Task Reload(){return View.Reload();}
+    internal Task Perform(SnapshotUiRequest request){return View.Perform(request);}
+}
+
+sealed class SnapshotCatalogView : UserControl,IToolVisibility,IToolNavigationGuard {
     readonly ISnapshotUiService service;readonly string name;readonly bool boot;object catalog;
-    readonly SnapshotUiList list=new SnapshotUiList();readonly FieldInput search=new FieldInput{SearchIcon=true,Placeholder="Найти снимок…"};
-    readonly ThemedSelector filter=Theme.Combo("Все типы","Только диски","С RAM","Внешние"),sort=Theme.Combo("Сначала новые","Сначала старые","По названию");
+    readonly SnapshotUiList list=new SnapshotUiList();readonly FieldInput search=new FieldInput{SearchIcon=true,Placeholder="Поиск снимков…"};
+    readonly ThemedSelector filter=Theme.Combo("Все типы","Только диски","Полное состояние / RAM","Внешние"),sort=Theme.Combo("Сначала новые","Сначала старые","По названию");
     readonly ChoiceStrip filterChoices=new ChoiceStrip(4,"Все","Диски","RAM","Внешние"),sortChoices=new ChoiceStrip(3,"Новые","Старые","По имени");
     readonly Label note=Theme.Label("",10,Theme.Muted),summary=Theme.Label("",9,Theme.Muted),state=Theme.Label("",10,Theme.Accent);
-    readonly ThemedEditor detail=Theme.Editor();readonly Button create,restore,remove,refresh,more,cancel;
+    readonly SnapshotDetailsCard detail=new SnapshotDetailsCard();readonly ScrollSurface detailScroll;readonly Button create,restore,remove,refresh,more,cancel;ReferenceOperationWindow operationWindow;
     readonly Label empty=Theme.Label("",11,Theme.Muted);
     readonly ToolTip tips=new ToolTip();readonly ContextMenuStrip menu=NightMenuRenderer.Create();readonly List<SnapshotUiEntry> rows=new List<SnapshotUiEntry>();
     bool busy,closing,loading,failed;string operationId;SnapshotUiEntry selected;readonly FlowLayoutPanel buttons=Theme.Flow();
-    internal SnapshotsWindow(ISnapshotUiService service,string name,object initial=null,bool boot=false){
-        this.service=service;this.name=name;this.boot=boot;catalog=initial;Text="Снимки | "+name;Theme.Form(this,1100,800);
-        filterChoices.Bind(filter);sortChoices.Bind(sort);
+    internal SnapshotCatalogView(ISnapshotUiService service,string name,object initial=null,bool boot=false,bool embedded=false){
+        this.service=service;this.name=name;this.boot=boot;catalog=initial;refreshOnFirstActivation=embedded;Dock=DockStyle.Fill;BackColor=Theme.Bg;
+        sortChoices.Bind(sort);
         var content=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=1,RowCount=4,Padding=new Padding(24,8,24,0)};
-        content.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));content.RowStyles.Add(new RowStyle(SizeType.AutoSize));content.RowStyles.Add(new RowStyle(SizeType.Absolute,105));content.RowStyles.Add(new RowStyle(SizeType.Percent,100));content.RowStyles.Add(new RowStyle(SizeType.AutoSize));
-        var heading=Theme.Flow(true);heading.Dock=DockStyle.Fill;heading.Controls.Add(state);heading.Controls.Add(summary);content.Controls.Add(heading,0,0);
-        var toolbar=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=2,RowCount=2,Margin=Padding.Empty};toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,52));toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,48));toolbar.RowStyles.Add(new RowStyle(SizeType.Absolute,44));toolbar.RowStyles.Add(new RowStyle(SizeType.Absolute,52));toolbar.Controls.Add(search,0,0);toolbar.SetColumnSpan(search,2);toolbar.Controls.Add(filterChoices,0,1);toolbar.Controls.Add(sortChoices,1,1);search.Margin=new Padding(0,0,0,4);search.Dock=DockStyle.Top;search.Height=40;filterChoices.Dock=sortChoices.Dock=DockStyle.Fill;content.Controls.Add(toolbar,0,1);
-        var body=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=2,Margin=Padding.Empty};body.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,44));body.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,56));var listPanel=new Panel{Dock=DockStyle.Fill,Margin=new Padding(0,0,20,0),BackColor=Theme.Panel};list.Margin=Padding.Empty;listPanel.Controls.Add(list);empty.AutoSize=false;empty.Dock=DockStyle.Fill;empty.TextAlign=ContentAlignment.MiddleCenter;empty.Padding=new Padding(20);listPanel.Controls.Add(empty);body.Controls.Add(listPanel,0,0);detail.ReadOnly=true;detail.Font=new Font("Segoe UI",11F);detail.Margin=Padding.Empty;body.Controls.Add(detail,1,0);content.Controls.Add(body,0,2);
-        note.Margin=new Padding(0,14,0,8);content.Controls.Add(note,0,3);
-        create=Theme.Button("Создать снимок",()=>OpenOperation("create"));refresh=Theme.Button("Обновить",async()=>await Reload());restore=Theme.Button("Загрузить снимок",()=>OpenOperation("restore"),true);remove=Theme.Button("Удалить",()=>OpenOperation("delete"),false,true);
+        content.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));content.RowStyles.Add(new RowStyle(SizeType.AutoSize));content.RowStyles.Add(new RowStyle(SizeType.Absolute,64));content.RowStyles.Add(new RowStyle(SizeType.Percent,100));content.RowStyles.Add(new RowStyle(SizeType.AutoSize));
+        state.Visible=summary.Visible=false;
+        var toolbar=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=2,RowCount=1,Margin=Padding.Empty};toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));toolbar.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,190));search.CornerRadius=filter.CornerRadius=10;filter.TextOffsetY=-2;search.Margin=new Padding(0,0,12,0);filter.Margin=Padding.Empty;search.Dock=DockStyle.Top;search.Height=40;filter.Dock=DockStyle.Top;filter.Height=40;toolbar.Controls.Add(search,0,0);toolbar.Controls.Add(filter,1,0);content.Controls.Add(toolbar,0,1);
+        var body=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=2,Margin=Padding.Empty};body.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));body.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,320));var listPanel=new RoundedZone{Dock=DockStyle.Fill,Margin=new Padding(0,0,16,0),Padding=new Padding(8),BackColor=Theme.Panel};list.Margin=Padding.Empty;list.BackColor=Theme.Panel;listPanel.Controls.Add(list);empty.BackColor=Color.Transparent;empty.AutoSize=false;empty.Dock=DockStyle.Fill;empty.TextAlign=ContentAlignment.MiddleCenter;empty.Padding=new Padding(20);listPanel.Controls.Add(empty);body.Controls.Add(listPanel,0,0);detail.Font=MotionPaint.Font("Segoe UI",11);detail.Margin=Padding.Empty;detailScroll=new ScrollSurface(detail){Dock=DockStyle.Fill,Margin=Padding.Empty,BackColor=Theme.Bg};body.Controls.Add(detailScroll,1,0);content.Controls.Add(body,0,2);
+        note.Margin=new Padding(0,12,0,8);note.Dock=DockStyle.Top;content.Controls.Add(note,0,3);
+        create=Theme.Button("Создать снимок",()=>OpenOperation("create"),true);((PolarButton)create).IconName="dialog:plus";refresh=Theme.Button("Обновить",async()=>await Reload());restore=Theme.Button("Восстановить",()=>OpenOperation("restore"));remove=Theme.Button("Удалить",()=>OpenOperation("delete"),false,true);
         more=Theme.Button("Ещё…",()=>menu.Show(more,new Point(0,more.Height)));cancel=Theme.Button("Отменить операцию",async()=>await Cancel());cancel.Visible=false;
-        foreach(var button in new[]{create,refresh,restore,remove,more,cancel})buttons.Controls.Add(button);buttons.Controls.Add(Theme.Button("Закрыть",Close));
+        foreach(var button in new[]{create,refresh,restore,remove,more,cancel})buttons.Controls.Add(button);if(!embedded)buttons.Controls.Add(Theme.Button("Закрыть",()=>{if(CanClose()&&CloseRequested!=null)CloseRequested();}));
         NightMenuRenderer.Add(menu,"Подробности",(sender,args)=>ShowInfo("details"));NightMenuRenderer.Add(menu,"Название и описание…",(sender,args)=>OpenOperation("edit"));NightMenuRenderer.Add(menu,"Защита снимка…",(sender,args)=>OpenOperation("protect"));
         NightMenuRenderer.Add(menu,"Независимая копия…",(sender,args)=>OpenOperation("export"));NightMenuRenderer.Add(menu,"Параметры VM · сравнить",(sender,args)=>ShowInfo("config"));
         NightMenuRenderer.Add(menu,"Принять старый снимок…",(sender,args)=>OpenOperation("adopt"));
         NightMenuRenderer.Add(menu,"Расписание и хранение…",(sender,args)=>OpenOperation("schedule"));NightMenuRenderer.Add(menu,"История операций",(sender,args)=>ShowInfo("history"));NightMenuRenderer.Add(menu,"Незавершённые операции…",(sender,args)=>OpenOperation("recover"));NightMenuRenderer.Add(menu,"О снимках и резервных копиях",(sender,args)=>ShowInfo("help"));
-        Theme.Dialog(this,content,buttons,boot?"Выбор точки восстановления":"Снимки машины",name+" · диски, состояние и точки восстановления");
-        ClientSizeChanged+=(sender,args)=>{buttons.MaximumSize=new Size(Math.Max(1,ClientSize.Width),0);note.MaximumSize=new Size(Math.Max(1,content.ClientSize.Width-48),0);};
+        if(embedded){content.Padding=new Padding(0,8,0,0);buttons.Dock=DockStyle.Bottom;buttons.Padding=new Padding(0,12,0,0);Controls.Add(content);Controls.Add(buttons);}else Theme.Dialog(this,content,buttons,boot?"Точки восстановления":"Снимки",name);
+        ClientSizeChanged+=(sender,args)=>{buttons.MaximumSize=new Size(Math.Max(1,ClientSize.Width),0);note.MaximumSize=new Size(Math.Max(1,content.ClientSize.Width-content.Padding.Horizontal),0);};
         search.TextChanged+=(sender,args)=>RenderList();filter.SelectedIndexChanged+=(sender,args)=>RenderList();sort.SelectedIndexChanged+=(sender,args)=>RenderList();list.SelectedIndexChanged+=(sender,args)=>{selected=list.SelectedItem as SnapshotUiEntry;RenderDetail();};list.DoubleClick+=(sender,args)=>ShowInfo("details");
-        service.Progress+=Progress;FormClosing+=(sender,args)=>{if(busy){args.Cancel=true;note.Text="Дождись завершения операции. Закрытие окна не должно прерывать запись дисков.";}else closing=true;};
-        KeyDown+=(sender,args)=>{if(args.KeyCode==Keys.Escape&&!busy){Close();args.Handled=true;}else if(args.KeyCode==Keys.F5&&!busy){refresh.PerformClick();args.Handled=true;}};KeyPreview=true;
-        if(initial!=null)Fill(initial);else{loading=true;state.Text="Читаю состояние…";UpdateActions();Shown+=async(sender,args)=>await Reload();}
+        NightMenuRenderer.Add(menu,"Сортировка · новые",(sender,args)=>sort.SelectedIndex=0);NightMenuRenderer.Add(menu,"Сортировка · старые",(sender,args)=>sort.SelectedIndex=1);NightMenuRenderer.Add(menu,"Сортировка · по имени",(sender,args)=>sort.SelectedIndex=2);
+        service.Progress+=Progress;
+        if(initial!=null)Fill(initial);else{loading=true;state.Text="Читаю состояние…";RenderDetail();empty.Text="Загружаем снимки…";UpdateActions();}
     }
-    public SnapshotsWindow(MainWindow main,string name,object result,bool boot=false):this(new LegacySnapshotUiService(main,name),name,result,boot){}
+    internal event Action CloseRequested;
+    bool hostVisible,activated,resourcesDisposed;readonly bool refreshOnFirstActivation;int readGeneration;CancellationTokenSource pendingRead;
+    internal bool WriteBusy{get{return busy&&!loading;}}
+    public bool CanDeactivate{get{return !WriteBusy;}}
+    internal bool CanClose(){if(!WriteBusy)return true;note.Text="Дождись завершения операции. Закрытие окна не должно прерывать запись дисков.";return false;}
+    public void SetHostVisible(bool visible){
+        if(hostVisible==visible||IsDisposed)return;hostVisible=visible;
+        if(!visible){if(loading){readGeneration++;if(pendingRead!=null)pendingRead.Cancel();var lifetime=service as ISnapshotReadLifetime;if(lifetime!=null)lifetime.CancelLoad();busy=loading=false;UpdateActions();}return;}
+        bool refresh=activated||catalog==null||refreshOnFirstActivation;activated=true;if(refresh&&!busy)ObserveLateRead(Reload());
+    }
+    protected override bool ProcessCmdKey(ref Message message,Keys keyData){if(keyData==Keys.F5&&!busy){refresh.PerformClick();return true;}if(keyData==Keys.Escape&&!busy&&CloseRequested!=null){CloseRequested();return true;}return base.ProcessCmdKey(ref message,keyData);}
     void Fill(object value){catalog=value;rows.Clear();foreach(var row in J.A(J.V(value,"rows")))rows.Add(new SnapshotUiEntry(row));failed=false;loading=false;RenderList();}
     void RenderList(){
         string previous=selected==null?null:selected.Id;IEnumerable<SnapshotUiEntry> visible=rows;
         string query=search.Text.Trim();if(query.Length>0)visible=visible.Where(row=>(row.Name+" "+row.Description+" "+row.Id).IndexOf(query,StringComparison.CurrentCultureIgnoreCase)>=0);
         if(filter.SelectedIndex>0){string kind=new[]{"disk","ram","external"}[filter.SelectedIndex-1];visible=visible.Where(row=>row.Kind==kind);}
         visible=sort.SelectedIndex==2?visible.OrderBy(row=>row.Name,StringComparer.CurrentCultureIgnoreCase).ThenBy(row=>row.Id):sort.SelectedIndex==1?visible.OrderBy(row=>row.Date).ThenBy(row=>row.Id):visible.OrderByDescending(row=>row.Date).ThenBy(row=>row.Id);
-        list.Items.Clear();foreach(var row in visible)list.Items.Add(row);int index=list.Items.Cast<SnapshotUiEntry>().ToList().FindIndex(row=>row.Id==previous);if(list.Items.Count>0)list.SelectedIndex=index<0?0:index;else selected=null;
+        list.BeginUpdate();try{list.Items.Clear();foreach(var row in visible)list.Items.Add(row);int index=list.Items.Cast<SnapshotUiEntry>().ToList().FindIndex(row=>row.Id==previous);if(list.Items.Count>0)list.SelectedIndex=index<0?0:index;else selected=null;}finally{list.EndUpdate();}
         summary.Text="Снимков: "+rows.Count+" · показано: "+list.Items.Count+" · внутренние снимки — qcow2";
         string vm=J.S(catalog,"vm_state",J.B(catalog,"online")?"running":SnapshotUiText.IsStopped(catalog)?"stopped":"unknown");state.Text=failed?"Не удалось получить список":vm=="paused"?"VM на паузе":vm=="stopped"?"VM выключена":vm=="running"?"VM работает":"Состояние VM не подтверждено";
         RenderDetail();
     }
     void RenderDetail(){
-        empty.Visible=failed||list.Items.Count==0;list.Visible=!empty.Visible;empty.Text=failed?"Список снимков недоступен.\r\nНажми «Обновить», чтобы повторить чтение.":rows.Count==0?"Снимков пока нет.\r\nСоздай первую точку восстановления.":"Нет совпадений.\r\nИзмени поиск или фильтр.";
+        var listPanel=list.Parent;var body=listPanel.Parent as TableLayoutPanel;bool unavailable=failed&&catalog==null;bool blank=unavailable||list.Items.Count==0;
+        listPanel.Margin=blank?Padding.Empty:new Padding(0,0,16,0);
+        if(body!=null){detailScroll.Visible=detail.Visible=!blank;body.SetColumnSpan(listPanel,blank?2:1);}
+
+        empty.Visible=unavailable||list.Items.Count==0;list.Visible=!empty.Visible;empty.Text=unavailable?"Список снимков недоступен.\r\nНажми «Обновить», чтобы повторить чтение.":rows.Count==0?"Снимков пока нет.\r\nСоздай первую точку восстановления.":"Нет совпадений.\r\nИзмени поиск или фильтр.";
         detail.Text=selected==null?(failed?"Список недоступен. Нажми «Обновить», чтобы повторить чтение.":rows.Count==0?"Снимков пока нет.\r\n\r\nСоздание доступно только для поддерживаемой конфигурации. Снимки дисков не сохраняют RAM и не заменяют резервную копию.":"Нет совпадений. Измени поиск или фильтр."):SnapshotUiText.Details(selected,catalog);
-        tips.SetToolTip(list,selected==null?"":selected.Name);UpdateActions();
+        detail.ShowEntry(selected);tips.SetToolTip(list,selected==null?"":selected.Name);UpdateActions();
     }
     void UpdateActions(){
-        bool usable=!busy&&!loading&&!failed;create.Enabled=usable;refresh.Enabled=!busy;more.Enabled=usable;remove.Enabled=usable&&selected!=null;
-        restore.Enabled=usable&&selected!=null&&selected.State=="ready"&&(SnapshotUiText.IsStopped(catalog)||(selected.Kind=="ram"&&new[]{"paused","prelaunch"}.Contains(J.S(catalog,"vm_state"))))&&!J.B(catalog,"recovery_required");search.Enabled=filter.Enabled=sort.Enabled=list.Enabled=!busy;
+        bool usable=!busy&&!loading&&!failed;create.Enabled=usable;refresh.Enabled=!busy;more.Enabled=usable;remove.Enabled=usable&&selected!=null&&!selected.Protected;
+        restore.Enabled=usable&&selected!=null&&selected.State=="ready"&&(SnapshotUiText.IsStopped(catalog)||(selected.Kind=="ram"&&new[]{"paused","prelaunch"}.Contains(J.S(catalog,"vm_state"))))&&!J.B(catalog,"recovery_required");search.Enabled=filter.Enabled=sort.Enabled=list.Enabled=!busy||loading;
         if(!busy&&!failed)note.Text=J.B(catalog,"recovery_required")?"Нужна проверка незавершённой операции. Восстановление заблокировано.":J.B(catalog,"online")?"Снимки дисков доступны онлайн. RAM требует паузы и совместимой TCG-конфигурации.":"VM выключена. Для офлайн-операций требуется место под полные рабочие копии. Внешние слои и полное состояние имеют отдельные ограничения.";
         tips.SetToolTip(restore,restore.Enabled?"Открыть подтверждение восстановления выбранной точки.":J.B(catalog,"recovery_required")?"Сначала проверь незавершённую операцию.":selected==null?"Выбери снимок.":"Восстановление недоступно для этого снимка или состояния VM.");
         foreach(ToolStripItem item in menu.Items)if(new[]{"Подробности","Название и описание…","Защита снимка…","Параметры VM · сравнить"}.Contains(item.Text))item.Enabled=selected!=null;
         foreach(ToolStripItem item in menu.Items)if(item.Text=="Независимая копия…")item.Enabled=usable&&service.Supports("export")&&SnapshotUiText.IsStopped(catalog)&&!J.B(catalog,"recovery_required");
         foreach(ToolStripItem item in menu.Items)if(item.Text=="Принять старый снимок…")item.Enabled=selected!=null&&selected.Id.StartsWith("legacy-",StringComparison.Ordinal);
     }
+    internal static int CatalogLoadTimeoutMilliseconds=18000;
+    static void ObserveLateRead(Task task){task.ContinueWith(done=>{var ignored=done.Exception;},TaskContinuationOptions.OnlyOnFaulted);}
     internal async Task Reload(){
-        if(busy)return;busy=loading=true;note.ForeColor=Theme.Muted;note.Text="Читаю каталог снимков…";UpdateActions();
-        try{var result=await service.Load();if(!closing&&!IsDisposed)Fill(result);}
-        catch(Exception error){if(!closing&&!IsDisposed){failed=true;note.ForeColor=Theme.Red;note.Text="Не удалось прочитать снимки: "+error.Message;state.Text="Список недоступен";list.Visible=false;empty.Visible=true;empty.Text="Список снимков недоступен.\r\nНажми «Обновить», чтобы повторить чтение.";detail.Text="Ни один снимок не изменён этим запросом. Повтори чтение после проверки доступности VM и дисков.";}}
-        finally{if(!IsDisposed){busy=loading=false;UpdateActions();}}
+        if(busy||closing||IsDisposed)return;int generation=++readGeneration;busy=loading=true;note.ForeColor=Theme.Muted;UpdateActions();var delays=new CancellationTokenSource();pendingRead=delays;
+        try{var load=service.Load();var deadline=Task.Delay(CatalogLoadTimeoutMilliseconds,delays.Token);if(await Task.WhenAny(load,deadline,Task.Delay(180,delays.Token))!=load&&!closing&&!IsDisposed&&generation==readGeneration)note.Text="Читаю каталог снимков…";
+            if(await Task.WhenAny(load,deadline)!=load){ObserveLateRead(load);if(generation!=readGeneration||closing||IsDisposed)return;var lifetime=service as ISnapshotReadLifetime;if(lifetime!=null)lifetime.CancelLoad();throw new TimeoutException("Служба не ответила за отведённое время. Повтори чтение каталога.");}var result=await load;if(!closing&&!IsDisposed&&generation==readGeneration)Fill(result);}
+        catch(OperationCanceledException){}
+        catch(Exception error){if(!closing&&!IsDisposed&&generation==readGeneration){failed=true;note.ForeColor=Theme.Red;note.Text="Не удалось прочитать снимки: "+error.Message;if(catalog==null){state.Text="Список недоступен";list.Visible=false;empty.Visible=true;empty.Text="Список снимков недоступен.\r\nНажми «Обновить», чтобы повторить чтение.";detail.Text="Ни один снимок не изменён этим запросом. Повтори чтение после проверки доступности VM и дисков.";}}}
+        finally{if(Object.ReferenceEquals(pendingRead,delays))pendingRead=null;delays.Cancel();delays.Dispose();if(!IsDisposed&&generation==readGeneration){busy=loading=false;UpdateActions();}}
     }
     internal async Task Perform(SnapshotUiRequest request){
         if(busy)return;busy=true;operationId=null;note.ForeColor=Theme.Muted;note.Text="Ожидаю подтверждённый результат операции…";UpdateActions();
-        bool confirmed=false;
+        bool confirmed=false,cancelled=false;
+        if(request.Action=="create"){if(operationWindow!=null)operationWindow.Dispose();operationWindow=new ReferenceOperationWindow(name,Cancel);operationWindow.Show(this);}
+        var operationView=request.Action=="create"?operationWindow:null;
         try{var result=await service.Execute(request);confirmed=true;if(IsDisposed)return;string checkpoint=J.S(result,"checkpoint");
             var updated=await service.Load();if(IsDisposed)return;Fill(updated);
             note.Text="Операция завершена."+(checkpoint.Length>0?" Страховочная точка: "+checkpoint:request.Action.StartsWith("restore",StringComparison.Ordinal)?" Имя страховочной точки не передано в ответе; проверь живые логи VM.":"")+(request.Action=="export"?"\r\nКопия сохранена: "+J.S(result,"path"):"");
-        }catch(OperationCanceledException){if(!IsDisposed){note.ForeColor=Theme.Muted;note.Text="Отменено до изменения дисков.";}}
+        }catch(OperationCanceledException){cancelled=true;if(!IsDisposed){note.ForeColor=Theme.Muted;note.Text="Отменено до изменения дисков.";}}
         catch(Exception error){if(!IsDisposed){failed=true;note.ForeColor=Theme.Red;note.Text=(confirmed?"Операция подтверждена, но обновить список не удалось: ":"Операция не подтверждена: ")+error.Message+(operationId==null?"":"\r\nID: "+operationId)+"\r\nОбнови список перед повтором.";}}
-        finally{if(!IsDisposed){busy=false;cancel.Visible=false;UpdateActionsAfterOperation();}}
+        finally{if(operationView!=null&&!operationView.IsDisposed)operationView.Finish(confirmed?"completed":cancelled?"cancelled":"error",note.Text);if(!IsDisposed){busy=false;cancel.Visible=false;UpdateActionsAfterOperation();}}
     }
     void UpdateActionsAfterOperation(){string message=note.Text;Color color=note.ForeColor;UpdateActions();note.Text=message;note.ForeColor=color;}
     async void OpenOperation(string action){
@@ -382,13 +464,13 @@ sealed class SnapshotsWindow : Form {
         if(IsDisposed||closing||!IsHandleCreated)return;if(InvokeRequired){BeginInvoke(new Action(()=>Progress(progress)));return;}if(!busy)return;
         operationId=progress.OperationId;note.Text=progress.Phase??"Выполняется операция…";
         if(progress.Done.HasValue&&progress.Total.HasValue&&progress.Total.Value>0)note.Text+=" · "+Math.Min(100,Math.Max(0,progress.Done.Value*100.0/progress.Total.Value)).ToString("0")+"%";
-        cancel.Visible=progress.CanCancel&&service.Supports("cancel")&&!String.IsNullOrEmpty(operationId);cancel.Enabled=cancel.Visible;
+        cancel.Visible=progress.CanCancel&&service.Supports("cancel")&&!String.IsNullOrEmpty(operationId);cancel.Enabled=cancel.Visible;if(operationWindow!=null&&!operationWindow.IsDisposed)operationWindow.Progress(progress,cancel.Enabled);
     }
     async Task Cancel(){if(!busy||!service.Supports("cancel")||String.IsNullOrEmpty(operationId))return;cancel.Enabled=false;try{await service.Execute(new SnapshotUiRequest("cancel",null,J.O("operation_id",operationId)));note.Text="Отмена запрошена. Ожидаю безопасного завершения текущего шага…";}catch(Exception error){note.Text="Не удалось подтвердить отмену: "+error.Message;}}
-    protected override void Dispose(bool disposing){if(disposing){service.Progress-=Progress;tips.Dispose();menu.Dispose();}base.Dispose(disposing);}
+    protected override void Dispose(bool disposing){if(disposing&&!resourcesDisposed){resourcesDisposed=true;closing=true;readGeneration++;if(pendingRead!=null)pendingRead.Cancel();var lifetime=service as ISnapshotReadLifetime;if(lifetime!=null)lifetime.CancelLoad();service.Progress-=Progress;if(operationWindow!=null)operationWindow.Dispose();filterChoices.Dispose();sortChoices.Dispose();sort.Dispose();tips.Dispose();menu.Dispose();}base.Dispose(disposing);}
 }
 
-sealed class SnapshotInformationDialog : Form {
+sealed class SnapshotInformationDialog : MotionDialog {
     public SnapshotInformationDialog(string mode,SnapshotUiEntry entry,object catalog){
         Text=mode=="config"?"Параметры VM":mode=="history"?"История снимков":mode=="help"?"О снимках":"Подробности снимка";Theme.Form(this,920,710);
         var content=new Panel{Dock=DockStyle.Fill,Padding=new Padding(24)};var buttons=Theme.Flow();
@@ -400,7 +482,7 @@ sealed class SnapshotInformationDialog : Form {
             string text=mode=="history"?History(catalog):mode=="help"?"Снимок дисков\r\nВозвращает данные дисков. RAM, открытые программы и несохранённые данные в памяти не возвращаются.\r\n\r\nПолное состояние VM\r\nСохраняет RAM и устройства только при подтверждённой поддержке backend, QEMU и конфигурации.\r\n\r\nНезависимая резервная копия\r\nОтдельный проверенный образ, который не зависит от сохранности исходного файла. Внутренний снимок qcow2 такой копией не является.\r\n\r\nСогласованность\r\nБез подготовки через Guest Agent нельзя обещать согласованность незавершённых операций приложений.\r\n\r\nСтраховочная точка\r\nНужна перед восстановлением. Не удаляй её, если результат восстановления не подтверждён.":SnapshotUiText.Details(entry,catalog);
             var editor=Theme.Editor(text);editor.ReadOnly=true;content.Controls.Add(editor);Shown+=(sender,args)=>editor.Input.Select(0,0);buttons.Controls.Add(Theme.Button("Копировать текст",()=>Clipboard.SetText(text)));
         }
-        buttons.Controls.Add(Theme.Button("Закрыть",Close));Theme.Dialog(this,content,buttons,Text,entry==null?"Информация не изменяет VM и диски":entry.Name);
+        buttons.Controls.Add(Theme.Button("Закрыть",Close));Theme.AuxiliaryDialog(this,content,buttons,Text,entry==null?"Информация не изменяет VM и диски":entry.Name);
     }
     static string History(object catalog){var history=J.A(J.V(catalog,"history"));if(history.Length==0)return J.D(catalog).ContainsKey("history")?"История операций пока пуста.":"История ещё не передаётся backend. Действия не подменяются демонстрационными записями.";return String.Join("\r\n\r\n",history.Select(item=>J.S(item,"date")+" · "+J.S(item,"action")+" · "+J.S(item,"state")+"\r\n"+J.S(item,"detail")+"\r\nID: "+J.S(item,"id")));}
     static string Pretty(object value){return String.Join(Environment.NewLine,J.D(value).Select(pair=>pair.Key+": "+J.Json().Serialize(pair.Value)));}

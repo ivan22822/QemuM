@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Diagnostics;
 using System.Drawing;
 using System.IO;
@@ -126,9 +126,9 @@ sealed class SetupWindow : Form {
     readonly System.Collections.Generic.Dictionary<string,ComponentProgress> components=new System.Collections.Generic.Dictionary<string,ComponentProgress>();
     bool busy;string installedRoot;
     public SetupWindow(){
-        BootstrapUI.Style(this,"Установка QemuM · Alpha",650);open.Enabled=false;
+        BootstrapUI.Style(this,"Установка QemuM · Alpha",760);open.Enabled=false;
         path.Text=Path.Combine(Environment.GetFolderPath(Environment.SpecialFolder.LocalApplicationData),"QemuM Alpha");
-        path.BackColor=Color.FromArgb(11,27,54);path.ForeColor=Color.White;
+        path.BackColor=BootstrapUI.Bg;path.ForeColor=BootstrapUI.Text;
         var body=new Panel{Dock=DockStyle.Fill,Padding=new Padding(28,24,28,0)};
         var intro=BootstrapUI.Header("Установка Alpha");
         var cards=new TableLayoutPanel{Dock=DockStyle.Top,Height=324,ColumnCount=1,RowCount=3,Padding=new Padding(0,20,0,0)};

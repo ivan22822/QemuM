@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Concurrent;
 using System.Collections.Generic;
 using System.Drawing;
@@ -19,6 +19,7 @@ sealed class AppearanceStore : IDisposable {
     readonly string assets,path;
     readonly List<Distro> builtins=new List<Distro>();
     readonly Dictionary<string,Image> images=new Dictionary<string,Image>();
+    readonly LinkedList<string> imageOrder=new LinkedList<string>();readonly string imageOwner=GraphicsResources.Owner("logo-cache");long imageBytes;
     readonly ConcurrentDictionary<string,string> volumes=new ConcurrentDictionary<string,string>();
     public event EventHandler Changed;
     public string Error {get;private set;}
@@ -105,22 +106,38 @@ sealed class AppearanceStore : IDisposable {
             }
         }
     }
-    public Image Logo(Distro distro){
-        if(distro==null)return null;lock(images){Image image;if(images.TryGetValue(distro.File,out image))return image;
-            try{image=ReadPng(distro.File);}catch(IOException){return null;}catch(ArgumentException){return null;}catch(InvalidOperationException){return null;}
-            images[distro.File]=image;return image;
-        }
+    internal static string FileVersion(Distro distro){
+        if(distro==null||String.IsNullOrEmpty(distro.File))return "";
+        try{var file=new FileInfo(distro.File);return file.Exists?file.FullName+"|"+file.LastWriteTimeUtc.Ticks+"|"+file.Length:"";}
+        catch(IOException){return "";}catch(UnauthorizedAccessException){return "";}catch(ArgumentException){return "";}
     }
+    Image Thumbnail(Distro distro,int pixels){
+        if(distro==null)return null;pixels=Math.Max(16,Math.Min(256,pixels));
+        string key;try{var file=new FileInfo(distro.File);key=distro.File+"|"+file.LastWriteTimeUtc.Ticks+"|"+file.Length+"|"+pixels;}catch(IOException){return null;}
+        Image image;if(images.TryGetValue(key,out image)){imageOrder.Remove(key);imageOrder.AddLast(key);return image;}
+        try{using(var original=ReadPng(distro.File)){
+            int width=Math.Max(1,(int)Math.Round(original.Width*Math.Min((double)pixels/original.Width,(double)pixels/original.Height))),height=Math.Max(1,(int)Math.Round(original.Height*Math.Min((double)pixels/original.Width,(double)pixels/original.Height)));
+            var thumbnail=new Bitmap(width,height,System.Drawing.Imaging.PixelFormat.Format32bppPArgb);
+            try{using(var g=Graphics.FromImage(thumbnail)){g.InterpolationMode=System.Drawing.Drawing2D.InterpolationMode.HighQualityBicubic;g.CompositingQuality=System.Drawing.Drawing2D.CompositingQuality.HighQuality;g.DrawImage(original,new Rectangle(0,0,width,height));}}catch{thumbnail.Dispose();throw;}
+            image=thumbnail;
+        }}catch(IOException){return null;}catch(ArgumentException){return null;}catch(InvalidOperationException){return null;}
+        long bytes=GraphicsResources.ImageBytes(image);
+        while(imageBytes+bytes>GraphicsResources.LogoLimit&&imageOrder.Count>0){string oldest=imageOrder.First.Value;imageOrder.RemoveFirst();var previous=images[oldest];images.Remove(oldest);imageBytes-=GraphicsResources.ImageBytes(previous);previous.Dispose();}
+        images[key]=image;imageOrder.AddLast(key);imageBytes+=bytes;GraphicsResources.Set(imageOwner,"logos",imageBytes);return image;
+    }
+    // Legacy inspection API: cache owns the image. UI controls acquire their own copy.
+    public Image Logo(Distro distro){lock(images)return Thumbnail(distro,128);}
+    public Image AcquireLogo(Distro distro,int pixels){lock(images){var image=Thumbnail(distro,pixels);return image==null?null:(Image)image.Clone();}}
     Distro Match(string value){
         var match=builtins.Where(row=>!String.IsNullOrEmpty(row.Pattern)).OrderBy(row=>row.Id=="linux"?2:row.Id=="ubuntu"||row.Id=="windows"?1:0)
             .FirstOrDefault(row=>Regex.IsMatch(value??"",@"(?:^|[^a-z0-9])(?:"+row.Pattern+@")(?:[^a-z0-9]|$)",RegexOptions.IgnoreCase));
         return match!=null&&!J.A(J.V(Read(),"hidden")).Contains(match.Id)?match:null;
     }
-    public Distro Resolve(string choice,object data,string name){
+    public Distro Resolve(string choice,object data,string name,bool readVolume=true){
         if(choice=="generic")return null;if(choice!="auto")return Choices().FirstOrDefault(row=>row.Id==choice);
         string iso=J.S(data,"iso_path",J.S(data,"kind")=="iso"?J.S(data,"path"):"");Distro result=Match(Path.GetFileName(iso));
         if(result!=null)return result;
-        if(!String.IsNullOrEmpty(iso)&&iso.EndsWith(".iso",StringComparison.OrdinalIgnoreCase)){
+        if(readVolume&&!String.IsNullOrEmpty(iso)&&iso.EndsWith(".iso",StringComparison.OrdinalIgnoreCase)){
             result=Match(volumes.GetOrAdd(iso,ReadVolume));if(result!=null)return result;
         }
         return Match(name+" "+J.S(data,"label")+" "+Path.GetFileName(J.S(data,"disk_path")));
@@ -135,7 +152,7 @@ sealed class AppearanceStore : IDisposable {
             }
         }}catch(IOException){}catch(UnauthorizedAccessException){}return "";
     }
-    public void Dispose(){lock(images){foreach(var image in images.Values)image.Dispose();images.Clear();}}
+    public void Dispose(){lock(images){foreach(var image in images.Values)image.Dispose();images.Clear();imageOrder.Clear();imageBytes=0;GraphicsResources.Set(imageOwner,"logos",0);}}
 }
 
 sealed class AppearanceView : UserControl {
@@ -159,12 +176,21 @@ sealed class AppearanceView : UserControl {
         store.Changed+=CatalogChanged;UpdateDelete();
         HandleCreated+=(sender,args)=>RefreshPreview();VisibleChanged+=(sender,args)=>{if(Visible)RefreshPreview();};
     }
+    internal void ReferenceLayout(){
+        var flow=(FlowLayoutPanel)preview.Parent;flow.SuspendLayout();
+        selector.Width=520;selector.Margin=new Padding(0,0,0,20);
+        var caption=Theme.Label("Операционная система",9,Theme.Muted,true);caption.Font=UiTypography.Make(9.5F,500);caption.Margin=new Padding(0,12,0,8);flow.Controls.Add(caption);flow.Controls.SetChildIndex(caption,flow.Controls.GetChildIndex(selector));
+        int position=flow.Controls.GetChildIndex(preview);var identity=new Panel{Size=new Size(650,86),Margin=new Padding(0,0,0,16)};
+        preview.Parent=identity;preview.Location=Point.Empty;preview.Size=new Size(86,86);
+        summary.Parent=identity;summary.Font=UiTypography.Make(15,700);summary.ForeColor=Theme.Text;summary.AutoSize=false;summary.Bounds=new Rectangle(106,31,544,48);summary.Margin=Padding.Empty;
+        var tag=Theme.Label("ЗНАЧОК СИСТЕМЫ",8,Theme.Accent);tag.Location=new Point(106,9);identity.Controls.Add(tag);flow.Controls.Add(identity);flow.Controls.SetChildIndex(identity,position);flow.ResumeLayout(true);
+    }
     void Reload(string id){selector.Items.Clear();selector.Items.Add(new Distro{Id="auto",Name="Определять автоматически"});selector.Items.Add(new Distro{Id="generic",Name="Обычный значок компьютера"});foreach(var item in store.Choices().OrderBy(row=>row.Name))selector.Items.Add(item);selector.SelectedIndex=Enumerable.Range(0,selector.Items.Count).FirstOrDefault(index=>((Distro)selector.Items[index]).Id==id);}
     public void RefreshPreview(){
         if(!IsHandleCreated||IsDisposed)return;int request=++version;object data=context();string name=vmName(),choice=Choice;
         Task.Run(()=>{Distro distro=null;string error=null;try{distro=store.Resolve(choice,data,name);}catch(Exception exception){error=exception.Message;}
             if(IsDisposed||!IsHandleCreated)return;
-            try{BeginInvoke((Action)(()=>{if(IsDisposed||request!=version)return;preview.Logo=store.Logo(distro);summary.Text=error??(choice=="generic"?"Обычный значок компьютера.":distro==null?"Система не определена. Выбери её из списка или добавь свою.":"Значок: "+distro.Name);if(store.Error!=null)summary.Text+=Environment.NewLine+store.Error;}));}catch(InvalidOperationException){}
+            try{BeginInvoke((Action)(()=>{if(IsDisposed||request!=version)return;preview.Logo=store.AcquireLogo(distro,Math.Max(32,preview.Width));summary.Text=error??(choice=="generic"?"Обычный значок компьютера.":distro==null?"Система не определена. Выбери её из списка или добавь свою.":"Значок: "+distro.Name);if(store.Error!=null)summary.Text+=Environment.NewLine+store.Error;}));}catch(InvalidOperationException){}
         });
     }
     void Add(){using(var dialog=new CustomDistroDialog(store)){if(dialog.ShowDialog(FindForm())==DialogResult.OK){Reload(dialog.Value.Id);RefreshPreview();}}}
@@ -179,15 +205,15 @@ sealed class AppearanceView : UserControl {
     protected override void Dispose(bool disposing){if(disposing)store.Changed-=CatalogChanged;base.Dispose(disposing);}
 }
 
-sealed class CustomDistroDialog : Form {
+sealed class CustomDistroDialog : MotionDialog {
     readonly AppearanceStore store;readonly FieldInput name=Theme.Input(),png=Theme.Input();
     public Distro Value {get;private set;}
     public CustomDistroDialog(AppearanceStore store){
-        this.store=store;Text="Свой дистрибутив";Theme.Form(this,680,430);
+        this.store=store;Text="Свой дистрибутив";Theme.Form(this,680,560);
         var fields=Theme.Fields();Theme.Row(fields,"Название в каталоге",name,true);Theme.Row(fields,"Логотип PNG",Theme.Browse(png,false,"PNG|*.png"),true);
         Theme.Row(fields,"",Theme.Label("До 4 МБ и 2048 × 2048 пикселей.\r\nPNG копируется в каталог менеджера и будет доступен для следующих VM.",10,Theme.Muted));
         var buttons=Theme.Flow();buttons.Controls.Add(Theme.Button("Добавить",Save,true));buttons.Controls.Add(Theme.Button("Отмена",()=>{DialogResult=DialogResult.Cancel;Close();}));
-        Theme.Dialog(this,fields,buttons,"Свой дистрибутив","Название и PNG используются только для оформления.");
+        Theme.AuxiliaryDialog(this,fields,buttons,"Свой дистрибутив","Название и PNG используются только для оформления.");
     }
     void Save(){try{Value=store.AddCustom(name.Text,png.Text);DialogResult=DialogResult.OK;Close();}catch(Exception error){MessageBox.Show(this,error.Message,"Каталог значков",MessageBoxButtons.OK,MessageBoxIcon.Warning);}}
 }

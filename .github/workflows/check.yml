@@ -18,3 +18,55 @@ jobs:
         run: python tools/build.py
       - name: Audit tracked source files
         run: python tools/audit.py --staged
+
+  publish-alpha7-build1:
+    if: github.event_name == 'push' && github.ref == 'refs/heads/codex/alpha7-build1-smooth-ui'
+    needs: windows
+    runs-on: windows-latest
+    permissions:
+      contents: write
+      checks: read
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          persist-credentials: false
+      - uses: actions/setup-python@v5
+        with:
+          python-version: '3.12'
+      - name: Build and audit patch
+        shell: pwsh
+        run: |
+          python tools/release.py --patch
+          if ($LASTEXITCODE -ne 0) { exit $LASTEXITCODE }
+          python tools/audit_release.py --patch
+      - name: Download verified upgrade inputs
+        shell: python
+        run: |
+          from pathlib import Path
+          import hashlib, re, urllib.request, zipfile
+          target = Path('build/release-inputs'); target.mkdir(parents=True, exist_ok=True)
+          setup = Path('src/launcher/Setup.cs').read_text(encoding='utf-8-sig')
+          python_url = re.search(r'PythonUrl="([^"]+)"', setup).group(1)
+          python_hash = re.search(r'PythonHash="([^"]+)"', setup).group(1)
+          inputs = [('python.zip', python_url, python_hash),
+                    ('previous.zip', 'https://github.com/ivan22822/QemuM/releases/download/v0.1.0-alpha.7/QemuM-0.1.0-alpha.7-app.zip', '4db41f73e56a9184dcdafedba32cfef5796bf4f39b4c272e6bee2049935f141e')]
+          for name, url, digest in inputs:
+              with urllib.request.urlopen(url, timeout=60) as response:
+                  data = response.read(32*1024*1024+1)
+              if len(data) > 32*1024*1024 or hashlib.sha256(data).hexdigest() != digest:
+                  raise RuntimeError('Upgrade input checksum mismatch: '+name)
+              (target/name).write_bytes(data)
+          with zipfile.ZipFile(target/'previous.zip') as archive:
+              (target/'previous.exe').write_bytes(archive.read('QemuM.Update.exe'))
+      - name: Test isolated upgrade with the released updater
+        run: python tools/test_release.py --patch --python-archive build/release-inputs/python.zip --previous-package build/release-inputs/previous.zip --launcher build/release-inputs/previous.exe
+      - name: Publish verified application and updater feeds
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: python tools/publish_patch.py --commit ${{ github.sha }} --publish
+      - name: Preserve release artifacts and receipt
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: alpha7-build1-release
+          path: build/release/0.1.0-alpha.7/build.1/

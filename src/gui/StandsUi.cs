@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Linq;
@@ -10,7 +10,7 @@ sealed partial class MainWindow {
     static string MulticastText(object group){return "MCAST · "+J.S(group,"address")+":"+J.N(group,"port")+" · "+String.Join(", ",J.A(J.V(group,"members")).Select(end=>J.S(end,"vm")+" / "+J.S(end,"nic")));}
     static void EditMulticast(Form owner,List<object> groups,List<object> endpoints,Action refresh,int index,bool switched=false){
         object existing=index<0?null:groups[index];
-        using(var form=new Form()){
+        using(var form=new MotionDialog()){
             Theme.Form(form,760,720);form.Text=switched?"Общая сеть · локальный коммутатор":"Общая multicast-сеть";
             var fields=Theme.Fields();fields.AutoSize=true;
             var bytes=Guid.NewGuid().ToByteArray();
@@ -23,7 +23,7 @@ sealed partial class MainWindow {
             }
             Theme.Row(fields,"",Theme.Label(switched?"Выбери один адаптер каждой VM (минимум две машины). Остальные NAT-адаптеры сохранятся. IP/DHCP настраиваются в гостях. Коммутатор работает на loopback, отдельные сети разделены. Подключение QEMU не подтверждает связь внутри ОС.":"Выбери один адаптер каждой VM (минимум две машины). Для Интернета оставь отдельный NAT-адаптер. IP и DHCP настраиваются внутри гостей.\nГруппа и порт должны отличаться у независимых сетей. Multicast не шифруется; интерфейс хоста и firewall влияют на доступность. Проверка QMP не проверяет передачу пакетов.",10,Theme.Muted),true);
             var validation=Theme.Label("",10,Theme.Muted);Theme.Row(fields,"",validation,true);
-            var buttons=Theme.Flow();buttons.Controls.Add(Theme.Button("Применить",()=>{var members=selected.Where(p=>p.Item2.Checked).Select(p=>p.Item1).ToArray();if(selected.Any(p=>p.Item2.Checked&&!p.Item2.Enabled)){validation.Text="Есть отсутствующий адаптер. Исправь состав стенда перед сохранением.";return;}if(members.Length<2||members.Select(e=>J.S(e,"vm")).Distinct().Count()!=members.Length){validation.Text="Выбери минимум две VM, по одному адаптеру каждой.";return;}if(switched&&(title.Text.Trim().Length<1||title.Text.Trim().Length>120||title.Text.Any(Char.IsControl))){validation.Text="Название: от 1 до 120 символов без управляющих знаков.";return;}var value=J.O("id",existing==null?Guid.NewGuid().ToString("N"):J.S(existing,"id"),"address",address.Text.Trim(),"port",(int)port.Value,"localaddr",local.Text.Trim(),"members",members);if(switched)value=J.O("id",J.S(value,"id"),"name",title.Text.Trim(),"members",members);if(index<0)groups.Add(value);else groups[index]=value;refresh();form.Close();},true));buttons.Controls.Add(Theme.Button("Отмена",form.Close));Theme.Dialog(form,new ScrollSurface(fields),buttons,switched?"Общая сеть · локальный коммутатор":"Общая сеть MCAST","До сохранения стенда параметры VM не меняются.");form.ShowDialog(owner);
+            var buttons=Theme.Flow();buttons.Controls.Add(Theme.Button("Применить",()=>{var members=selected.Where(p=>p.Item2.Checked).Select(p=>p.Item1).ToArray();if(selected.Any(p=>p.Item2.Checked&&!p.Item2.Enabled)){validation.Text="Есть отсутствующий адаптер. Исправь состав стенда перед сохранением.";return;}if(members.Length<2||members.Select(e=>J.S(e,"vm")).Distinct().Count()!=members.Length){validation.Text="Выбери минимум две VM, по одному адаптеру каждой.";return;}if(switched&&(title.Text.Trim().Length<1||title.Text.Trim().Length>120||title.Text.Any(Char.IsControl))){validation.Text="Название: от 1 до 120 символов без управляющих знаков.";return;}var value=J.O("id",existing==null?Guid.NewGuid().ToString("N"):J.S(existing,"id"),"address",address.Text.Trim(),"port",(int)port.Value,"localaddr",local.Text.Trim(),"members",members);if(switched)value=J.O("id",J.S(value,"id"),"name",title.Text.Trim(),"members",members);if(index<0)groups.Add(value);else groups[index]=value;refresh();form.Close();},true));buttons.Controls.Add(Theme.Button("Отмена",form.Close));Theme.AuxiliaryDialog(form,new ScrollSurface(fields),buttons,switched?"Общая сеть · локальный коммутатор":"Общая сеть MCAST","До сохранения стенда параметры VM не меняются.");form.ShowDialog(owner);
         }
     }
     bool standMode;object selectedStand;List<object> stands=new List<object>();
@@ -43,39 +43,56 @@ sealed partial class MainWindow {
     void LibraryPathSafe(string path){for(string p=Path.GetFullPath(path);!String.IsNullOrEmpty(p);p=Path.GetDirectoryName(p))if((File.Exists(p)||Directory.Exists(p))&&(File.GetAttributes(p)&FileAttributes.ReparsePoint)!=0)throw new IOException("Настройки библиотеки через ссылки запрещены.");}
     void InitStands(SplitContainer split,Panel header,Label title,Button add){
         standLibraryTitle=title;standAdd=add;
-        var toggle=new LibraryModeSwitch{Text="Режим стендов",Location=new Point(9,79),AccessibleName="Переключить машины и стенды"};
-        header.Height=135;search.Top=115;
-        toggle.CheckedChanged+=(s,e)=>{if(standMode)standScroll=libraryScroll.ScrollOffset;else machineScroll=libraryScroll.ScrollOffset;restoreStand=J.S(selectedStand,"id",restoreStand);if(standMode){standSelectedVm=selectedStand==null?selected:null;}else normalSelectedVm=selected;standMode=toggle.Checked;if(!standMode)selected=normalSelectedVm;selectedStand=null;standDetail.Visible=false;title.Text=standMode?"Мои стенды":"Мои машины";add.Text=standMode?"＋  Создать стенд":"＋  Новая машина";search.Placeholder=standMode?"Найти стенд или VM…":"Найти машину…";if(standMode){LoadStands();libraryScroll.ScrollOffset=standScroll;}else{RenderCards();SelectVm(selected);libraryScroll.ScrollOffset=machineScroll;}};
-        header.Controls.Add(toggle);detail.Controls.Add(standDetail);standDetail.BringToFront();standDetail.Visible=false;
+        var toggle=new LibraryModeSwitch{Text="Режим стендов",AccessibleName="Переключить машины и стенды"};libraryMode=toggle;
+        header.Height=175;search.Top=100;
+        toggle.CheckedChanged+=(s,e)=>{if(standMode)standScroll=libraryScroll.ScrollOffset;else machineScroll=libraryScroll.ScrollOffset;restoreStand=J.S(selectedStand,"id",restoreStand);if(standMode){standSelectedVm=selectedStand==null?selected:null;}else normalSelectedVm=selected;standMode=toggle.Checked;if(!standMode)selected=normalSelectedVm;selectedStand=null;standDetail.Visible=false;title.Text=standMode?"Мои стенды":"Мои машины";add.Text=standMode?"Создать стенд":"Новая машина";search.Placeholder=standMode?"Поиск в библиотеке…":"Поиск машин…";if(standMode){selectedStand=stands.FirstOrDefault(item=>J.S(item,"id")==restoreStand);if(selectedStand!=null)ShowStand();LoadStands();RenderStands();libraryScroll.ScrollOffset=standScroll;}else{RenderCards();SelectVm(selected);libraryScroll.ScrollOffset=machineScroll;}};
+        detail.Controls.Add(standDetail);standDetail.BringToFront();standDetail.Visible=false;
         add.Click+=(s,e)=>{if(standMode)EditStand(null);};
-        split.Panel1.Resize+=(s,e)=>{int width=Math.Max(170,split.Panel1.ClientSize.Width-48);search.Width=width;searchButton.Left=Math.Max(96,header.ClientSize.Width-searchButton.Width-4);add.Width=width;};
+        split.Panel1.Resize+=(s,e)=>{int width=Math.Max(170,split.Panel1.ClientSize.Width-(int)(48*layoutScale));search.Width=width;searchButton.Left=Math.Max(96,header.ClientSize.Width-searchButton.Width-4);add.Width=width;};
         split.AccessibleName="Изменяемая ширина библиотеки";
-        split.TabStop=true;split.KeyDown+=(s,e)=>{if(e.KeyCode==Keys.Left||e.KeyCode==Keys.Right){split.SplitterDistance=Math.Max(220,Math.Min(split.SplitterDistance+(e.KeyCode==Keys.Right?16:-16),Math.Min(380,Math.Max(220,split.Width-427))));e.Handled=true;}};split.SplitterMoving+=(s,e)=>{if(e.SplitX>380)e.Cancel=true;};
+        split.TabStop=true;split.KeyDown+=(s,e)=>{if(e.KeyCode==Keys.Left||e.KeyCode==Keys.Right){split.SplitterDistance=Math.Max(220,Math.Min(split.SplitterDistance+(e.KeyCode==Keys.Right?16:-16),Math.Min(380,Math.Max(220,split.Width-427))));e.Handled=true;}};split.SplitterMoving+=(s,e)=>{if(e.SplitX>380*layoutScale)e.Cancel=true;};
         string prefs=Path.Combine(RootPath,"stand-library-ui.json");
         try{LibraryPathSafe(prefs);if(File.Exists(prefs)&&new FileInfo(prefs).Length<=65536)libraryPrefs=J.Json().DeserializeObject(File.ReadAllText(prefs));}catch(Exception error){standError="Не удалось прочитать настройки библиотеки: "+error.Message;}
         foreach(string id in J.A(J.V(libraryPrefs,"expanded")).Select(Convert.ToString))expandedStands.Add(id);
         restoreStand=J.S(libraryPrefs,"stand");
         selected=J.S(libraryPrefs,"machine",null);
-        Shown+=(s,e)=>{split.SplitterDistance=Math.Max(220,Math.Min(J.N(libraryPrefs,"width",260),Math.Min(380,Math.Max(220,split.Width-427))));toggle.Checked=J.B(libraryPrefs,"stands");};
-        FormClosed+=(s,e)=>{if(demo)return;try{LibraryPathSafe(prefs);Directory.CreateDirectory(RootPath);string temp=prefs+"."+Guid.NewGuid().ToString("N")+".tmp";try{File.WriteAllText(temp,J.Json().Serialize(J.O("machine",selected,"width",split.SplitterDistance,"stands",standMode,"stand",J.S(selectedStand,"id",restoreStand),"expanded",expandedStands.ToArray())));if(File.Exists(prefs))File.Replace(temp,prefs,null);else File.Move(temp,prefs);}finally{if(File.Exists(temp))File.Delete(temp);}}catch(Exception error){MessageBox.Show("Не удалось сохранить ширину и режим библиотеки: "+error.Message,"QemuM");}};
+        Action arrangeLibrary=()=>{int reference=ClientSize.Width/layoutScale>=1300?265:ClientSize.Width/layoutScale<=1050?216:238;split.SplitterDistance=Math.Max(split.Panel1MinSize,Math.Min((int)(reference*layoutScale),Math.Max(split.Panel1MinSize,split.Width-split.Panel2MinSize-split.SplitterWidth)));};split.SizeChanged+=(s,e)=>arrangeLibrary();
+        Shown+=(s,e)=>{arrangeLibrary();toggle.Checked=J.B(libraryPrefs,"stands");};
+        FormClosed+=(s,e)=>{if(demo)return;try{LibraryPathSafe(prefs);Directory.CreateDirectory(RootPath);string temp=prefs+"."+Guid.NewGuid().ToString("N")+".tmp";try{File.WriteAllText(temp,J.Json().Serialize(J.O("machine",selected,"width",(int)(split.SplitterDistance/layoutScale),"stands",standMode,"stand",J.S(selectedStand,"id",restoreStand),"expanded",expandedStands.ToArray())));if(File.Exists(prefs))File.Replace(temp,prefs,null);else File.Move(temp,prefs);}finally{if(File.Exists(temp))File.Delete(temp);}}catch(Exception error){MessageBox.Show("Не удалось сохранить ширину и режим библиотеки: "+error.Message,"QemuM");}};
     }
     void LoadStands(){
         if(Backend==null){standError="Для стендов нужна фоновая служба.";RenderStands();return;}
         if(standLoading||Busy)return;standLoading=true;
-        Run("Читаю стенды…",()=>Backend.Call("stand_list"),value=>{standLoading=false;stands=J.A(J.V(value,"rows")).ToList();standError=String.Join("\n",J.A(J.V(value,"errors")).Select(x=>J.S(x,"file")+": "+J.S(x,"error")));selectedStand=stands.FirstOrDefault(x=>J.S(x,"id")==J.S(selectedStand,"id",restoreStand));if(standSelectedVm!=null&&Row(standSelectedVm)!=null){selectedStand=null;standDetail.Visible=false;SelectVm(standSelectedVm);}else if(selectedStand!=null)ShowStand();else standDetail.Visible=false;RenderStands();libraryScroll.ScrollOffset=standScroll;},error=>{standLoading=false;standError=error.Message;RenderStands();});
+        Read("Читаю стенды…",()=>Backend.Call("stand_list"),value=>{standLoading=false;stands=J.A(J.V(value,"rows")).ToList();standError=String.Join("\n",J.A(J.V(value,"errors")).Select(x=>J.S(x,"file")+": "+J.S(x,"error")));if(!standMode)return;selectedStand=stands.FirstOrDefault(x=>J.S(x,"id")==J.S(selectedStand,"id",restoreStand));if(standSelectedVm!=null&&Row(standSelectedVm)!=null){selectedStand=null;standDetail.Visible=false;SelectVm(standSelectedVm);}else if(selectedStand!=null)ShowStand();else standDetail.Visible=false;RenderStands();libraryScroll.ScrollOffset=standScroll;},error=>{standLoading=false;standError=error.Message;RenderStands();});
     }
     void RenderStands(){
         if(!standMode)return;int offset=libraryScroll.ScrollOffset;
+        var virtualCards=(VirtualLibraryPanel)cards;
+        if(stands.Count>=64||stands.Sum(item=>1+(expandedStands.Contains(J.S(item,"id"))?J.A(J.V(item,"members")).Length:0))>=64){
+            var models=new List<VirtualLibraryRow>();libraryCount.Text="Всего стендов: "+stands.Count;
+            foreach(var stand in stands){var captured=stand;var members=J.A(J.V(stand,"members")).Select(Convert.ToString).ToArray();string id=J.S(stand,"id"),title=J.S(stand,"name"),key="stand/"+id;
+                if((title+" "+String.Join(" ",members.Select(n=>n+" "+J.S(J.V(Row(n),"data"),"label",n)))).IndexOf(search.Text,StringComparison.OrdinalIgnoreCase)<0)continue;
+                models.Add(new VirtualLibraryRow{Key=key,Version=title+"|"+J.N(stand,"revision")+"|"+expandedStands.Contains(id),Tag=captured,AccessibleName="Стенд: "+title,Margin=new Padding(0,0,0,8),EstimatedHeight=48,Measure=width=>virtualCards.StandHeight(StandLibraryText(captured),width,false),Create=()=>StandFolder(captured),Activate=()=>SelectStandFolder(captured),Expanded=()=>expandedStands.Contains(id),Expand=()=>{if(!expandedStands.Remove(id))expandedStands.Add(id);RenderStands();virtualCards.EnsureKeyVisible(key,false);}});
+                if(expandedStands.Contains(id))for(int i=0;i<members.Length;i++){
+                    string member=members[i],label=J.S(J.V(Row(member),"data"),"label",member)+(Row(member)==null?" · отсутствует":"");bool last=i==members.Length-1;
+                    models.Add(new VirtualLibraryRow{Key="member/"+id+"/"+member,ParentKey=key,Version=label+"|"+last+"|"+J.N(stand,"revision"),Tag=null,AccessibleName="Машина "+label+", стенд "+title,Margin=new Padding(12,0,0,4),EstimatedHeight=40,Measure=width=>virtualCards.StandHeight(label,width,true),Create=()=>StandChild(member,captured,last),Activate=()=>SelectStandMember(member,captured)});
+                }
+            }
+            if(models.Count==0)models.Add(new VirtualLibraryRow{Key="empty",Version=search.Text,AccessibleName="По запросу ничего не найдено",Margin=Padding.Empty,Measure=width=>80,Create=()=>Theme.Label("По запросу ничего не найдено. Измени поиск или очисти поле.",10,Theme.Muted)});
+            if(!String.IsNullOrEmpty(standError))models.Add(new VirtualLibraryRow{Key="error",Version=standError,AccessibleName="Ошибка чтения стендов",Margin=Padding.Empty,Measure=width=>100,Create=()=>Theme.Label("Не удалось полностью прочитать стенды. "+standError,9,Theme.Red)});
+            virtualCards.SelectedKey=standSelectedVm!=null?"member/"+standSelectedParent+"/"+standSelectedVm:"stand/"+J.S(selectedStand,"id");virtualCards.ViewportChanged=PaintStandStatus;virtualCards.SetRows(models);libraryScroll.ScrollOffset=offset;return;
+        }
+        virtualCards.ViewportChanged=null;virtualCards.DisableVirtual();
         libraryScroll.SuspendLayout();cards.SuspendLayout();foreach(Control child in cards.Controls.Cast<Control>().ToArray())child.Dispose();cards.Controls.Clear();libraryCount.Text="Всего стендов: "+stands.Count;
         foreach(var stand in stands){
             var members=J.A(J.V(stand,"members")).Select(Convert.ToString).ToArray();string id=J.S(stand,"id"),title=J.S(stand,"name");
             bool match=(title+" "+String.Join(" ",members.Select(n=>n+" "+J.S(J.V(Row(n),"data"),"label",n)))).IndexOf(search.Text,StringComparison.OrdinalIgnoreCase)>=0;if(!match)continue;
-            StandFolderButton folder=null;folder=new StandFolderButton(title+" · "+members.Length+" VM",()=>SelectStandFolder(stand),()=>ToggleStandFolder(stand,folder));folder.Expanded=expandedStands.Contains(id);
+            StandFolderButton folder=StandFolder(stand);
             folder.Width=Math.Max(118,cards.Width-folder.Margin.Horizontal);folder.MaximumSize=new Size(folder.Width,0);folder.TextAlign=ContentAlignment.MiddleLeft;folder.AccessibleName="Стенд: "+title;cards.Controls.Add(folder);
             folder.Tag=stand;
             if(expandedStands.Contains(id))for(int index=0;index<members.Length;index++)cards.Controls.Add(StandChild(members[index],stand,index==members.Length-1));
         }
-        if(cards.Controls.Count==0)cards.Controls.Add(Theme.Label(stands.Count==0?"Стендов пока нет.\nНажми «Создать стенд».":"По запросу ничего не найдено. Измени поиск или очисти поле.",10,Theme.Muted));
+        if(cards.Controls.Count==0)cards.Controls.Add(Theme.Label(stands.Count==0&&standLoading?"Загружаем стенды…":stands.Count==0?"Стендов пока нет.\nНажми «Создать стенд».":"По запросу ничего не найдено. Измени поиск или очисти поле.",10,Theme.Muted));
         if(!String.IsNullOrEmpty(standError))cards.Controls.Add(Theme.Label("Не удалось полностью прочитать стенды. "+(stands.Count>0?"Показаны доступные записи. ":"")+"Нажми «Обновить библиотеку».\n"+standError,9,Theme.Red));
         cards.ResumeLayout();libraryScroll.ResumeLayout(true);libraryScroll.PerformLayout();libraryScroll.ScrollOffset=offset;
         PaintStandStatus();
@@ -83,12 +100,20 @@ sealed partial class MainWindow {
     Button StandChild(string name,object stand,bool last){
         string title=J.S(stand,"name"),id=J.S(stand,"id");var row=Row(name);
         var child=new StandMemberButton(id,name,last){Text=J.S(J.V(row,"data"),"label",name)+(row==null?" · отсутствует":""),AccessibleName="Машина "+J.S(J.V(row,"data"),"label",name)+", стенд "+title};
-        child.Click+=(s,e)=>{standSelectedVm=name;standSelectedParent=restoreStand=id;selectedStand=null;standDetail.Visible=false;SelectVm(name);breadcrumb.Text="Стенды / "+title+" / "+name;PaintStandStatus();};
+        child.Click+=(s,e)=>SelectStandMember(name,stand);
         child.Width=Math.Max(112,cards.Width-child.Margin.Horizontal);child.MaximumSize=new Size(child.Width,0);return child;
+    }
+    StandFolderButton StandFolder(object stand){StandFolderButton folder=null;folder=new StandFolderButton(StandLibraryText(stand),()=>SelectStandFolder(folder.Tag),()=>ToggleStandFolder(folder.Tag,folder));folder.Tag=stand;folder.Expanded=expandedStands.Contains(J.S(stand,"id"));folder.AccessibleName="Стенд: "+J.S(stand,"name");return folder;}
+    void SelectStandMember(string name,object stand){string id=J.S(stand,"id");standSelectedVm=name;standSelectedParent=restoreStand=id;selectedStand=null;standDetail.Visible=false;SelectVm(name);breadcrumb.Text="Стенды / "+J.S(stand,"name")+" / "+name;PaintStandStatus();}
+    string StandLibraryText(object stand){
+        var members=J.A(J.V(stand,"members")).Select(Convert.ToString).ToArray();int running=members.Count(n=>new[]{"running","paused","prelaunch"}.Contains(State(n)));bool fresh=demo||(!stateReadFailed&&lastStateUtc!=DateTime.MinValue&&(DateTime.UtcNow-lastStateUtc).TotalSeconds<=10);
+        string aggregate=members.Length==0?"empty":!fresh?"unknown":members.Any(n=>new[]{"error","recovery-required"}.Contains(State(n)))?"error":members.Any(n=>!new[]{"running","paused","prelaunch","stopped"}.Contains(State(n)))?"unknown":running==members.Length?"running":running>0?"partial":"stopped";
+        var activity=J.V(standActivity,J.S(stand,"id"));if(new[]{"starting","stopping","error","interrupted"}.Contains(J.S(activity,"state")))aggregate=J.S(activity,"state");return J.S(stand,"name")+"\n"+StandOperationWindow.StateName(aggregate)+" · "+(fresh?running.ToString():"?")+"/"+members.Length+" QEMU";
     }
     void SelectStandFolder(object stand){string id=J.S(stand,"id");bool changed=!Object.ReferenceEquals(selectedStand,stand)||!standDetail.Visible;standSelectedVm=null;standSelectedParent=null;selectedStand=stand;restoreStand=id;if(changed)ShowStand();PaintStandStatus();}
     void ToggleStandFolder(object stand,Button folder){
         string id=J.S(stand,"id");int offset=libraryScroll.ScrollOffset;
+        var virtualCards=(VirtualLibraryPanel)cards;if(virtualCards.VirtualMode){if(!expandedStands.Remove(id))expandedStands.Add(id);RenderStands();virtualCards.EnsureKeyVisible("stand/"+id,false);return;}
         libraryScroll.SuspendLayout();cards.SuspendLayout();
         try{
             int position=cards.Controls.GetChildIndex(folder)+1;
@@ -102,13 +127,15 @@ sealed partial class MainWindow {
         }finally{cards.ResumeLayout();libraryScroll.ResumeLayout(true);libraryScroll.PerformLayout();libraryScroll.ScrollOffset=offset;}
         PaintStandStatus();
     }
-    void UpdateStandStatus(){
+    async void UpdateStandStatus(){
         PaintStandStatus();
         if(Backend==null||standActivityPending)return;standActivityPending=true;
-        Task.Run(()=>{try{object value=Backend.Call("stand_activity");Post(()=>{standActivity=value;standActivityFailed=false;standActivityError="";StandJobs=J.D(value).Values.Count(v=>new[]{"starting","stopping"}.Contains(J.S(v,"state")));PaintStandStatus();});}catch(Exception error){Post(()=>{standActivity=null;standActivityFailed=true;standActivityError=error.Message;PaintStandStatus();});}finally{Post(()=>standActivityPending=false);}});
+        try{object value=await Backend.CallAsync("stand_activity",null,true);if(IsDisposed)return;standActivity=value;standActivityFailed=false;standActivityError="";StandJobs=J.D(value).Values.Count(v=>new[]{"starting","stopping"}.Contains(J.S(v,"state")));PaintStandStatus();}
+        catch(Exception error){if(!IsDisposed){standActivity=null;standActivityFailed=true;standActivityError=error.Message;PaintStandStatus();}}finally{standActivityPending=false;}
     }
     void PaintStandStatus(){
         if(!standMode)return;libraryCount.Text="Всего стендов: "+stands.Count;
+        var virtualCards=(VirtualLibraryPanel)cards;if(virtualCards.VirtualMode)virtualCards.SelectedKey=standSelectedVm!=null?"member/"+standSelectedParent+"/"+standSelectedVm:"stand/"+J.S(selectedStand,"id");
         libraryScroll.SuspendLayout();cards.SuspendLayout();
         try{
         foreach(var button in cards.Controls.OfType<Button>()){
@@ -117,17 +144,28 @@ sealed partial class MainWindow {
             bool fresh=demo||(!stateReadFailed&&lastStateUtc!=DateTime.MinValue&&(DateTime.UtcNow-lastStateUtc).TotalSeconds<=10);
             string aggregate=members.Length==0?"empty":!fresh?"unknown":members.Any(n=>new[]{"error","recovery-required"}.Contains(State(n)))?"error":members.Any(n=>!new[]{"running","paused","prelaunch","stopped"}.Contains(State(n)))?"unknown":running==members.Length?"running":running>0?"partial":"stopped";
             var activity=J.V(standActivity,J.S(stand,"id"));if(new[]{"starting","stopping","error","interrupted"}.Contains(J.S(activity,"state")))aggregate=J.S(activity,"state");
-            string id=J.S(stand,"id");button.Text=J.S(stand,"name")+" · "+StandOperationWindow.StateName(aggregate)+" · "+(fresh?running.ToString():"?")+"/"+members.Length+" QEMU";var folder=button as StandFolderButton;if(folder!=null)folder.Expanded=expandedStands.Contains(id);
+            string id=J.S(stand,"id"),text=J.S(stand,"name")+"\n"+StandOperationWindow.StateName(aggregate)+" · "+(fresh?running.ToString():"?")+"/"+members.Length+" QEMU";if(button.Text!=text){button.Text=text;if(virtualCards.VirtualMode)virtualCards.InvalidateMeasurement("stand/"+id);}var folder=button as StandFolderButton;if(folder!=null)folder.Expanded=expandedStands.Contains(id);
             bool active=J.S(selectedStand,"id")==id||standSelectedParent==id;button.ForeColor=active?Theme.Accent:Theme.Text;button.BackColor=active?Theme.Card:Theme.Panel;
         }
         foreach(var member in cards.Controls.OfType<StandMemberButton>())member.Selected=member.StandId==standSelectedParent&&member.VmName==standSelectedVm;
         }finally{cards.ResumeLayout();libraryScroll.ResumeLayout(true);}
         foreach(var entry in standMemberButtons)if(!entry.Value.IsDisposed){var row=Row(entry.Key);entry.Value.Text=J.S(J.V(row,"data"),"label",entry.Key)+(row==null?" · VM отсутствует":" · "+Theme.State(State(entry.Key)));}
         bool memberStatesFresh=demo||(!stateReadFailed&&lastStateUtc!=DateTime.MinValue&&(DateTime.UtcNow-lastStateUtc).TotalSeconds<=10);
-        foreach(var entry in standMemberStatusLabels)if(!entry.Value.IsDisposed)entry.Value.Text=entry.Key+" · "+(Row(entry.Key)==null?"VM отсутствует":memberStatesFresh?Theme.State(State(entry.Key)):"Состояние не подтверждено");
+        foreach(var entry in standMemberStatusLabels)if(!entry.Value.IsDisposed)entry.Value.Text=J.S(J.V(Row(entry.Key),"data"),"label",entry.Key)+"\n"+J.N(J.V(Row(entry.Key),"data"),"ram_mb")+" МБ · "+J.N(J.V(Row(entry.Key),"data"),"cores")+" CPU · "+(Row(entry.Key)==null?"VM отсутствует":memberStatesFresh?Theme.State(State(entry.Key)):"Состояние не подтверждено");
+        foreach(var pair in memberActions){if(pair.Value.IsDisposed)continue;string current=State(pair.Key);pair.Value.Text=current=="running"?"Открыть VM":current=="paused"?"Продолжить":"Запустить";pair.Value.Enabled=!Busy&&memberStatesFresh&&Row(pair.Key)!=null&&new[]{"stopped","error","paused","running"}.Contains(current);}
+        if(standStage!=null&&!standStage.IsDisposed&&selectedStand!=null){var ids=J.A(J.V(selectedStand,"members")).Select(Convert.ToString).ToArray();standStateText.Text=!memberStatesFresh||ids.Any(n=>Row(n)==null)?"CHECKING":ids.Length==0?StandOperationWindow.StateName("empty"):ids.Any(n=>new[]{"error","recovery-required"}.Contains(State(n)))?"ERROR":ids.Any(n=>!new[]{"running","paused","stopped"}.Contains(State(n)))?"CHECKING":ids.All(n=>State(n)=="running")?"RUNNING":ids.All(n=>State(n)=="paused")?"PAUSED":ids.All(n=>State(n)=="stopped")?"STOPPED":"MIXED";standStage.Present(standStateText.Text,true);standStage.Context(J.S(selectedStand,"id"),ids.Sum(n=>(long)J.N(J.V(Row(n),"data"),"ram_mb"))+" МБ",ids.Sum(n=>J.N(J.V(Row(n),"data"),"cores")).ToString());}
+        if(standInspector!=null&&!standInspector.IsDisposed&&selectedStand!=null){var names=J.A(J.V(selectedStand,"members")).Select(Convert.ToString);standInspector.Value("Работают",memberStatesFresh?names.Count(n=>State(n)=="running").ToString():"Не подтверждено");standInspector.Value("На паузе",memberStatesFresh?names.Count(n=>State(n)=="paused").ToString():"Не подтверждено");}
         if(standPhase!=null&&!standPhase.IsDisposed&&selectedStand!=null){var activity=J.V(standActivity,J.S(selectedStand,"id"));standPhase.Text=standActivityFailed?"Состояние операции не получено: "+standActivityError:String.IsNullOrEmpty(J.S(activity,"phase"))?"":J.S(activity,"phase")+" · "+J.S(activity,"current");standPhase.Visible=!String.IsNullOrWhiteSpace(standPhase.Text);standPhase.ForeColor=standActivityFailed?Theme.Red:Theme.Muted;}
     }
+    readonly Dictionary<string,Button> memberActions=new Dictionary<string,Button>();
+    ConfigurationInspector standInspector;StateStage standStage;Label standStateText;
+    string shownStandSignature;
     void ShowStand(){
+        string signature=J.Json().Serialize(selectedStand)+J.Json().Serialize(rows);
+        if(shownStandSignature==signature&&standDetail.Controls.Count>0){foreach(Control sibling in detail.Controls)sibling.Visible=Object.ReferenceEquals(sibling,standDetail);standDetail.BringToFront();PaintStandStatus();return;}
+        shownStandSignature=signature;
+        breadcrumb.Text="Stands / "+J.S(selectedStand,"name");
+        memberActions.Clear();
         standMemberButtons.Clear();standMemberStatusLabels.Clear();
         foreach(Control child in standDetail.Controls.Cast<Control>().ToArray())child.Dispose();standDetail.Controls.Clear();
         var stack=Theme.Flow(true);stack.Dock=DockStyle.Top;
@@ -155,28 +193,52 @@ sealed partial class MainWindow {
         var tabs=new WorkspaceTabs{Width=Math.Max(260,detail.ClientSize.Width-80),Height=365};standTabs=tabs;
         standGraph=null;standNetworkStatus=null;
         var overview=Theme.Flow(true);overview.Dock=DockStyle.Fill;overview.AutoScroll=false;
-        overview.Controls.Add(Theme.Label("Участники стенда",11,null,true));
-        foreach(string member in J.A(J.V(selectedStand,"members")).Select(Convert.ToString)){var entry=Theme.Label(member+" · "+Theme.State(State(member)),10,Theme.Muted);overview.Controls.Add(entry);standMemberStatusLabels[member]=entry;}
+        overview.Controls.Add(Theme.Label("Участники стенда",17,null,true));
+        foreach(string member in J.A(J.V(selectedStand,"members")).Select(Convert.ToString)){
+            string key=member;var data=J.V(Row(key),"data");var row=new RoundedZone{Height=72,BackColor=Theme.Field,Padding=new Padding(14,10,14,10),Margin=new Padding(0,0,0,8)};
+            var cells=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=3,RowCount=1,BackColor=Theme.Field,Margin=Padding.Empty};
+            cells.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,42));cells.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));cells.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,120));
+            var entry=Theme.Label(J.S(data,"label",key)+" · "+Theme.State(State(key)),10);entry.AutoSize=false;entry.Dock=DockStyle.Fill;entry.Margin=Padding.Empty;entry.TextAlign=ContentAlignment.MiddleLeft;entry.Cursor=Cursors.Hand;standMemberStatusLabels[key]=entry;
+            Action openVm=()=>{standSelectedVm=key;standSelectedParent=restoreStand=standId;selectedStand=null;standDetail.Visible=false;SelectVm(key);PaintStandStatus();};entry.Click+=(s,e)=>openVm();
+            var icon=new MachineIcon{Size=new Size(32,32),Anchor=AnchorStyles.None,SizeMode=PictureBoxSizeMode.Zoom};try{icon.Image=Visuals.Logo(Visuals.Resolve(Visuals.Choice(key),J.O("label",J.S(data,"label",key)),key));}catch{}
+            var action=Theme.Button("Запустить",()=>{if(State(key)=="running")openVm();else if(State(key)=="paused")ControlVm(key,"toggle");else StartVm(key);});action.AutoSize=false;action.MinimumSize=Size.Empty;action.Size=new Size(110,36);action.Font=UiTypography.Points(9F);action.Padding=Padding.Empty;action.Margin=Padding.Empty;action.Anchor=AnchorStyles.None;memberActions[key]=action;
+            cells.Controls.Add(icon,0,0);cells.Controls.Add(entry,1,0);cells.Controls.Add(action,2,0);row.Controls.Add(cells);
+            overview.Controls.Add(row);overview.SizeChanged+=(s,e)=>row.Width=Math.Max(180,overview.ClientSize.Width-12);
+        }
         overview.Controls.Add(operationStatusButton);
-        tabs.Add("Обзор",overview);
+        standStateText=Theme.Label("STOPPED",28,null,true);standStateText.AutoSize=false;standStateText.TextAlign=ContentAlignment.MiddleCenter;
+        var dockActions=Theme.Flow();dockActions.Controls.Add(Theme.Button("Запустить стенд",()=>PlanStand(standId,"start"),true));dockActions.Controls.Add(Theme.Button("Выключить",()=>PlanStand(standId,"stop")));
+        standStage=new StateStage(standStateText,dockActions);
+        standStage.Dock=DockStyle.None;standStage.Margin=new Padding(0,0,0,25);overview.Controls.Add(standStage);overview.Controls.SetChildIndex(standStage,0);
+        var stage=standStage;Action arrangeStage=()=>{stage.Width=Math.Max(1,overview.ClientSize.Width);stage.Height=(int)((ClientSize.Width/layoutScale>=1300?435:ClientSize.Width/layoutScale<=1050?400:390)*layoutScale);};overview.SizeChanged+=(s,e)=>{if(!stage.IsDisposed)arrangeStage();};arrangeStage();
+        tabs.Add("Обзор",new ScrollSurface(overview){Dock=DockStyle.Fill});
         var launch=new TableLayoutPanel{Dock=DockStyle.Fill,BackColor=Theme.Bg,ColumnCount=1,RowCount=3,Margin=Padding.Empty};launch.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));launch.RowStyles.Add(new RowStyle(SizeType.AutoSize));launch.RowStyles.Add(new RowStyle(SizeType.AutoSize));launch.RowStyles.Add(new RowStyle(SizeType.Percent,100));
-        operations.Dock=DockStyle.Top;operations.AutoSize=true;
+        operations.Dock=DockStyle.Top;operations.AutoSize=true;operations.Margin=new Padding(0,0,0,16);
         var planPage=BuildStandPlanPage(standId);
         operations.Controls.Add(Theme.Button("Просмотреть план запуска",()=>PlanStand(standId,"start",false,true)));
         operations.Controls.Add(Theme.Button("План выключения",()=>PlanStand(standId,"stop",false,true)));
-        var launchOptions=Theme.Flow(true);launchOptions.Dock=DockStyle.Fill;
-        launchOptions.Controls.Add(Theme.Label("Обычный запуск и выключение выполняются после проверки; план можно просмотреть заранее.",9,Theme.Muted));
-        standIncludeExisting.Dock=DockStyle.None;launchOptions.Controls.Add(standIncludeExisting);launch.Controls.Add(operations,0,0);launch.Controls.Add(launchOptions,0,1);launch.Controls.Add(planPage,0,2);
+        var operationGrid=new UniformActionGrid{Margin=new Padding(0,0,0,16)};foreach(Control button in operations.Controls.Cast<Control>().ToArray())operationGrid.Controls.Add(button);operations.Dispose();
+        var launchOptions=Theme.Flow(true);launchOptions.Dock=DockStyle.Fill;launchOptions.Margin=new Padding(0,0,0,16);
+
+        standIncludeExisting.Dock=DockStyle.None;launchOptions.Controls.Add(standIncludeExisting);launch.Controls.Add(operationGrid,0,0);launch.Controls.Add(launchOptions,0,1);launch.Controls.Add(planPage,0,2);
         standPlanTabIndex=1;tabs.Add("Запуск и план",launch);
         standJournalTabIndex=standPlanTabIndex+1;
         standOperationPanel=new StandOperationPanel(Backend,()=>ReadStandOperation(standId)){Dock=DockStyle.Fill};tabs.Add("Журнал",standOperationPanel);
         if(standActiveOperationStandId==standId&&!String.IsNullOrEmpty(standActiveOperationId))standOperationPanel.SetOperation(standActiveOperationId);
         if(standPendingId==standId&&standPendingPlan!=null)RenderStandPlan();
-        tabs.SelectedIndex=standPendingId==standId&&standPendingPlan!=null?standPlanTabIndex:1;
+        tabs.SelectedIndex=standPendingId==standId&&standPendingPlan!=null?standPlanTabIndex:0;
         var layout=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=1,RowCount=2,BackColor=Theme.Bg,Padding=new Padding(16)};
         layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));
         layout.RowStyles.Add(new RowStyle(SizeType.AutoSize));layout.RowStyles.Add(new RowStyle(SizeType.Percent,100));
-        stack.Dock=DockStyle.Fill;layout.Controls.Add(stack,0,0);layout.Controls.Add(tabs,0,1);tabs.Dock=DockStyle.Fill;
+        stack.Dock=DockStyle.Fill;standInspector=new ConfigurationInspector("Участники стенда");var membersForSummary=J.A(J.V(selectedStand,"members")).Select(Convert.ToString).ToArray();
+        stack.Controls.Remove(configure);configure.MaximumSize=Size.Empty;standInspector.AddAction(configure);
+        standInspector.Value("Машин",membersForSummary.Length.ToString());
+        standInspector.Value("Память назначена",membersForSummary.Sum(n=>(long)J.N(J.V(Row(n),"data"),"ram_mb"))+" МБ");
+        standInspector.Value("CPU назначено",membersForSummary.Sum(n=>J.N(J.V(Row(n),"data"),"cores"))+" CPU");
+        standInspector.Value("Отсутствуют",membersForSummary.Count(n=>Row(n)==null).ToString());
+        layout.Padding=Padding.Empty;layout.RowStyles[0].SizeType=SizeType.Absolute;layout.RowStyles[0].Height=(detail.Width<650*layoutScale?110:80)*layoutScale;layout.Controls.Add(new SelectionHeader(stack,standInspector){Dock=DockStyle.Fill},0,0);
+        layout.Controls.Add(new InspectorWorkspace(tabs,null){Dock=DockStyle.Fill},0,1);tabs.Dock=DockStyle.None;
+        PaintStandStatus();
         standDetail.Controls.Add(layout);foreach(Control sibling in detail.Controls)sibling.Visible=Object.ReferenceEquals(sibling,standDetail);standDetail.BringToFront();
     }
 
@@ -188,17 +250,21 @@ sealed partial class MainWindow {
     }
     void OpenNetworkWorkspace(object existing,bool status=false){
         if(existing==null||Backend==null)return;
+        if(DialogLaunch.Defer(this,()=>OpenNetworkWorkspace(existing,status)))return;
+        var timing=NetworkOpenTiming.Start();
+        if(timing!=null)timing.Mark("click");
         string id=J.S(existing,"id");var layout=new Dictionary<string,Point>();Guid parsed;
         if(Guid.TryParseExact(id,"N",out parsed))try{layout=StandDiagramLayout.Read(RootPath,id);}catch(Exception error){MessageBox.Show(this,"Расположение схемы не загружено: "+error.Message,"Сеть стенда",MessageBoxButtons.OK,MessageBoxIcon.Warning);}
+        if(timing!=null)timing.Mark("placement_read");
         using(var editor=new StandNetworkEditorWindow(existing,Row,(window,draft)=>{
             if(Busy){window.SaveFailed(new InvalidOperationException("Дождись завершения текущей операции и повтори сохранение."));return;}
             Run("Проверяю и сохраняю сеть стенда…",()=>Backend.Call("stand_save",J.O("stand",draft,"revision",J.N(existing,"revision"))),result=>{
                 window.SaveSucceeded();selectedStand=result;ShowStand();LoadStands();
             },error=>window.SaveFailed(error),false);
-        },layout,value=>{StandDiagramLayout.Save(RootPath,id,value);if(standGraph!=null&&!standGraph.IsDisposed&&J.S(selectedStand,"id")==id)standGraph.SetPositions(value);},()=>Backend.Call("stand_overview",J.O("id",id)))){if(status)editor.OpenStatus();editor.ShowDialog(this);}
+        },layout,value=>{StandDiagramLayout.Save(RootPath,id,value);if(standGraph!=null&&!standGraph.IsDisposed&&J.S(selectedStand,"id")==id)standGraph.SetPositions(value);},()=>Backend.Call("stand_overview",J.O("id",id)),status,timing)){editor.ShowDialog(this);}
     }
     void EditStandTopology(object existing){
-        using(var form=new Form()){
+        using(var form=new MotionDialog()){
             Theme.Form(form,850,800);form.Text="Соединения и запуск стенда";
             Dictionary<string,object> draft;
             // Use an independent JSON clone: cancellation never changes the selected stand.
@@ -230,25 +296,35 @@ sealed partial class MainWindow {
             var linkButtons=Theme.Flow();linkButtons.Controls.Add(Theme.Button("Добавить связь",()=>{if(listen.SelectedIndex<0||connect.SelectedIndex<0)return;links.Add(J.O("id",Guid.NewGuid().ToString("N"),"listen",endpoints[listen.SelectedIndex],"connect",endpoints[connect.SelectedIndex]));refresh();}));linkButtons.Controls.Add(Theme.Button("Удалить связь",()=>{int i=linkList.SelectedIndex;if(i>=0&&MessageBox.Show(form,"Удалить выбранную связь? Изменение вступит в силу после сохранения.","Соединение",MessageBoxButtons.YesNo)==DialogResult.Yes){links.RemoveAt(i);refresh();}}));Theme.Row(fields,"",linkButtons,true);
             linkButtons.Controls.Add(Theme.Button("Изменить связь",()=>{int i=linkList.SelectedIndex;if(i<0||listen.SelectedIndex<0||connect.SelectedIndex<0)return;links[i]=J.O("id",J.S(links[i],"id"),"listen",endpoints[listen.SelectedIndex],"connect",endpoints[connect.SelectedIndex]);refresh();}));
             Theme.Row(fields,"",Theme.Label("Выбранный адаптер на время запуска переводится во внутреннюю связь вместо прежней сети.\nДля внешнего NAT и проброса портов оставь отдельный адаптер. JSON одиночной VM не меняется.\nIP/DHCP внутри гостей настраиваются вручную. QMP готов подтверждает QEMU, а не загрузку ОС.\nTCP проверяет 127.0.0.1: нужен доступный сервис или явный проброс порта. Guest Agent не нужен.\nПроверка не выполняет команды внутри гостя и не хранит пароли.",10,Theme.Muted),true);
-            var buttons=Theme.Flow();buttons.Controls.Add(Theme.Button("Сохранить",()=>{try{store();draft["schema_version"]=4;draft["multicast"]=multicast.ToArray();draft["switches"]=switches.ToArray();draft["order"]=order.ToArray();draft["links"]=links.ToArray();draft["startup"]=startup;if(MessageBox.Show(form,"Сохранить порядок и "+links.Count+" соединений? Настройки отдельных VM не меняются.","План изменений",MessageBoxButtons.YesNo)!=DialogResult.Yes)return;Run("Сохраняю топологию…",()=>Backend.Call("stand_save",J.O("stand",draft,"revision",J.N(existing,"revision"))),result=>{form.Close();selectedStand=result;ShowStand();LoadStands();});}catch(Exception error){MessageBox.Show(form,error.Message);}},true));buttons.Controls.Add(Theme.Button("Отмена",form.Close));Theme.Dialog(form,new ScrollSurface(fields),buttons,"Соединения и порядок","Изменения применяются только после сохранения.");form.ShowDialog(this);
+            var buttons=Theme.Flow();buttons.Controls.Add(Theme.Button("Сохранить",()=>{try{store();draft["schema_version"]=4;draft["multicast"]=multicast.ToArray();draft["switches"]=switches.ToArray();draft["order"]=order.ToArray();draft["links"]=links.ToArray();draft["startup"]=startup;if(MessageBox.Show(form,"Сохранить порядок и "+links.Count+" соединений? Настройки отдельных VM не меняются.","План изменений",MessageBoxButtons.YesNo)!=DialogResult.Yes)return;form.RunWrite(this,"Сохраняю топологию…",()=>Backend.Call("stand_save",J.O("stand",draft,"revision",J.N(existing,"revision"))),result=>{form.Close();selectedStand=result;ShowStand();LoadStands();});}catch(Exception error){MessageBox.Show(form,error.Message);}},true));buttons.Controls.Add(Theme.Button("Отмена",form.Close));Theme.AuxiliaryDialog(form,new ScrollSurface(fields),buttons,"Соединения и порядок","Изменения применяются только после сохранения.");form.ShowDialog(this);
         }
     }
     void EditStand(object existing){
         if(Backend==null)return;
-        using(var form=new Form()){
-            int memberRows=rows.Count+J.A(J.V(existing,"members")).Select(Convert.ToString).Count(key=>Row(key)==null);Theme.Form(form,650,Math.Min(720,Math.Max(460,320+memberRows*30)));form.Text=existing==null?"Новый стенд":"Параметры стенда";
-            var stack=Theme.Flow(true);stack.Dock=DockStyle.Top;stack.Padding=new Padding(24);
+        if(DialogLaunch.Defer(this,()=>EditStand(existing)))return;
+        using(var form=new MotionDialog()){
+            int memberRows=rows.Count+J.A(J.V(existing,"members")).Select(Convert.ToString).Count(key=>Row(key)==null);Theme.Form(form,700,Math.Min(850,Math.Max(680,380+memberRows*66)));form.Text=existing==null?"Новый стенд":"Параметры стенда";
+            var stack=Theme.Flow(true);stack.Dock=DockStyle.Top;stack.Padding=Padding.Empty;
             var name=Theme.Input(J.S(existing,"name"));var description=Theme.Input(J.S(existing,"description"));
-            stack.Controls.Add(Theme.Label("Название стенда",10,Theme.Muted));stack.Controls.Add(name);name.Width=540;
+            stack.Controls.Add(Theme.Label("Название стенда",11,Theme.Muted));stack.Controls.Add(name);name.Width=540;
             stack.Controls.Add(Theme.Label("Описание",10,Theme.Muted));stack.Controls.Add(description);description.Width=540;
             var membersHeading=Theme.Label("Участники стенда",11,null,true);stack.Controls.Add(membersHeading);
             var checks=new Dictionary<string,CheckBox>();var members=J.A(J.V(existing,"members")).Select(Convert.ToString).ToArray();
-            foreach(var row in rows){string key=J.S(row,"name");var c=new CheckBox{Text=J.S(J.V(row,"data"),"label",key),Checked=members.Contains(key),AutoSize=true,ForeColor=Theme.Text,MaximumSize=new Size(540,0)};checks[key]=c;stack.Controls.Add(c);}
-            foreach(string missing in members.Where(key=>!checks.ContainsKey(key))){var c=new CheckBox{Text=missing+" · VM отсутствует",Checked=true,AutoSize=true,ForeColor=Theme.Yellow,MaximumSize=new Size(540,0)};checks[missing]=c;stack.Controls.Add(c);}
+            Action<CheckBox,object> memberChoice=(model,row)=>{
+                var line=new BufferedPanel{Width=638,Height=66,Margin=Padding.Empty};model.Visible=false;line.Controls.Add(model);
+                var title=Theme.Label(model.Text,12,null,true);title.Location=new Point(0,15);title.AutoEllipsis=true;line.Controls.Add(title);
+                object data=J.V(row,"data");string resources=row==null?"VM отсутствует":J.N(data,"ram_mb")+" MB · "+J.N(data,"cores")+" ядер CPU";
+                var detail=Theme.Label(resources,10,Theme.Muted);detail.Font=MotionPaint.Font("Courier New",10);detail.Location=new Point(0,36);line.Controls.Add(detail);
+                var toggle=(PolarButton)Theme.Button("",()=>model.Checked=!model.Checked);toggle.AutoSize=false;toggle.Size=new Size(90,36);toggle.Padding=Padding.Empty;line.Controls.Add(toggle);
+                Action update=()=>{toggle.Text=model.Checked?"Включена":"Включить";toggle.BackColor=model.Checked?Theme.Text:MotionPaint.Hex("#e9e2d7");toggle.ForeColor=model.Checked?Color.White:Theme.Text;toggle.AccessibleName=model.Text+" / "+toggle.Text;toggle.Invalidate();};model.CheckedChanged+=(s,e)=>update();update();
+                line.SizeChanged+=(s,e)=>{toggle.Location=new Point(Math.Max(0,line.Width-90),15);title.MaximumSize=detail.MaximumSize=new Size(Math.Max(1,line.Width-105),22);};
+                line.Paint+=(s,e)=>{using(var pen=new Pen(MotionPaint.Hex("#d7cebf")))e.Graphics.DrawLine(pen,0,line.Height-1,line.Width,line.Height-1);};stack.Controls.Add(line);
+            };
+            foreach(var row in rows){string key=J.S(row,"name");var c=new CheckBox{Text=J.S(J.V(row,"data"),"label",key),Checked=members.Contains(key),AutoSize=true,ForeColor=Theme.Text,MaximumSize=new Size(540,0)};checks[key]=c;memberChoice(c,row);}
+            foreach(string missing in members.Where(key=>!checks.ContainsKey(key))){var c=new CheckBox{Text=missing+" · VM отсутствует",Checked=true,AutoSize=true,ForeColor=Theme.Yellow,MaximumSize=new Size(540,0)};checks[missing]=c;memberChoice(c,null);}
             Action updateCount=()=>membersHeading.Text="Участники стенда · выбрано: "+checks.Values.Count(c=>c.Checked);foreach(var check in checks.Values)check.CheckedChanged+=(s,e)=>updateCount();updateCount();
-            var warning=Theme.Label("Одна VM может входить в несколько стендов. Её диски не копируются.\nИсключение участника не удаляет VM.",10,Theme.Muted);warning.MaximumSize=new Size(540,0);stack.Controls.Add(warning);
             var buttons=Theme.Flow();buttons.Dock=DockStyle.Bottom;buttons.Padding=new Padding(24);
-            var save=Theme.Button("Сохранить",()=>{},true);buttons.Controls.Add(save);buttons.Controls.Add(Theme.Button("Отмена",()=>form.Close()));
+            var save=Theme.Button("Сохранить стенд",()=>{},true);buttons.Controls.Add(Theme.Button("Отмена",()=>form.Close()));buttons.Controls.Add(save);
             string originalName=name.Text,originalDescription=description.Text;bool saved=false;
             bool saving=false;form.FormClosing+=(s,e)=>{if(saving){e.Cancel=true;return;}bool changed=name.Text!=originalName||description.Text!=originalDescription||checks.Any(pair=>pair.Value.Checked!=members.Contains(pair.Key));if(!saved&&changed&&!Program.TestMode&&MessageBox.Show(form,"Закрыть без сохранения изменений?","Несохранённый стенд",MessageBoxButtons.YesNo,MessageBoxIcon.Warning)!=DialogResult.Yes)e.Cancel=true;};
             save.Click+=(s,e)=>{
@@ -270,19 +346,19 @@ sealed partial class MainWindow {
                 if(Busy)return;saving=true;save.Enabled=false;
                 Run("Сохраняю стенд…",()=>Backend.Call("stand_save",J.O("stand",draft,"revision",J.N(existing,"revision"))),result=>{saving=false;saved=true;form.Close();selectedStand=result;ShowStand();LoadStands();},error=>{saving=false;save.Enabled=true;});
             };
-            form.Controls.Add(new ScrollSurface(stack){Dock=DockStyle.Fill});form.Controls.Add(buttons);form.ShowDialog(this);
+            var scroll=new ScrollSurface(stack){Dock=DockStyle.Fill};scroll.SizeChanged+=(s,e)=>{int width=Math.Max(120,scroll.ClientSize.Width-scroll.Padding.Horizontal-18);name.Width=description.Width=width;foreach(var line in stack.Controls.OfType<BufferedPanel>())line.Width=width;};Theme.AuxiliaryDialog(form,scroll,buttons,"Параметры стенда",J.S(existing,"name","Новый стенд"),"ПАРАМЕТРЫ СТЕНДА");form.ShowDialog(this);
         }
     }
     Control BuildStandPlanPage(string id){
         var page=new TableLayoutPanel{Dock=DockStyle.Fill,BackColor=Theme.Bg,ColumnCount=1,RowCount=5,Margin=Padding.Empty,Padding=Padding.Empty};
         page.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));
-        page.RowStyles.Add(new RowStyle(SizeType.AutoSize));page.RowStyles.Add(new RowStyle(SizeType.AutoSize));page.RowStyles.Add(new RowStyle(SizeType.AutoSize));page.RowStyles.Add(new RowStyle(SizeType.Percent,100));page.RowStyles.Add(new RowStyle(SizeType.Absolute,54));
-        var heading=Theme.Label("Выбери действие выше, затем проверь план.",10,Theme.Muted);
+        page.RowStyles.Add(new RowStyle(SizeType.AutoSize));page.RowStyles.Add(new RowStyle(SizeType.AutoSize));page.RowStyles.Add(new RowStyle(SizeType.AutoSize));page.RowStyles.Add(new RowStyle(SizeType.Percent,100));page.RowStyles.Add(new RowStyle(SizeType.Absolute,66));
+        var heading=Theme.Label("",10,Theme.Muted);heading.Visible=false;
         heading.Dock=DockStyle.Top;page.Controls.Add(heading,0,0);
-        standIncludeExisting=new CheckBox{Text="При выключении включить ранее работавшие VM",AutoSize=true,ForeColor=Theme.Text,Dock=DockStyle.Fill,AccessibleName="Включить ранее работавшие машины в план выключения"};page.Controls.Add(standIncludeExisting,0,1);
-        standPlanNotice=Theme.Label("План действует две минуты. Настройки VM и диски не меняются при просмотре.",9,Theme.Muted);standPlanNotice.Dock=DockStyle.Top;page.Controls.Add(standPlanNotice,0,2);page.SizeChanged+=(s,e)=>{heading.MaximumSize=standPlanNotice.MaximumSize=new Size(Math.Max(1,page.ClientSize.Width),0);};
-        standPlanText=Theme.Editor();standPlanText.ReadOnly=true;standPlanText.AccessibleName="Предпросмотр плана стенда";standPlanText.Dock=DockStyle.Fill;standPlanText.Text="Порядок запуска:\r\n"+String.Join(" → ",J.A(J.V(selectedStand,"order")).Select(Convert.ToString))+"\r\n\r\nОтмена операции прекращает будущие этапы; запущенные VM остаются работать.";page.Controls.Add(standPlanText,0,3);
-        var buttons=Theme.Flow();buttons.Dock=DockStyle.Fill;buttons.AutoSize=false;
+        standIncludeExisting=new ToggleButton{Text="Выключать и ранее запущенные VM",AutoSize=false,Size=new Size(350,40),Padding=new Padding(12,0,12,0),Font=UiTypography.Make(10),ForeColor=Theme.Text,Dock=DockStyle.Fill,AccessibleName="Включить ранее работавшие машины в план выключения"};page.Controls.Add(standIncludeExisting,0,1);
+        standPlanNotice=Theme.Label("",9,Theme.Muted);standPlanNotice.Dock=DockStyle.Top;standPlanNotice.Visible=false;standPlanNotice.TextChanged+=(s,e)=>standPlanNotice.Visible=!String.IsNullOrWhiteSpace(standPlanNotice.Text);page.Controls.Add(standPlanNotice,0,2);page.SizeChanged+=(s,e)=>{heading.MaximumSize=standPlanNotice.MaximumSize=new Size(Math.Max(1,page.ClientSize.Width),0);};
+        standPlanText=Theme.Editor();standPlanText.Font=UiTypography.Make(11);standPlanText.ReadOnly=true;standPlanText.AccessibleName="Предпросмотр плана стенда";standPlanText.Dock=DockStyle.Fill;standPlanText.Text="Порядок запуска:\r\n"+String.Join(" → ",J.A(J.V(selectedStand,"order")).Select(Convert.ToString));page.Controls.Add(standPlanText,0,3);
+        var buttons=Theme.Flow();buttons.Dock=DockStyle.Fill;buttons.AutoSize=false;buttons.Padding=new Padding(0,12,0,0);
         standConfirmPlan=Theme.Button("Подтвердить план",()=>ConfirmStandPlan(id),true);standConfirmPlan.Enabled=false;
         standDiscardPlan=Theme.Button("Отменить план",DiscardStandPlan);standDiscardPlan.Enabled=false;
         buttons.Controls.Add(standConfirmPlan);buttons.Controls.Add(standDiscardPlan);page.Controls.Add(buttons,0,4);
@@ -328,11 +404,11 @@ sealed partial class MainWindow {
     }
     void ReadStandOperation(string id){
         if(Backend==null||Busy)return;standTabs.SelectedIndex=standJournalTabIndex;
-        Run("Читаю состояние стенда…",()=>Backend.Call("stand_overview",J.O("id",id)),result=>{
+        Read("Читаю состояние стенда…",()=>Backend.Call("stand_overview",J.O("id",id)),result=>{
             if(J.S(selectedStand,"id")!=id)return;string op=J.S(result,"operation_id");
             if(!String.IsNullOrEmpty(op)){standActiveOperationId=op;standActiveOperationStandId=id;standOperationPanel.SetOperation(op);}
             else {standActiveOperationId=null;standActiveOperationStandId=null;standOperationPanel.ShowEmpty("Состояние стенда: "+StandOperationWindow.StateName(J.S(result,"state"))+". Групповых операций в этом сеансе нет.");}
-        });
+        },null,"stand-overview/"+id);
     }
     void RemoveStand(object row){
         if(row==null||Busy)return;string id=J.S(row,"id");int revision=J.N(row,"revision");
@@ -340,22 +416,23 @@ sealed partial class MainWindow {
         Run("Удаляю определение стенда…",()=>Backend.Call("stand_remove",J.O("id",id,"revision",revision,"confirm",id)),result=>{try{StandDiagramLayout.Delete(RootPath,id);}catch(Exception error){footer.Text="Стенд удалён, расположение схемы осталось: "+error.Message;}selectedStand=null;restoreStand=null;standDetail.Visible=false;SelectVm(selected);LoadStands();});
     }
     void DuplicateStand(object row){
-        if(row==null||Busy)return;using(var form=new Form()){
+        if(row==null||Busy)return;using(var form=new MotionDialog()){
             Theme.Form(form,650,380);form.Text="Копия стенда";var fields=Theme.Fields();string label=J.S(row,"name");var name=Theme.Input(label.Substring(0,Math.Min(110,label.Length))+" · копия");Theme.Row(fields,"Название копии",name,true);Theme.Row(fields,"",Theme.Label("Копируются ссылки на те же VM, связи и порядок. Диски не клонируются.\nОдновременная работа стендов с одной VM может быть несовместима.",10,Theme.Muted),true);
-            var buttons=Theme.Flow();buttons.Controls.Add(Theme.Button("Создать копию",()=>{string title=name.Text;Run("Дублирую определение…",()=>Backend.Call("stand_duplicate",J.O("id",J.S(row,"id"),"revision",J.N(row,"revision"),"name",title)),result=>{form.Close();selectedStand=result;ShowStand();LoadStands();});},true));buttons.Controls.Add(Theme.Button("Отмена",form.Close));Theme.Dialog(form,fields,buttons,"Копия стенда","VM и образы остаются общими.");form.ShowDialog(this);
+            var buttons=Theme.Flow();buttons.Controls.Add(Theme.Button("Создать копию",()=>{string title=name.Text;form.RunWrite(this,"Дублирую определение…",()=>Backend.Call("stand_duplicate",J.O("id",J.S(row,"id"),"revision",J.N(row,"revision"),"name",title)),result=>{form.Close();selectedStand=result;ShowStand();LoadStands();});},true));buttons.Controls.Add(Theme.Button("Отмена",form.Close));Theme.AuxiliaryDialog(form,fields,buttons,"Копия стенда","VM и образы остаются общими.");form.ShowDialog(this);
         }
     }
     void ExportStand(string id){
-        if(Busy)return;Run("Готовлю отчёт стенда…",()=>Backend.Call("stand_report_preview",J.O("id",id)),preview=>{
-            using(var form=new Form()){
+        if(Busy)return;Read("Готовлю отчёт стенда…",()=>Backend.Call("stand_report_preview",J.O("id",id)),preview=>{
+            using(var form=new MotionDialog()){
                 Theme.Form(form,850,750);form.Text="Предпросмотр отчёта стенда";var text=Theme.Editor(J.S(preview,"text"));text.ReadOnly=true;
-                var buttons=Theme.Flow();buttons.Controls.Add(Theme.Button("Сохранить JSON…",()=>{string path=Theme.File(true,"Отчёт JSON|*.json");if(path==null)return;Run("Сохраняю проверенный отчёт…",()=>Backend.Call("stand_report_save",J.O("id",J.S(preview,"id"),"path",path,"sha256",J.S(preview,"sha256"))),result=>form.Close());},true));buttons.Controls.Add(Theme.Button("Отмена",form.Close));Theme.Dialog(form,text,buttons,"Проверь отчёт перед передачей","Без дисков и RAM. Имена заменены; автоматической отправки нет.");form.ShowDialog(this);
+                var buttons=Theme.Flow();buttons.Controls.Add(Theme.Button("Сохранить JSON…",()=>{string path=Theme.File(true,"Отчёт JSON|*.json");if(path==null)return;form.RunWrite(this,"Сохраняю проверенный отчёт…",()=>Backend.Call("stand_report_save",J.O("id",J.S(preview,"id"),"path",path,"sha256",J.S(preview,"sha256"))),result=>form.Close());},true));buttons.Controls.Add(Theme.Button("Отмена",form.Close));Theme.AuxiliaryDialog(form,text,buttons,"Проверь отчёт перед передачей","Без дисков и RAM. Имена заменены; автоматической отправки нет.");form.ShowDialog(this);
             }
         });
     }
 }
 
 class StandTreeButton : PolarButton {
+    public StandTreeButton(){Font=UiTypography.Make(11,500);CornerRadius=6;}
     string measuredText;Font measuredFont;int measuredWidth;Padding measuredPadding;Size measuredMinimum,measuredSize;
     public override Size GetPreferredSize(Size proposedSize){
         int width=MaximumSize.Width>0?MaximumSize.Width:proposedSize.Width>0?proposedSize.Width:Width;
@@ -370,9 +447,9 @@ sealed class StandFolderButton : StandTreeButton {
     readonly Button toggle;
     public bool Expanded{set{toggle.Text=value?"▾":"▸";toggle.AccessibleName=value?"Свернуть участников стенда":"Раскрыть участников стенда";}}
     public StandFolderButton(string text,Action select,Action expand){
-        Text=text;AutoSize=true;MinimumSize=new Size(118,40);Padding=new Padding(44,8,15,8);Margin=new Padding(0,0,10,6);
+        Text=text;CornerRadius=6;AutoSize=true;MinimumSize=new Size(118,40);Padding=new Padding(44,8,15,8);Margin=new Padding(0,0,0,8);
         BackColor=Theme.Panel;ForeColor=Theme.Text;TextAlign=ContentAlignment.MiddleLeft;Click+=(s,e)=>select();
-        toggle=Theme.Button("▸",expand);toggle.AutoSize=false;toggle.MinimumSize=Size.Empty;toggle.Size=new Size(40,40);toggle.Location=Point.Empty;toggle.Padding=Padding.Empty;toggle.BackColor=Theme.Panel;Controls.Add(toggle);
+        toggle=Theme.Button("▸",expand);toggle.AutoSize=false;toggle.MinimumSize=Size.Empty;toggle.Size=new Size(32,32);toggle.Location=new Point(6,4);toggle.Padding=Padding.Empty;toggle.BackColor=Theme.Panel;Controls.Add(toggle);
     }
     protected override void OnBackColorChanged(EventArgs e){base.OnBackColorChanged(e);if(toggle!=null)toggle.BackColor=BackColor;}
 }
@@ -381,8 +458,8 @@ sealed class StandMemberButton : StandTreeButton {
     public readonly string StandId,VmName;readonly bool last;bool selected;
     public bool Selected {get{return selected;}set{if(selected==value)return;selected=value;BackColor=value?Theme.Card:Theme.Panel;ForeColor=value?Theme.Accent:Theme.Text;Invalidate();}}
     public StandMemberButton(string stand,string vm,bool last){
-        StandId=stand;VmName=vm;this.last=last;AutoSize=true;MinimumSize=new Size(112,40);Padding=new Padding(36,8,10,8);
-        Margin=new Padding(24,0,10,6);TextAlign=ContentAlignment.MiddleLeft;BackColor=Theme.Panel;ForeColor=Theme.Text;AccessibleDescription="stand-member";
+        StandId=stand;VmName=vm;this.last=last;CornerRadius=5;Quiet=true;AutoSize=true;MinimumSize=new Size(112,40);Padding=new Padding(36,8,10,8);
+        Margin=new Padding(12,0,0,4);TextAlign=ContentAlignment.MiddleLeft;BackColor=Theme.Panel;ForeColor=Theme.Text;AccessibleDescription="stand-member";
     }
     protected override void OnPaint(PaintEventArgs e){
         base.OnPaint(e);int middle=Height/2;
@@ -395,23 +472,23 @@ sealed class StandMemberButton : StandTreeButton {
 
 sealed class StandOperationPanel : Panel {
     internal Func<bool,Task<object>> StatusProvider {get;set;}
-    readonly Backend backend;readonly Action loadLatest;readonly ThemedEditor log=Theme.Editor();readonly Label status=Theme.Label("Здесь появятся этапы и журнал операции стенда.",10,Theme.Muted);
+    readonly Backend backend;readonly Action loadLatest;readonly ThemedEditor log=Theme.Editor();readonly Label status=Theme.Label("Операций стенда пока нет.",10,Theme.Muted);
     readonly System.Windows.Forms.Timer timer=new System.Windows.Forms.Timer{Interval=1800};readonly Button cancel;string operation;bool pending;
     public StandOperationPanel(Backend backend,Action loadLatest=null){
         this.backend=backend;this.loadLatest=loadLatest;BackColor=Theme.Bg;Padding=new Padding(0,8,0,0);
         status.Dock=DockStyle.Top;status.AutoSize=false;status.Height=36;status.TextAlign=ContentAlignment.MiddleLeft;
-        log.Dock=DockStyle.Top;log.Height=108;log.ReadOnly=true;log.AccessibleName="Журнал операции стенда";log.Text="Операций стенда пока нет.";
+        log.Visible=false;log.Dock=DockStyle.Top;log.Height=108;log.ReadOnly=true;log.AccessibleName="Журнал операции стенда";log.Text="Операций стенда пока нет.";
         var buttons=Theme.Flow();buttons.Dock=DockStyle.Top;buttons.AutoSize=false;buttons.Height=52;
-        cancel=Theme.Button("Отменить будущие этапы",()=>{if(MessageBox.Show(FindForm(),"Остановить будущие этапы? Запущенные VM останутся работать.","Отмена",MessageBoxButtons.YesNo)==DialogResult.Yes)Request(true);});cancel.Enabled=false;
+        cancel=Theme.Button("Отменить будущие этапы",()=>{if(MessageBox.Show(FindForm(),"Остановить будущие этапы? Запущенные VM останутся работать.","Отмена",MessageBoxButtons.YesNo)==DialogResult.Yes)Request(true);});cancel.Enabled=false;cancel.Visible=false;
         buttons.Controls.Add(cancel);buttons.Controls.Add(Theme.Button("Обновить журнал",()=>{if(String.IsNullOrEmpty(operation)){if(this.loadLatest!=null)this.loadLatest();}else Request(false);}));
         Controls.Add(buttons);Controls.Add(log);Controls.Add(status);
         timer.Tick+=(s,e)=>Request(false);VisibleChanged+=(s,e)=>{if(Visible&&!String.IsNullOrEmpty(operation)){timer.Start();Request(false);}else timer.Stop();};
     }
     public void SetOperation(string id){
-        if(String.IsNullOrEmpty(id))return;if(operation!=id){operation=id;status.Text="Читаю состояние операции…";log.Text="";cancel.Enabled=false;}
+        if(String.IsNullOrEmpty(id))return;if(operation!=id){operation=id;log.Visible=true;status.Text="Читаю состояние операции…";log.Text="";cancel.Enabled=false;}
         if(Visible)timer.Start();Request(false);
     }
-    public void ShowEmpty(string message){operation=null;timer.Stop();status.Text=message;status.ForeColor=Theme.Muted;log.Text="Операций стенда пока нет.";log.Height=72;cancel.Enabled=false;}
+    public void ShowEmpty(string message){operation=null;timer.Stop();status.Text=message;status.ForeColor=Theme.Muted;status.Text="Операций стенда пока нет.";log.Text="";log.Visible=false;cancel.Visible=false;cancel.Enabled=false;}
     async void Request(bool stop){
         if(pending||IsDisposed||String.IsNullOrEmpty(operation))return;pending=true;string current=operation;
         try{
@@ -419,14 +496,14 @@ sealed class StandOperationPanel : Panel {
             if(IsDisposed||operation!=current)return;string state=J.S(result,"state");
             status.Text=StandOperationWindow.StateName(state)+" · "+J.S(result,"phase")+" · "+J.S(result,"current");status.ForeColor=state=="failed"||state=="error"||state=="interrupted"?Theme.Red:state=="completed"?Theme.Green:Theme.Text;
             var events=J.A(J.V(result,"events"));string errorText=J.S(result,"error");log.Text=events.Length==0&&String.IsNullOrEmpty(errorText)?"Событий пока нет.":String.Join("\r\n",events.Select(item=>J.S(item,"vm")+" · "+J.S(item,"phase")))+(String.IsNullOrEmpty(errorText)?"":"\r\n"+errorText);log.Height=Math.Min(250,Math.Max(72,events.Length*22+48));
-            cancel.Enabled=state=="running"||state=="queued";if(!cancel.Enabled)timer.Stop();
+            cancel.Enabled=state=="running"||state=="queued";cancel.Visible=cancel.Enabled;log.Visible=events.Length>0||!String.IsNullOrEmpty(errorText);if(!cancel.Enabled)timer.Stop();
         }catch(Exception error){if(!IsDisposed&&operation==current){status.Text="Не удалось прочитать состояние: "+error.Message;status.ForeColor=Theme.Red;}}
         finally{pending=false;}
     }
     protected override void Dispose(bool disposing){if(disposing)timer.Dispose();base.Dispose(disposing);}
 }
 
-sealed class StandOperationWindow : Form {
+sealed class StandOperationWindow : MotionDialog {
     internal Func<bool,Task<object>> StatusProvider {get;set;}
     readonly Backend backend;readonly string operation;readonly ThemedEditor log=Theme.Editor();readonly Label status=Theme.Label("Читаю состояние…",12);
     readonly System.Windows.Forms.Timer timer=new System.Windows.Forms.Timer{Interval=1000};bool pending;
@@ -436,7 +513,7 @@ sealed class StandOperationWindow : Form {
         this.backend=backend;this.operation=operation;Theme.Form(this,850,700);Text="Операция стенда";log.ReadOnly=true;
         var body=new Panel{Dock=DockStyle.Fill,Padding=new Padding(24)};status.Dock=DockStyle.Top;log.Dock=DockStyle.Fill;body.Controls.Add(log);body.Controls.Add(status);
         cancel=Theme.Button("Отменить будущие этапы",()=>{if(MessageBox.Show(this,"Остановить будущие этапы? Запущенные VM останутся работать.","Отмена",MessageBoxButtons.YesNo)==DialogResult.Yes)Request(true);});
-        var buttons=Theme.Flow();buttons.Controls.Add(cancel);buttons.Controls.Add(Theme.Button("Закрыть",Close));Theme.Dialog(this,body,buttons,"Ход операции","Этапы QEMU; процент загрузки гостевой ОС не измеряется.");
+        var buttons=Theme.Flow();buttons.Controls.Add(cancel);buttons.Controls.Add(Theme.Button("Закрыть",Close));Theme.AuxiliaryDialog(this,body,buttons,"Ход операции","Этапы QEMU; процент загрузки гостевой ОС не измеряется.");
         timer.Tick+=(s,e)=>Request(false);Shown+=(s,e)=>{timer.Start();Request(false);};FormClosed+=(s,e)=>{timer.Stop();timer.Dispose();};
     }
     async void Request(bool stop){
@@ -451,6 +528,7 @@ sealed class StandOperationWindow : Form {
 }
 
 sealed class StandTopologyCanvas : Control {
+    public bool ReferenceNetworkMode {get;set;}public int ReferenceViewportHeight {get;set;}
     readonly Func<string,object> vmRow;
     string[] machines;object[] switches,multicast,links;int diagramHeight,focusedNetwork=-1;
     readonly Dictionary<string,Point> positions=new Dictionary<string,Point>(StringComparer.Ordinal);
@@ -483,9 +561,9 @@ sealed class StandTopologyCanvas : Control {
         Invalidate();
     }
     void Measure(){var active=ActiveKeys();int content=Math.Max(Math.Max(machines.Length,switches.Length+multicast.Length+links.Length)*90+120,positions.Where(item=>active.Contains(item.Key)).Select(item=>item.Value.Y+110).DefaultIfEmpty(0).Max());diagramHeight=Math.Max(330,(int)Math.Ceiling(content*zoomPercent/100F));Height=diagramHeight;}
-    public override Size GetPreferredSize(Size proposedSize){return new Size(Math.Max(1,proposedSize.Width),diagramHeight);}
+    public override Size GetPreferredSize(Size proposedSize){return new Size(Math.Max(1,proposedSize.Width),ReferenceNetworkMode?Math.Max(diagramHeight,ReferenceViewportHeight):diagramHeight);}
     int NodeWidth(){return Math.Max(90,Math.Min((int)(220F*zoomPercent/100),Math.Max(90,(ClientSize.Width-140)/2)));}
-    int NodeHeight(){return (int)(66F*zoomPercent/100);}
+    int NodeHeight(){return (int)(80F*zoomPercent/100);}
     Rectangle Node(string key,int column,int index){int width=NodeWidth(),available=Math.Max(1,ClientSize.Width-32-width);Point value;bool custom=positions.TryGetValue(key,out value);if(!custom)value=new Point(column==0?0:1000,55+index*90);
         int x=16+(int)((long)available*value.X/1000),y=(int)(value.Y*zoomPercent/100F);return new Rectangle(x,y,width,NodeHeight());}
     string NetworkKey(int index){
@@ -546,17 +624,21 @@ sealed class StandTopologyCanvas : Control {
     }
     protected override void OnMouseCaptureChanged(EventArgs e){base.OnMouseCaptureChanged(e);if(dragKey!=null&&moved&&PlacementChanged!=null){suppressClick=true;PlacementChanged(Positions());}dragKey=null;moved=false;}
     protected override void Dispose(bool disposing){if(disposing)nodeTip.Dispose();base.Dispose(disposing);}
-    static void Box(Graphics g,Rectangle r,string title,string subtitle,Color accent,Font font,float scale){
-        using(var path=Drawing.Rounded(r,9))using(var fill=new SolidBrush(Theme.Panel))using(var border=new Pen(accent,2)){g.FillPath(fill,path);g.DrawPath(border,path);}
-        int inset=(int)(12*scale),titleTop=(int)(7*scale),titleHeight=(int)(33*scale),subtitleHeight=(int)(19*scale);
-        TextRenderer.DrawText(g,title,font,new Rectangle(r.X+inset,r.Y+titleTop,r.Width-2*inset,titleHeight),Theme.Text,TextFormatFlags.WordBreak|TextFormatFlags.EndEllipsis|TextFormatFlags.NoPrefix);
-        TextRenderer.DrawText(g,subtitle,font,new Rectangle(r.X+inset,r.Bottom-subtitleHeight-(int)(4*scale),r.Width-2*inset,subtitleHeight),accent,TextFormatFlags.EndEllipsis|TextFormatFlags.NoPrefix);
+    static void Box(Graphics g,Rectangle r,string title,string subtitle,Color accent,Font heading,Font detail,float scale){
+        using(var path=Drawing.Rounded(r,(int)(8*scale)))using(var fill=new SolidBrush(Theme.Panel))using(var border=new Pen(accent,1)){g.FillPath(fill,path);g.DrawPath(border,path);}
+        int inset=(int)(12*scale),subtitleHeight=(int)(30*scale);
+        TextRenderer.DrawText(g,title,heading,new Rectangle(r.X+inset,r.Y+(int)(8*scale),r.Width-2*inset,(int)(30*scale)),Theme.Text,TextFormatFlags.WordBreak|TextFormatFlags.EndEllipsis|TextFormatFlags.NoPrefix);
+        TextRenderer.DrawText(g,subtitle,detail,new Rectangle(r.X+inset,r.Bottom-subtitleHeight-(int)(6*scale),r.Width-2*inset,subtitleHeight),accent,TextFormatFlags.WordBreak|TextFormatFlags.EndEllipsis|TextFormatFlags.NoPrefix);
     }
     object SwitchDiagnostic(object group){string id=J.S(group,"id");return J.A(J.V(overview,"network_diagnostics")).FirstOrDefault(item=>J.S(item,"id")==id);}
     static string SwitchCaption(object diag){if(diag==null)return "КОММУТАТОР · не проверен";string state=J.S(diag,"state");int online=J.A(J.V(diag,"members")).Count(item=>J.B(item,"connected")),total=J.A(J.V(diag,"members")).Length;
         return state=="connected"?"QEMU ПОДКЛЮЧЁН · "+online+"/"+total:state=="helper-ready"?"КОММУТАТОР ГОТОВ · "+online+"/"+total:state=="stopped"?"КОММУТАТОР ВЫКЛЮЧЕН":"СОСТОЯНИЕ НЕИЗВЕСТНО";}
     protected override void OnPaint(PaintEventArgs e){
-        base.OnPaint(e);var g=e.Graphics;g.SmoothingMode=System.Drawing.Drawing2D.SmoothingMode.AntiAlias;g.Clear(BackColor);
+        base.OnPaint(e);var g=e.Graphics;g.SmoothingMode=System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
+        var clip=e.ClipRectangle;
+        if(Parent!=null&&IsHandleCreated)clip.Intersect(RectangleToClient(Parent.RectangleToScreen(Parent.ClientRectangle)));
+        using(var fill=new SolidBrush(BackColor))g.FillRectangle(fill,clip);
+        if(ReferenceNetworkMode){using(var grid=new Pen(Color.FromArgb(17,118,111,97))){for(int x=Math.Max(0,clip.Left/28*28);x<clip.Right;x+=28)g.DrawLine(grid,x,clip.Top,x,clip.Bottom);for(int y=Math.Max(0,clip.Top/28*28);y<clip.Bottom;y+=28)g.DrawLine(grid,clip.Left,y,clip.Right,y);}using(var border=new Pen(MotionPaint.Hex("#d8d0c4")))g.DrawRectangle(border,0,0,Math.Max(0,Width-1),Math.Max(0,Height-1));}
         float scale=zoomPercent/100F;int left=16,right=Math.Max(16,ClientSize.Width-16-NodeWidth());
         var nodes=new Dictionary<string,Rectangle>();
         for(int i=0;i<machines.Length;i++)nodes[machines[i]]=Node("vm:"+machines[i],0,i);
@@ -567,12 +649,13 @@ sealed class StandTopologyCanvas : Control {
         var lanes=new Dictionary<string,int>();
         for(int i=0;i<groups.Count;i++){
             var group=groups[i];var box=Node(NetworkKey(i),1,i);object diag=i<switches.Length?SwitchDiagnostic(switches[i]):null;
-            for(int memberIndex=0;memberIndex<group.Item4.Length;memberIndex++){var member=group.Item4[memberIndex];Rectangle vm;string vmName=J.S(member,"vm");if(!nodes.TryGetValue(vmName,out vm))continue;
+            using(var pen=new Pen(group.Item3,2))for(int memberIndex=0;memberIndex<group.Item4.Length;memberIndex++){var member=group.Item4[memberIndex];Rectangle vm;string vmName=J.S(member,"vm");if(!nodes.TryGetValue(vmName,out vm))continue;
                 int lane;lanes.TryGetValue(vmName,out lane);lanes[vmName]=lane+1;
                 int sourceY=Math.Min(vm.Bottom-8,vm.Y+(int)((18+Math.Min(lane,3)*14)*scale)),destY=Math.Min(box.Bottom-8,box.Y+(int)((18+Math.Min(memberIndex,3)*14)*scale));
                 bool forward=vm.X<box.X;int sourceX=forward?vm.Right:vm.Left,destX=forward?box.Left:box.Right;
-                using(var pen=new Pen(group.Item3,2))g.DrawLine(pen,sourceX,sourceY,destX,destY);
-                var name=J.S(member,"nic");if(!String.IsNullOrEmpty(name)){
+                if(Math.Max(sourceY,destY)+8<clip.Top||Math.Min(sourceY,destY)-8>clip.Bottom)continue;
+                g.DrawLine(pen,sourceX,sourceY,destX,destY);
+                var name=J.S(member,"nic");if(!String.IsNullOrEmpty(name)&&sourceY+8>=clip.Top&&sourceY-8<clip.Bottom){
                     int available=Math.Max(1,Math.Abs(destX-sourceX)-12),labelWidth=Math.Min(available,Math.Max(34,TextRenderer.MeasureText(name,Font).Width+6));
                     var badge=new Rectangle(forward?sourceX+4:sourceX-labelWidth-4,sourceY-8,labelWidth,16);
                     using(var backing=new SolidBrush(Theme.Bg))g.FillRectangle(backing,badge);
@@ -581,18 +664,18 @@ sealed class StandTopologyCanvas : Control {
                 if(diag!=null){object port=J.A(J.V(diag,"members")).FirstOrDefault(item=>J.S(item,"vm")==vmName&&J.S(item,"nic")==name);using(var dot=new SolidBrush(port==null?Theme.Muted:J.B(port,"connected")?Theme.Green:Theme.Red))g.FillEllipse(dot,destX-4,destY-4,8,8);}
             }
         }
-        TextRenderer.DrawText(g,"ВИРТУАЛЬНЫЕ МАШИНЫ",Font,new Point(left,18),Theme.Muted);
-        TextRenderer.DrawText(g,"СЕТИ И СОЕДИНЕНИЯ",Font,new Point(right,18),Theme.Muted);
-        using(var nodeFont=new Font(Font.FontFamily,Math.Max(7F,Font.Size*scale),FontStyle.Regular)){
-            foreach(var vm in nodes){bool missing=vmRow!=null&&vmRow(vm.Key)==null;object data=J.V(vmRow==null?null:vmRow(vm.Key),"data");int nics=J.A(J.V(data,"network_adapters")).Length;string state=J.S(J.V(overview,"members"),vm.Key);string subtitle=missing?"VM ОТСУТСТВУЕТ":state.Length>0?"VM · "+Theme.State(state):"VM · "+nics+" NIC · не проверена";Box(g,vm.Value,vm.Key,subtitle,missing?Theme.Red:state.Length>0?Theme.StateColor(state):Theme.Accent,nodeFont,scale);if(Focused&&focusedKey=="vm:"+vm.Key)ControlPaint.DrawFocusRectangle(g,Rectangle.Inflate(vm.Value,-4,-4));}
-            for(int i=0;i<groups.Count;i++){var group=groups[i];var box=Node(NetworkKey(i),1,i);Box(g,box,group.Item1,group.Item2,group.Item3,nodeFont,scale);if(Focused&&i==focusedNetwork)ControlPaint.DrawFocusRectangle(g,Rectangle.Inflate(box,-4,-4));}
+        if(!ReferenceNetworkMode)TextRenderer.DrawText(g,"ВИРТУАЛЬНЫЕ МАШИНЫ",Font,new Point(left,18),Theme.Muted);
+        if(!ReferenceNetworkMode)TextRenderer.DrawText(g,"СЕТИ И СОЕДИНЕНИЯ",Font,new Point(right,18),Theme.Muted);
+        using(var heading=UiTypography.Make(12*scale,500))using(var detail=UiTypography.Make(9*scale)){
+            foreach(var vm in nodes){if(!clip.IntersectsWith(vm.Value))continue;object row=vmRow==null?null:vmRow(vm.Key);bool missing=vmRow!=null&&row==null;object data=J.V(row,"data");int nics=J.A(J.V(data,"network_adapters")).Length;string state=J.S(J.V(overview,"members"),vm.Key);string subtitle=missing?"VM ОТСУТСТВУЕТ":state.Length>0?"VM · "+Theme.State(state):"VM · "+nics+" NIC · не проверена";Box(g,vm.Value,vm.Key,subtitle,missing?Theme.Red:state.Length>0?Theme.StateColor(state):Theme.Accent,heading,detail,scale);if(Focused&&focusedKey=="vm:"+vm.Key)ControlPaint.DrawFocusRectangle(g,Rectangle.Inflate(vm.Value,-4,-4));}
+            for(int i=0;i<groups.Count;i++){var group=groups[i];var box=Node(NetworkKey(i),1,i);if(!clip.IntersectsWith(box))continue;Box(g,box,group.Item1,group.Item2,group.Item3,heading,detail,scale);if(Focused&&i==focusedNetwork)ControlPaint.DrawFocusRectangle(g,Rectangle.Inflate(box,-4,-4));}
         }
-        if(groups.Count==0)TextRenderer.DrawText(g,"Соединения ещё не настроены.",Font,new Point(right,65),Theme.Muted);
-        TextRenderer.DrawText(g,"Связь внутри гостевых ОС: не проверена",Font,new Point(left,diagramHeight-26),Theme.Muted);
+        if(groups.Count==0)using(var emptyFont=UiTypography.Make(10*scale))TextRenderer.DrawText(g,"Соединения ещё не настроены.",emptyFont,new Rectangle(right,65,NodeWidth(),60),Theme.Muted,TextFormatFlags.WordBreak|TextFormatFlags.NoPrefix);
+        if(!ReferenceNetworkMode)TextRenderer.DrawText(g,"Связь внутри гостевых ОС: не проверена",Font,new Point(left,diagramHeight-26),Theme.Muted);
     }
 }
 
-sealed class StandNetworksWindow : Form {
+sealed class StandNetworksWindow : MotionDialog {
     readonly Backend backend;readonly string stand;
     readonly ThemedSelector selector=Theme.Combo();readonly ThemedEditor text=Theme.Editor();
     readonly Label status=Theme.Label("Читаю состояние…",10,Theme.Muted);readonly Button refresh;
@@ -641,7 +724,7 @@ sealed class StandNetworksWindow : Form {
         var body=new Panel{Dock=DockStyle.Fill,BackColor=Theme.Bg};body.Controls.Add(text);body.Controls.Add(selector);
         status.Dock=DockStyle.Top;status.AutoSize=true;body.Controls.Add(status);
         refresh=Theme.Button("Обновить",()=>Read());var buttons=Theme.Flow();buttons.Controls.Add(refresh);buttons.Controls.Add(Theme.Button("Закрыть",Close));
-        Theme.Dialog(this,body,buttons,"Общие сети стенда","Только чтение. Окно не запускает и не выключает VM или коммутатор.");
+        Theme.AuxiliaryDialog(this,body,buttons,"Общие сети стенда","Только чтение. Окно не запускает и не выключает VM или коммутатор.");
         Shown+=(s,e)=>Read();
     }
     void Render(){text.Text=selector.SelectedIndex>=0&&selector.SelectedIndex<networks.Length?Describe(networks[selector.SelectedIndex]):"Общих сетей пока нет.";}
@@ -658,14 +741,16 @@ sealed class StandNetworksWindow : Form {
 }
 
 sealed class LibraryModeSwitch : CheckBox {
-    public LibraryModeSwitch(){AutoSize=false;Size=new Size(208,30);BackColor=Theme.Panel;ForeColor=Theme.Text;SetStyle(ControlStyles.UserPaint|ControlStyles.OptimizedDoubleBuffer|ControlStyles.ResizeRedraw,true);}
+    bool mouse,target;
+    public LibraryModeSwitch(){AutoCheck=false;AutoSize=false;Size=new Size(153,40);BackColor=Theme.Bg;ForeColor=Theme.Text;SetStyle(ControlStyles.UserPaint|ControlStyles.OptimizedDoubleBuffer|ControlStyles.ResizeRedraw,true);}
     protected override void OnCheckedChanged(EventArgs e){base.OnCheckedChanged(e);Invalidate();}
+    protected override void OnMouseDown(MouseEventArgs e){if(e.Button==MouseButtons.Left){mouse=true;target=e.X<68;}base.OnMouseDown(e);}
+    protected override void OnClick(EventArgs e){Checked=mouse?target:!Checked;mouse=false;base.OnClick(e);}
     protected override void OnPaint(PaintEventArgs e){
-        e.Graphics.Clear(BackColor);e.Graphics.SmoothingMode=System.Drawing.Drawing2D.SmoothingMode.AntiAlias;
-        var track=new Rectangle(79,5,43,21);using(var path=Drawing.Rounded(track,10))using(var brush=new SolidBrush(Checked?Theme.Accent:Theme.Card))e.Graphics.FillPath(brush,path);
-        using(var brush=new SolidBrush(Checked?Theme.Bg:Theme.Text))e.Graphics.FillEllipse(brush,Checked?102:82,8,15,15);
-        TextRenderer.DrawText(e.Graphics,"Машины",Font,new Rectangle(0,4,76,24),Checked?Theme.Muted:Theme.Accent,TextFormatFlags.VerticalCenter);
-        TextRenderer.DrawText(e.Graphics,"Стенды",Font,new Rectangle(132,4,76,24),Checked?Theme.Accent:Theme.Muted,TextFormatFlags.VerticalCenter);
-        if(Focused&&ShowFocusCues)ControlPaint.DrawFocusRectangle(e.Graphics,ClientRectangle);
+        var g=e.Graphics;g.Clear(BackColor);g.SmoothingMode=System.Drawing.Drawing2D.SmoothingMode.AntiAlias;int y=Math.Max(0,(Height-40)/2);var bounds=new Rectangle(0,y,Width-1,39);
+        using(var path=Drawing.Rounded(bounds,20))using(var fill=new SolidBrush(MotionPaint.Hex("#ebe6dc")))using(var pen=new Pen(MotionPaint.Hex("#c8c1b4"))){g.FillPath(fill,path);g.DrawPath(pen,path);}
+        var selected=new Rectangle(Checked?4:73,y+4,Checked?64:Math.Max(1,Width-77),31);using(var path=Drawing.Rounded(selected,16))using(var fill=new SolidBrush(Theme.Text))g.FillPath(fill,path);
+        using(var font=MotionPaint.Font("Courier New",10)){TextRenderer.DrawText(g,"Стенды",font,new Rectangle(4,y+4,64,31),Checked?Theme.Bg:MotionPaint.Hex("#7d756a"),TextFormatFlags.HorizontalCenter|TextFormatFlags.VerticalCenter);TextRenderer.DrawText(g,"Машины",font,new Rectangle(73,y+4,Math.Max(1,Width-77),31),Checked?MotionPaint.Hex("#7d756a"):Theme.Bg,TextFormatFlags.HorizontalCenter|TextFormatFlags.VerticalCenter);}
+        if(Focused&&ShowFocusCues)using(var pen=new Pen(Theme.Accent,2))g.DrawRectangle(pen,2,y+2,Width-5,35);
     }
 }

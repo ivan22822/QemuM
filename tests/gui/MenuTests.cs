@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.IO;
@@ -54,12 +54,12 @@ static class MenuTests {
                     }
                 }
                 var mode=(LaunchModeSelector)typeof(MainWindow).GetField("launchMode",BindingFlags.Instance|BindingFlags.NonPublic).GetValue(main);
-                var choices=mode.Controls.OfType<Button>().ToArray();
-                Check(choices.Length==2&&choices.All(button=>button.Visible),"launch modes are directly visible without a dropdown");
+                var choices=new Button[]{mode};
+                Check(choices.Length==1&&mode.Controls.Count==0&&choices.All(button=>button.Visible),"launch modes are directly visible without a dropdown");
                 using(var image=new Bitmap(mode.Width,mode.Height)){mode.DrawToBitmap(image,mode.ClientRectangle);image.Save(Path.Combine(Path.GetDirectoryName(args[0]),"launch-mode-choices.png"));}
                 for(int index=0;index<6;index++) {
-                    choices[index%2].PerformClick();
-                    Check(mode.SelectedIndex==index%2,"launch mode changes with one click");
+                    int previous=mode.SelectedIndex;mode.PerformClick();
+                    Check(mode.SelectedIndex==1-previous,"launch mode changes with one click");
                 }
                 main.Close();
             }

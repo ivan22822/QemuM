@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Drawing;
 using System.Linq;
@@ -40,10 +40,9 @@ static class LaunchProfiles {
         data["launch_profile"]=J.S(row,"id");data["launch_profile_settings"]=J.V(row,"settings");data["launch_profile_label"]=J.S(row,"label");
     }
     public static Control Field(ThemedSelector selector,Backend backend,Form owner){
-        if(backend!=null)Fill(selector,J.A(J.V(backend.Call("profile_list",J.O()),"profiles")));
-        var panel=new TableLayoutPanel{Dock=DockStyle.Top,Height=44,ColumnCount=2,Margin=new Padding(0)};
-        panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));panel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,116));
-        selector.Dock=DockStyle.Fill;panel.Controls.Add(selector,0,0);
+        var panel=new TableLayoutPanel{Dock=DockStyle.Top,Height=40,ColumnCount=2,Margin=new Padding(0)};
+        panel.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));panel.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,94));
+        selector.Dock=DockStyle.Fill;selector.Margin=Padding.Empty;panel.Controls.Add(selector,0,0);
         var manage=Theme.Button("Настроить…",()=>{
             try{using(var dialog=new LaunchProfileDialog(backend,Value(selector))){
                 if(dialog.ShowDialog(owner)==DialogResult.OK){
@@ -51,11 +50,32 @@ static class LaunchProfiles {
                     var row=dialog.Selected;Load(selector,J.O("launch_profile",J.S(row,"id"),"launch_profile_label",J.S(row,"label"),"launch_profile_settings",J.V(row,"settings")));
                 }
             }}catch(Exception error){MessageBox.Show(owner,error.Message,"Профили запуска",MessageBoxButtons.OK,MessageBoxIcon.Warning);}
-        });manage.Enabled=backend!=null;manage.Dock=DockStyle.Fill;manage.Margin=new Padding(8,0,0,0);panel.Controls.Add(manage,1,0);return panel;
+        });manage.Enabled=backend!=null;manage.Dock=DockStyle.Fill;manage.Margin=new Padding(10,0,0,0);manage.MinimumSize=Size.Empty;manage.AutoSize=false;manage.Padding=new Padding(8,0,8,0);panel.Controls.Add(manage,1,0);
+        if(backend!=null){
+            var cancellation=new System.Threading.CancellationTokenSource();var token=cancellation.Token;bool loaded=false,disposed=false;
+            owner.Disposed+=(s,e)=>{if(disposed)return;disposed=true;cancellation.Cancel();cancellation.Dispose();};
+            Action load=async()=>{if(loaded||owner.IsDisposed)return;loaded=true;try{
+                var result=await Task.Run(()=>Backend.WithReadCancellation(()=>backend.Call("profile_list",J.O()),token));
+                if(owner.IsDisposed||selector.IsDisposed||token.IsCancellationRequested)return;
+                var state=(State)selector.Tag;object current=state.Current??state.Rows[selector.SelectedIndex];
+                var rows=J.A(J.V(result,"profiles")).ToList();if(!rows.Any(row=>J.S(row,"id")==J.S(current,"id")))rows.Add(current);
+                Fill(selector,rows);Load(selector,J.O("launch_profile",J.S(current,"id"),"launch_profile_label",J.S(current,"label"),"launch_profile_settings",J.V(current,"settings")));
+            }catch(Exception){/* Built-in and currently selected profiles stay usable after a read failure. */}};
+            var dialog=owner as MotionDialog;if(dialog!=null&&dialog.Presentation!=null)dialog.Presentation.Presented+=load;else owner.Shown+=(s,e)=>load();
+        }
+        return panel;
     }
 }
 
-sealed class LaunchProfileDialog : Form {
+sealed class LazyHelpPanel : BufferedPanel {
+    Func<Control> build;
+    internal LazyHelpPanel(Func<Control> build){this.build=build;Dock=DockStyle.Fill;}
+    void Prepare(){if(build==null||!Visible||!IsHandleCreated)return;var create=build;build=null;var view=create();Theme.StyleAuxiliary(view);view.Dock=DockStyle.Fill;Controls.Add(view);}
+    protected override void OnHandleCreated(EventArgs e){base.OnHandleCreated(e);Prepare();}
+    protected override void OnVisibleChanged(EventArgs e){base.OnVisibleChanged(e);Prepare();}
+}
+
+sealed class LaunchProfileDialog : MotionDialog {
     readonly Backend backend;readonly ThemedSelector presets=Theme.Combo(),accelerator=Theme.Combo("WHPX","TCG");
     readonly ChoiceStrip acceleratorChoices=new ChoiceStrip(2,"WHPX","TCG");
     readonly FieldInput title=Theme.Input(),cpu=Theme.Input(),options=Theme.Input();
@@ -84,7 +104,7 @@ sealed class LaunchProfileDialog : Form {
         Theme.Row(fields,"",actions,true);Theme.Row(fields,"",hint,true);
         var buttons=Theme.Flow();buttons.Controls.Add(Theme.Button("Выбрать",()=>{if(editing==null){MessageBox.Show(this,"Сначала сохрани новый профиль.");return;}Selected=rows[presets.SelectedIndex];DialogResult=DialogResult.OK;Close();},true));buttons.Controls.Add(Theme.Button("Закрыть",Close));
         fields.AutoScroll=false;
-        Theme.Dialog(this,new ScrollSurface(fields),buttons,"Профили запуска","Сохранение меняет каталог. Для VM выбери профиль и сохрани её параметры.");
+        Theme.AuxiliaryDialog(this,new ScrollSurface(fields),buttons,"Профили запуска","Сохранение меняет каталог. Для VM выбери профиль и сохрани её параметры.");
         presets.SelectedIndexChanged+=(sender,args)=>ShowSelected();Reload(selected);
     }
     void Safe(Action action){try{action();}catch(Exception error){MessageBox.Show(this,error.Message,"Профили запуска",MessageBoxButtons.OK,MessageBoxIcon.Warning);}}
@@ -108,14 +128,14 @@ static class ArgText {
     }
 }
 
-sealed class ExtraArgsDialog : Form {
+sealed class ExtraArgsDialog : MotionDialog {
     internal readonly ThemedEditor Editor;public string Value {get{return Editor.Text;}}
     public ExtraArgsDialog(string value){
         Text="Расширенный редактор Extra args";Theme.Form(this,1000,730);
-        Editor=Theme.Editor(value);Editor.Font=new Font("Consolas",11F);Editor.AcceptsTab=true;
+        Editor=Theme.Editor(value);Editor.Font=UiTypography.Points(11F);Editor.AcceptsTab=true;
         var buttons=Theme.Flow();buttons.Dock=DockStyle.Bottom;buttons.Padding=new Padding(20,10,10,0);
-        buttons.Controls.Add(Theme.Button("Применить",()=>{try{ArgText.Parse(Editor.Text);DialogResult=DialogResult.OK;Close();}catch(Exception error){MessageBox.Show(this,error.Message,"Extra args");}},true));
-        buttons.Controls.Add(Theme.Button("Отмена",()=>{DialogResult=DialogResult.Cancel;Close();}));Theme.Dialog(this,Theme.EditorLayout(Editor,"Аргументы запуска","Без имени программы. Пути с пробелами — в двойных кавычках.\r\nПереносы строк разделяют аргументы; команды PowerShell здесь не выполняются.",null),buttons,"Extra args","Дополнительные аргументы запуска QEMU.","РЕДАКТОР ПАРАМЕТРОВ");
+        buttons.Controls.Add(Theme.Button("Применить",()=>{try{ArgText.Parse(Editor.Text);DialogResult=DialogResult.OK;Close();}catch(Exception error){MessageBox.Show(this,error.Message,"Аргументы QEMU");}},true));
+        buttons.Controls.Add(Theme.Button("Отмена",()=>{DialogResult=DialogResult.Cancel;Close();}));Theme.AuxiliaryDialog(this,Theme.EditorLayout(Editor,"Аргументы запуска","Без имени программы. Пути с пробелами — в двойных кавычках.\r\nПереносы строк разделяют аргументы; команды PowerShell здесь не выполняются.",null),buttons,"Аргументы QEMU","Дополнительные аргументы запуска QEMU.","РЕДАКТОР ПАРАМЕТРОВ");
     }
 }
 
@@ -128,21 +148,21 @@ sealed class LaunchSettingsUi {
     Dictionary<string,object> source;string normalizedExtra;bool initialized;string[] warnings=new string[0];
     public LaunchSettingsUi(MainWindow main,Form owner,PageDeck tabs,Func<Dictionary<string,object>> context,Action ensureVisual=null){
         this.main=main;this.owner=owner;this.tabs=tabs;this.context=context;this.ensureVisual=ensureVisual;
-        NetworkPage=new PageView("Сеть");ExtraPage=new PageView("Extra args");HelpPage=new PageView("Справка Extra args");
-        var netPanel=new Panel{Dock=DockStyle.Fill,Padding=new Padding(20)};
-        var netTop=Theme.Flow(true);netTop.Dock=DockStyle.Top;netTop.Controls.Add(Theme.Label("Сетевые адаптеры",20,null,true));hint.MaximumSize=new Size(700,0);hint.Margin=new Padding(0,12,0,15);netTop.Controls.Add(hint);
-        networkButtons.Dock=DockStyle.Bottom;networkButtons.Padding=new Padding(0,15,0,0);
-        networkButtons.Controls.Add(Theme.Button("Добавить адаптер",()=>Safe(Add),true));networkButtons.Controls.Add(Theme.Button("Изменить",()=>Safe(Edit)));networkButtons.Controls.Add(Theme.Button("Удалить",()=>Safe(Remove)));
-        var preview=Theme.Button("Проверить сеть",()=>Safe(Preview));
-        var extraActions=Theme.Flow();extraActions.Dock=DockStyle.Bottom;extraActions.Controls.Add(preview);
-        netPanel.Controls.Add(List);netPanel.Controls.Add(netTop);netPanel.Controls.Add(networkButtons);netPanel.Controls.Add(extraActions);NetworkPage.Controls.Add(netPanel);
-        List.DoubleClick+=(sender,args)=>Safe(Edit);
-        Extra.Font=new Font("Consolas",11F);Extra.AcceptsTab=true;
+        NetworkPage=new PageView("Сеть");ExtraPage=new PageView("Аргументы QEMU");HelpPage=new PageView("Справка QEMU");
+        var netPanel=Theme.Flow(true);
+        var netTop=Theme.Flow(true);netTop.Dock=DockStyle.None;hint.MaximumSize=new Size(720,0);hint.Margin=new Padding(0,0,0,24);netTop.Controls.Add(hint);
+        networkButtons.Dock=DockStyle.None;networkButtons.Padding=new Padding(0,22,0,0);
+        networkButtons.Controls.Add(Theme.Button("Добавить адаптер",()=>Safe(Add),true));networkButtons.Controls.Add(Theme.Button("Изменить",()=>Safe(Edit)));networkButtons.Controls.Add(Theme.Button("Удалить",()=>Safe(Remove),false,true));
+        var preview=Theme.Button("Проверить сеть",()=>Safe(Preview));preview.BackColor=Theme.Text;preview.ForeColor=Color.White;networkButtons.Controls.Add(preview);
+        var selectionHint=Theme.Label("Выбери строку таблицы для изменения или удаления адаптера.",9,Theme.Muted);selectionHint.Dock=DockStyle.None;selectionHint.Height=32;selectionHint.AutoSize=false;selectionHint.Margin=new Padding(0,16,0,0);
+        List.Dock=DockStyle.None;List.Size=new Size(700,88);netPanel.Controls.Add(netTop);netPanel.Controls.Add(List);netPanel.Controls.Add(networkButtons);netPanel.Controls.Add(selectionHint);netPanel.SizeChanged+=(s,e)=>{int width=Math.Max(1,netPanel.ClientSize.Width);List.Width=selectionHint.Width=width;networkButtons.MaximumSize=new Size(width,0);hint.MaximumSize=new Size(width,0);};NetworkPage.Controls.Add(new ScrollSurface(netPanel));
+        List.ConfigureRequested+=(sender,args)=>Safe(Edit);
+        Extra.Font=UiTypography.Make(12);Extra.AcceptsTab=true;
         var extraButtons=Theme.Flow();
         extraButtons.Controls.Add(Theme.Button("Открыть редактор",()=>Safe(()=>{using(var editor=new ExtraArgsDialog(Extra.Text)){if(editor.ShowDialog(owner)==DialogResult.OK)Extra.Text=editor.Value;}}),true));
         extraButtons.Controls.Add(Theme.Button("Справка и примеры",()=>tabs.SelectedPage=HelpPage));extraButtons.Controls.Add(Theme.Button("Разобрать аргументы",()=>Safe(()=>{var args=ArgText.Parse(Extra.Text);using(var view=new ExtraArgsDialog(String.Join(Environment.NewLine,args.Select((value,index)=>(index+1)+": "+J.Json().Serialize(value))))){view.Text="Аргументы после разбора · только просмотр";view.Editor.ReadOnly=true;view.ShowDialog(owner);}})));
-        ExtraPage.Controls.Add(Theme.EditorLayout(Extra,"Дополнительные аргументы","Укажи только параметры QEMU, без имени программы.\r\nНапример: -device usb-tablet. Путь с пробелами: -D \"C:\\VM Logs\\qemu.log\"",extraButtons));
-        HelpPage.Controls.Add(new ExtraHelpView(sample=>Safe(()=>{if(ensureVisual!=null)ensureVisual();var current=ArgText.Parse(Extra.Text);Extra.Text=ArgText.Format(current.Cast<object>().Concat(sample.Args));tabs.SelectedPage=ExtraPage;})));
+        var extraLayout=(TableLayoutPanel)Theme.EditorLayout(Extra,"Дополнительные аргументы","Укажи только параметры QEMU, без имени программы.\r\nНапример: -device usb-tablet. Путь с пробелами: -D \"C:\\VM Logs\\qemu.log\"",extraButtons);var extraHeading=(FlowLayoutPanel)extraLayout.GetControlFromPosition(0,0);var argsLabel=Theme.Label("Аргументы QEMU",9,Theme.Muted,true);argsLabel.Margin=new Padding(0,16,0,0);extraHeading.Controls.Add(argsLabel);extraLayout.Margin=Padding.Empty;ExtraPage.Controls.Add(extraLayout);
+        HelpPage.Controls.Add(new LazyHelpPanel(()=>new ExtraHelpView(sample=>Safe(()=>{if(ensureVisual!=null)ensureVisual();var current=ArgText.Parse(Extra.Text);Extra.Text=ArgText.Format(current.Cast<object>().Concat(sample.Args));tabs.SelectedPage=ExtraPage;}))));
         tabs.Pages.Add(NetworkPage);tabs.Pages.Add(ExtraPage);tabs.Pages.Add(HelpPage);
         tabs.Selecting+=(sender,args)=>{if(args.Page==NetworkPage)try{if(ensureVisual!=null)ensureVisual();context();}catch(Exception error){args.Cancel=true;MessageBox.Show(owner,error.Message,"Сетевые параметры",MessageBoxButtons.OK,MessageBoxIcon.Warning);}};
     }
@@ -179,6 +199,7 @@ sealed class LaunchSettingsUi {
         if(warnings.Length>0)hint.Text+=Environment.NewLine+String.Join(Environment.NewLine,warnings);
         List.Items.Clear();var displayed=Adapters.ToArray();
         foreach(object item in displayed){string type=J.S(item,"type","user");string mode=type=="user"?"NAT":type=="socket"?(J.S(item,"mode")=="mcast"?"MCAST ":"TCP ")+J.S(item,"mode","ручной"):type.ToUpperInvariant();var row=new AdapterRow(new[]{J.S(item,"id"),mode,J.S(item,"model"),J.S(item,"mac","Авто"),type=="user"?J.S(item,"net","10.0.2.0/24"):type=="tap"?J.S(item,"ifname"):J.S(item,"address")+":"+J.N(item,"port")});List.Items.Add(row);}
+        List.Height=40+Math.Max(1,List.Items.Count)*List.ItemHeight;if(List.Items.Count>0)List.SelectedIndex=0;
     }
     void Add(){
         if(ensureVisual!=null)ensureVisual();context();
@@ -190,20 +211,20 @@ sealed class LaunchSettingsUi {
     void Remove(){if(List.SelectedIndex<0)return;Adapters.RemoveAt(List.SelectedIndex);Render();}
     void Preview(){
         if(ensureVisual!=null)ensureVisual();var data=context();if(main.Backend==null)return;
-        main.Run("Проверяю сетевые параметры…",()=>main.Backend.Call("network_validate",J.O("data",data)),result=>{using(var view=new ExtraArgsDialog(ArgText.Format(J.A(J.V(result,"args"))))){view.Text="Сеть и Extra args · только просмотр";view.Editor.ReadOnly=true;view.ShowDialog(owner);}});
+        main.Read("Проверяю сетевые параметры…",()=>main.Backend.Call("network_validate",J.O("data",data)),result=>{if(owner.IsDisposed)return;using(var view=new ExtraArgsDialog(ArgText.Format(J.A(J.V(result,"args"))))){view.Text="Сеть и Extra args · только просмотр";view.Editor.ReadOnly=true;view.ShowDialog(owner);}},null,"network-validate/"+J.Json().Serialize(data));
     }
 }
 
-sealed class NetworkAdapterDialog : Form {
+sealed class NetworkAdapterDialog : MotionDialog {
     readonly Dictionary<string,object> original;readonly FieldInput identifier,mac,network,dhcp,address,ifname,backend,backendOptions,deviceOptions;readonly ThemedEditor forwards;readonly ThemedSelector model;
     readonly ThemedSelector mode=Theme.Combo("NAT · Интернет и проброс портов","TCP · слушать соединение VM","TCP · подключиться к VM","TAP · существующий адаптер Windows","Другой backend · вручную","MCAST · общая сеть VM");
     readonly CheckBox restrict=new CheckBox{Text="Изоляция NAT: ограничить исходящие соединения",AutoSize=true,ForeColor=Theme.Text};readonly NumberInput port;readonly FieldInput localaddr;
     public object Value {get;private set;}
     public NetworkAdapterDialog(object data){
-        original=new Dictionary<string,object>(J.D(data));localaddr=Theme.Input(J.S(data,"localaddr"));Text="Сетевой адаптер";Theme.Form(this,940,830);
+        original=new Dictionary<string,object>(J.D(data));localaddr=Theme.Input(J.S(data,"localaddr"));Text="Сетевой адаптер";Theme.Form(this,884,880);
         identifier=Theme.Input(J.S(data,"id"));model=Theme.Combo("e1000e","virtio-net-pci","e1000","rtl8139");model.DropDownStyle=ComboBoxStyle.DropDown;model.Text=J.S(data,"model","virtio-net-pci");mac=Theme.Input(J.S(data,"mac"));network=Theme.Input(J.S(data,"net"));dhcp=Theme.Input(J.S(data,"dhcpstart"));
         address=Theme.Input(J.S(data,"address","127.0.0.1"));port=Theme.Number(J.N(data,"port",1234),1,65535);ifname=Theme.Input(J.S(data,"ifname"));backend=Theme.Input(J.S(data,"type","user"));
-        backendOptions=Theme.Input(J.S(data,"backend_options"));deviceOptions=Theme.Input(J.S(data,"device_options"));forwards=Theme.Editor(String.Join(Environment.NewLine,J.A(J.V(data,"hostfwd")).Select(Convert.ToString)));forwards.Height=90;forwards.Font=new Font("Consolas",10F);restrict.Checked=J.B(data,"restrict");
+        backendOptions=Theme.Input(J.S(data,"backend_options"));deviceOptions=Theme.Input(J.S(data,"device_options"));forwards=Theme.Editor(String.Join(Environment.NewLine,J.A(J.V(data,"hostfwd")).Select(Convert.ToString)));forwards.Height=90;forwards.Font=UiTypography.Points(10F);restrict.Checked=J.B(data,"restrict");
         var connectionChoices=new ChoiceStrip(3,"NAT","TCP · слушать","TCP · подключиться","TAP","Другой backend","MCAST");connectionChoices.Bind(mode);
         var fields=Theme.Fields();Theme.Row(fields,"ID сети",identifier);Theme.Row(fields,"Подключение",connectionChoices,true);Theme.Row(fields,"Модель NIC",model);Theme.Row(fields,"MAC (пусто — авто)",mac);
         var natFields=new[]{Theme.Row(fields,"Подсеть NAT / CIDR",network),Theme.Row(fields,"DHCP начинается с",dhcp),Theme.Row(fields,"",restrict),Theme.Row(fields,"Проброс портов NAT",forwards,true)};
@@ -212,7 +233,7 @@ sealed class NetworkAdapterDialog : Form {
         Theme.Row(fields,"",Theme.Label("Модели: virtio-net-pci, e1000, e1000e, rtl8139.\r\nVirtio требует драйвер гостевой ОС.\r\nПроброс: tcp:127.0.0.1:2222-:22 — по одному правилу в строке.\r\nTAP требует уже установленного драйвера и адаптера.",9,Theme.Muted));
         string type=J.S(data,"type","user");mode.SelectedIndex=type=="user"?0:type=="socket"&&J.S(data,"mode")=="listen"?1:type=="socket"&&J.S(data,"mode")=="connect"?2:type=="tap"?3:type=="socket"&&J.S(data,"mode")=="mcast"?5:4;
         Action selectFields=()=>{bool user=mode.SelectedIndex==0,tcp=mode.SelectedIndex==1||mode.SelectedIndex==2||mode.SelectedIndex==5;fields.SuspendLayout();foreach(var field in natFields)field.Visible=user;foreach(var field in tcpFields)field.Visible=tcp;localField.Visible=mode.SelectedIndex==5;tapField.Visible=mode.SelectedIndex==3;customField.Visible=mode.SelectedIndex==4;fields.ResumeLayout();};mode.SelectedIndexChanged+=(sender,args)=>selectFields();selectFields();
-        var buttons=Theme.Flow();buttons.Controls.Add(Theme.Button("Применить",Save,true));buttons.Controls.Add(Theme.Button("Отмена",()=>{DialogResult=DialogResult.Cancel;Close();}));Theme.Dialog(this,fields,buttons,"Сетевой адаптер",J.S(data,"id")+" · подключение, адресация и проброс портов");
+        var buttons=Theme.Flow();buttons.Controls.Add(Theme.Button("Применить",Save,true));buttons.Controls.Add(Theme.Button("Отмена",()=>{DialogResult=DialogResult.Cancel;Close();}));Theme.Dialog(this,fields,buttons,"Сетевой адаптер",J.S(data,"id")+" · подключение, адресация и проброс портов","СЕТЕВОЙ АДАПТЕР");foreach(var header in Controls.OfType<ReferenceHeader>())header.Compact("NETWORK",37);
     }
     void Save(){
         if(!Regex.IsMatch(identifier.Text.Trim(),@"^[A-Za-z_][A-Za-z0-9_.-]{0,63}$")||!Regex.IsMatch(model.Text.Trim(),@"^[A-Za-z0-9_][A-Za-z0-9_.-]{0,79}$")){MessageBox.Show(this,"Проверь ID и модель адаптера.");return;}
@@ -232,17 +253,17 @@ sealed class ExtraHelpView : UserControl {
     readonly Label articleTitle=Theme.Label("",19,null,true),exampleCaption=Theme.Label("Пример для вставки",9,Theme.Muted);
     readonly Button insertButton,copyButton;
     public ExtraHelpView(Action<ExtraExample> insert){
-        this.insert=insert;Dock=DockStyle.Fill;BackColor=Theme.Bg;Padding=new Padding(24);topics.ItemHeight=44;
-        body.BackColor=Theme.Bg;body.BorderVisible=false;body.ReadOnly=true;body.Font=new Font("Segoe UI",10F);body.Padding=new Padding(0,12,10,8);
-        var layout=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=2,Margin=Padding.Empty};layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,214));layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));
-        var left=new Panel{Dock=DockStyle.Fill,Padding=new Padding(0,0,24,0),Margin=Padding.Empty};
+        this.insert=insert;Dock=DockStyle.Fill;BackColor=Theme.Bg;Padding=new Padding(24);topics.ItemHeight=44;topics.Font=UiTypography.Make(9.5F,500);topics.SelectionForeColor=Theme.Text;
+        body.BackColor=Theme.Bg;body.BorderVisible=false;body.ReadOnly=true;body.Font=UiTypography.Points(10F);body.Padding=new Padding(0,12,10,8);
+        var layout=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=2,Margin=Padding.Empty};layout.ColumnStyles.Add(new ColumnStyle(SizeType.Absolute,235));layout.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));
+        var left=new Panel{Dock=DockStyle.Fill,Padding=new Padding(0,0,25,0),Margin=Padding.Empty};
         var find=new TableLayoutPanel{Dock=DockStyle.Top,ColumnCount=1,RowCount=2,Height=86,Padding=Padding.Empty};find.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));
         var hint=Theme.Label("Поиск по справке",9,Theme.Muted);hint.Margin=new Padding(0,0,0,8);find.Controls.Add(hint,0,0);
         search.SearchIcon=true;search.Placeholder="Параметр или тема…";search.Dock=DockStyle.Top;search.Margin=Padding.Empty;find.Controls.Add(search,0,1);left.Controls.Add(topics);left.Controls.Add(find);
         var right=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=1,RowCount=3,Padding=Padding.Empty,Margin=Padding.Empty};right.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));
         right.RowStyles.Add(new RowStyle(SizeType.AutoSize));right.RowStyles.Add(new RowStyle(SizeType.Percent,100));right.RowStyles.Add(new RowStyle(SizeType.Absolute,180));
         articleTitle.Dock=DockStyle.Fill;articleTitle.Margin=new Padding(0,0,0,4);right.Controls.Add(articleTitle,0,0);body.Margin=Padding.Empty;right.Controls.Add(body,0,1);
-        var sample=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=1,RowCount=3,AutoSize=false,Padding=new Padding(16),BackColor=Theme.Panel,Margin=new Padding(0,18,0,0)};sample.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));sample.RowStyles.Add(new RowStyle(SizeType.AutoSize));sample.RowStyles.Add(new RowStyle(SizeType.Absolute,56));sample.RowStyles.Add(new RowStyle(SizeType.Absolute,55));
+        var sample=new TableLayoutPanel{Dock=DockStyle.Fill,ColumnCount=1,RowCount=3,AutoSize=false,Padding=new Padding(16),BackColor=Theme.Panel,Margin=new Padding(0,18,0,0)};sample.Paint+=(s,e)=>{using(var path=Drawing.Rounded(new Rectangle(0,0,sample.Width-1,sample.Height-1),8))using(var pen=new Pen(Theme.Line))e.Graphics.DrawPath(pen,path);};sample.ColumnStyles.Add(new ColumnStyle(SizeType.Percent,100));sample.RowStyles.Add(new RowStyle(SizeType.AutoSize));sample.RowStyles.Add(new RowStyle(SizeType.Absolute,56));sample.RowStyles.Add(new RowStyle(SizeType.Absolute,55));
         exampleCaption.Margin=new Padding(0,0,0,8);sample.Controls.Add(exampleCaption,0,0);
         examples.Dock=DockStyle.Top;examples.Margin=new Padding(0,0,0,16);sample.Controls.Add(examples,0,1);
         var buttons=Theme.Flow();buttons.AutoSizeMode=AutoSizeMode.GrowAndShrink;buttons.Dock=DockStyle.Top;buttons.Margin=Padding.Empty;

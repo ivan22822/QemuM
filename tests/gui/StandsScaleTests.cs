@@ -1,4 +1,4 @@
-using System;
+﻿using System;
 using System.Collections.Generic;
 using System.Diagnostics;
 using System.Drawing;
@@ -25,7 +25,7 @@ static class StandsScaleTests {
             foreach(var name in names)File.Copy(Path.Combine(args[0],"machines","test.json"),Path.Combine(args[0],"machines",name+".json"));
             var measurements=new Dictionary<string,object>();
             using(var main=new MainWindow(args[0],null,false,false)){
-                main.Backend=new Backend(args[0]);main.Backend.Open();
+                main.Backend=new Backend(args[0],args.Length>2?args[2]:null);main.Backend.Open();
                 for(int i=0;i<100;i++){
                     var members=names.Skip(i*5).Take(5).ToArray();
                     main.Backend.Call("stand_save",J.O("revision",0,"stand",J.O("schema_version",1,"id",Guid.NewGuid().ToString("N"),"revision",0,"name","Стенд "+i+" · длинное название лаборатории для проверки списка","description","","members",members,"order",members,"links",new object[0])));
@@ -35,7 +35,7 @@ static class StandsScaleTests {
                 Trace(args[1],"read library");
                 var watch=Stopwatch.StartNew();var rows=main.Backend.Call("list");watch.Stop();measurements["read_501_vm_ms"]=watch.ElapsedMilliseconds;
                 watch.Restart();Call(main,"Fill",rows);Wait(main);watch.Stop();measurements["render_100_stands_ms"]=watch.ElapsedMilliseconds;
-                var cards=Field<FlowLayoutPanel>(main,"cards");Check(cards.Controls.OfType<Button>().Count()==100,"large stand list renders every folder");
+                var cards=Field<FlowLayoutPanel>(main,"cards");var virtualCards=cards as VirtualLibraryPanel;Check(virtualCards!=null&&virtualCards.VirtualMode&&virtualCards.ModelCount==100&&cards.Controls.OfType<Button>().Count()<32,"large stand list exposes every folder with bounded native controls");
                 Trace(args[1],"open folders");
                 GC.Collect();GC.WaitForPendingFinalizers();uint gdiBefore=GetGuiResources(Process.GetCurrentProcess().Handle,0);
                 watch.Restart();for(int i=0;i<30;i++){cards.Controls.OfType<StandFolderButton>().First().Controls.OfType<Button>().Single().PerformClick();Application.DoEvents();}watch.Stop();measurements["open_folder_30_times_ms"]=watch.ElapsedMilliseconds;

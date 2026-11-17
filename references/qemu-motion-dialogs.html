@@ -1,0 +1,625 @@
+<!doctype html><html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><meta name="theme-color" content="#F4F1EA"><title>QEMU — Machines & Stands in Motion</title><style>body{margin:0;padding:16px;background:#24211d;font-family:Arial,Helvetica,sans-serif}body>main{width:100%;max-width:1600px;margin:0 auto;box-sizing:border-box}@media(max-width:600px){body{padding:8px}}@media(prefers-reduced-motion:reduce){.dw,.dw::backdrop,.dc::backdrop{animation:none!important;transition:none!important}}
+</style></head><body><main><style>
+#qemu-options .q-app{--bg:#14191f;--side:#222b32;--panel:#1c242b;--button:#35444c;--line:#3c4a52;--ink:#f2f2ee;--muted:#afbec6;--accent:#74d3cf;--green:#a2d6b0;background:var(--bg);color:var(--ink);border:1px solid var(--line);border-radius:10px;overflow:hidden;font:14px/1.5 'Segoe UI',Arial,sans-serif;min-height:650px;color-scheme:dark}
+#qemu-options .q-app *{box-sizing:border-box}
+#qemu-options .q-chrome{height:38px;background:var(--side);border-bottom:1px solid var(--line);padding:9px 16px;color:var(--muted);font-size:12px}
+#qemu-options .q-chrome b{color:var(--accent);margin-right:9px}
+#qemu-options .q-layout{display:grid;grid-template-columns:210px minmax(0,1fr);min-height:612px}
+#qemu-options .q-side{background:var(--side);padding:22px 13px 16px;border-right:1px solid var(--line);display:flex;flex-direction:column;gap:17px;min-width:0}
+#qemu-options .q-app h2{font-size:23px;margin:3px 0;font-weight:600}
+#qemu-options .q-app h3{font-size:14px;margin:0 0 15px;font-weight:600}
+#qemu-options .q-eyebrow{font-size:11px;text-transform:uppercase;letter-spacing:1.5px;color:var(--muted)}
+#qemu-options .q-muted{color:var(--muted);font-size:12px}
+#qemu-options .q-app input{font:inherit;font-size:12px;width:100%;border:1px solid var(--line);background:var(--bg);color:var(--ink);padding:9px 10px;border-radius:6px}
+#qemu-options .q-app button{font:inherit;font-size:12px;padding:9px 12px;border:0;border-radius:6px;background:var(--button);color:var(--ink);display:inline-flex;justify-content:center;align-items:center;gap:7px;cursor:pointer;max-width:100%}
+#qemu-options .q-app button:hover{filter:brightness(1.13)}
+#qemu-options .q-app button svg{width:15px;height:15px;flex-shrink:0}
+#qemu-options .q-seg{display:flex;padding:3px;gap:3px;background:var(--bg);border-radius:7px}
+#qemu-options .q-seg button{flex:1;background:transparent;color:var(--muted);padding:5px}
+#qemu-options .q-seg button[aria-pressed=true]{background:var(--button);color:var(--accent)}
+#qemu-options .q-list{display:flex;flex-direction:column;gap:5px}
+#qemu-options .q-list button{background:transparent;justify-content:flex-start;text-align:left;padding:11px 8px;gap:9px;width:100%}
+#qemu-options .q-list button[aria-pressed=true]{background:var(--button);box-shadow:inset 3px 0 var(--accent)}
+#qemu-options .q-machine-label{flex:1;min-width:0}
+#qemu-options .q-machine-label strong{display:block;font-size:13px;font-weight:600;overflow-wrap:anywhere}
+#qemu-options .q-machine-label small{display:block;font-size:11px;color:var(--muted);margin-top:3px}
+#qemu-options .q-os{color:#ee6424;width:28px;flex-shrink:0;font-size:27px;display:grid;place-items:center}
+#qemu-options .q-dot{width:6px;height:6px;border-radius:50%;background:var(--muted);flex-shrink:0}
+#qemu-options .q-dot.running{background:var(--green)}
+#qemu-options .q-dot.paused{background:#e6bd7e}
+#qemu-options .q-create{margin-top:auto}
+#qemu-options .q-main{padding:20px 24px;min-width:0}
+#qemu-options .q-top{display:flex;justify-content:space-between;align-items:center;gap:12px;margin-bottom:26px}
+#qemu-options .q-app .q-service{background:var(--side);color:var(--muted);padding:5px 10px}
+#qemu-options .q-heading{display:flex;align-items:center;gap:15px;margin-bottom:24px}
+#qemu-options .q-heading .q-os{width:54px;height:54px;font-size:44px;background:var(--side);border-radius:10px}
+#qemu-options .q-name{font-size:25px;font-weight:600;letter-spacing:-.4px;overflow-wrap:anywhere}
+#qemu-options .q-status{display:flex;align-items:center;gap:7px;color:var(--green);font-size:12px;margin-top:4px;flex-wrap:wrap}
+#qemu-options .q-actions{display:flex;gap:8px;flex-wrap:wrap;margin-bottom:24px}
+#qemu-options .q-app .q-primary{background:var(--accent);color:#14272b;font-weight:600}
+#qemu-options .q-tabs{display:flex;flex-wrap:wrap;gap:18px;border-bottom:1px solid var(--line);margin-bottom:24px}
+#qemu-options .q-tabs button{background:transparent;border-radius:0;padding:0 0 12px;border-bottom:2px solid transparent;color:var(--muted)}
+#qemu-options .q-tabs button[aria-selected=true]{border-color:var(--accent);color:var(--accent)}
+#qemu-options .q-pair{display:grid;grid-template-columns:1fr 1fr;gap:15px}
+#qemu-options .q-panel{padding:17px;background:var(--panel);border:1px solid var(--line);border-radius:9px;min-width:0}
+#qemu-options .q-row{display:flex;align-items:center;justify-content:space-between;gap:10px;padding:12px 0;border-top:1px solid var(--line);font-size:12px}
+#qemu-options .q-row span{color:var(--muted)}
+#qemu-options .q-row b{font-weight:500;text-align:right}
+#qemu-options .q-metrics{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;margin-bottom:18px}
+#qemu-options .q-metric{padding:18px 15px;background:var(--panel);border:1px solid var(--line);border-radius:9px}
+#qemu-options .q-metric svg{width:19px;height:19px;color:var(--muted);margin-bottom:10px}
+#qemu-options .q-metric label{display:block;color:var(--muted);font-size:12px}
+#qemu-options .q-metric strong{display:block;font-size:25px;font-weight:500;margin-top:5px}
+#qemu-options .q-app .q-link{background:transparent;color:var(--accent);padding:3px;font-size:12px}
+#qemu-options .q-work{display:grid;grid-template-columns:minmax(0,1fr) 185px;gap:18px}
+#qemu-options .q-inspector{background:var(--side);border:1px solid var(--line);border-radius:9px;padding:16px;height:fit-content}
+#qemu-options .q-inspector .q-row{display:block}
+#qemu-options .q-inspector b{display:block;text-align:left;margin-top:4px}
+#qemu-options .q-console{padding:26px 20px;border:1px solid var(--line);border-radius:9px;background:var(--panel)}
+#qemu-options .q-console h3{font-size:19px;margin:12px 0}
+#qemu-options .q-console p{font-size:12px;color:var(--muted);margin:0 0 22px}
+#qemu-options .q-screen{padding:22px;background:#10151a;font:12px/1.8 Consolas,monospace;min-height:210px;color:var(--muted);border-radius:6px}
+#qemu-options .q-feedback{color:var(--accent);font-size:12px;min-height:20px;margin-top:20px}
+#qemu-options .q-empty{padding:20px 0;color:var(--muted);font-size:12px}
+#qemu-options .q-power{position:relative}
+#qemu-options .q-menu{position:absolute;top:42px;right:0;z-index:4;min-width:210px;background:var(--side);padding:5px;border:1px solid var(--line);border-radius:8px;box-shadow:0 10px 25px #0006}
+#qemu-options .q-menu button{display:flex;width:100%;justify-content:flex-start;background:transparent}
+#qemu-options .q-menu button:last-child{color:#efa7a2}
+#qemu-options [hidden]{display:none!important}
+@media(max-width:800px){#qemu-options .q-layout{grid-template-columns:185px minmax(0,1fr);min-height:825px}#qemu-options .q-app{min-height:863px}#qemu-options .q-main{padding:18px}#qemu-options .q-pair,#qemu-options .q-work{grid-template-columns:1fr}#qemu-options .q-inspector{display:grid;grid-template-columns:1fr 1fr;gap:0 12px}#qemu-options .q-inspector h3{grid-column:1/-1}#qemu-options .q-name{font-size:22px}}
+@media(max-width:540px){#qemu-options .q-layout{display:block;min-height:1120px}#qemu-options .q-app{min-height:1158px}#qemu-options .q-side{border-right:0;border-bottom:1px solid var(--line);gap:12px;padding:14px}#qemu-options .q-list{display:grid;grid-template-columns:1fr 1fr}#qemu-options .q-list button{padding:8px 4px;gap:6px}#qemu-options .q-machine-label strong{font-size:12px}#qemu-options .q-os{width:23px}#qemu-options .q-main{padding:18px 14px}#qemu-options .q-metrics{gap:7px}#qemu-options .q-metric{padding:12px 8px}#qemu-options .q-metric strong{font-size:21px}#qemu-options .q-metric label{font-size:11px}#qemu-options .q-tabs{gap:15px}}
+</style>
+<style>
+#qemu-options .q-app{border-radius:10px;min-height:690px}
+#qemu-options .q-chrome{display:flex;align-items:center;padding:0 16px;height:39px}
+#qemu-options .q-chrome-note{margin-left:auto;font-size:11px;letter-spacing:.2px;opacity:.7}
+#qemu-options .q-layout{grid-template-columns:202px minmax(0,1fr);min-height:650px}
+#qemu-options .q-main{padding:18px 22px 12px}
+#qemu-options .q-top{margin-bottom:23px}
+#qemu-options .q-path-sep{margin:0 9px;opacity:.5}
+#qemu-options .q-heading{margin-bottom:18px;gap:12px}
+#qemu-options .q-heading .q-os{width:43px;height:43px;font-size:35px;border-radius:9px}
+#qemu-options .q-name{font-size:23px}
+#qemu-options .q-actions{padding-bottom:20px;margin-bottom:0}
+#qemu-options .q-work{grid-template-columns:minmax(0,1fr) 202px;gap:20px;border-top:1px solid var(--line)}
+#qemu-options .q-work>div{min-width:0;padding-top:19px}
+#qemu-options .q-tabs{gap:22px;margin-bottom:18px}
+#qemu-options .q-inspector{border:0;border-left:1px solid var(--line);border-radius:0;background:transparent;padding:20px 0 0 19px;min-height:410px}
+#qemu-options .q-inspector h3{margin-bottom:16px}
+#qemu-options .q-inspector .q-row{display:flex;flex-wrap:wrap;padding:12px 0;gap:5px 10px}
+#qemu-options .q-inspector .q-row b{margin:0;text-align:right}
+#qemu-options .q-inspector .q-row:nth-of-type(4){margin-top:16px}
+#qemu-options .q-inspector .q-row span{font-size:12px}
+#qemu-options .q-inspector .q-row b{font-size:12px}
+#qemu-options .q-app .q-edit-config{width:100%;margin-top:21px;background:var(--side);font-size:11px;padding:10px 8px}
+#qemu-options .q-config-note{font-size:11px;color:var(--muted);margin-top:10px;line-height:1.5}
+#qemu-options .q-console{min-height:330px;display:flex;flex-direction:column;align-items:center;justify-content:center;padding:28px 22px;text-align:center;background:#11171c;border-color:#303b44}
+#qemu-options .q-console h3{font-size:17px;margin:18px 0 9px;font-weight:500}
+#qemu-options .q-console p{max-width:280px;font-size:12px;margin-bottom:20px;line-height:1.7}
+#qemu-options .q-console-glyph{display:grid;place-items:center;width:58px;height:49px;border-radius:12px;background:var(--side);color:var(--muted)}
+#qemu-options .q-console-glyph svg{width:25px;height:25px}
+#qemu-options .q-console-tag{font:11px Consolas,monospace;background:var(--side);color:var(--muted);padding:5px 9px;border-radius:4px}
+#qemu-options .q-context-row{display:flex;justify-content:space-between;gap:10px;flex-wrap:wrap;color:var(--muted);font-size:11px;margin-top:12px}
+#qemu-options .q-context-row>span:first-child{display:flex;align-items:center;gap:6px}
+#qemu-options .q-context-row svg{width:12px;height:12px}
+#qemu-options .q-console-active{border:1px solid var(--line);border-radius:8px;overflow:hidden}
+#qemu-options .q-console-toolbar{padding:7px 12px;background:var(--side);display:flex;align-items:center;justify-content:space-between;font-size:11px}
+#qemu-options .q-console-toolbar>span{display:flex;align-items:center;gap:7px}
+#qemu-options .q-console-toolbar svg{width:13px;height:13px}
+#qemu-options .q-screen{min-height:290px;border-radius:0;display:flex;flex-direction:column;align-items:center;justify-content:center;text-align:center;gap:12px;font-family:'Segoe UI',Arial,sans-serif}
+#qemu-options .q-screen strong{font-size:16px;font-weight:500;color:var(--ink)}
+#qemu-options .q-screen span{font-size:12px}
+#qemu-options .q-screen small{font-size:11px;max-width:260px;line-height:1.7}
+#qemu-options .q-screen-marker{color:var(--accent)}
+#qemu-options .q-screen-marker svg{width:28px;height:28px}
+#qemu-options .q-feedback:empty{margin-top:0;min-height:0}
+#qemu-options .q-config-form{display:grid;gap:12px}
+#qemu-options .q-config-form label{display:flex;flex-direction:column;gap:6px;color:var(--muted);font-size:12px}
+#qemu-options .q-config-form input,#qemu-options .q-config-form select{font:12px 'Segoe UI',sans-serif;padding:8px;border:1px solid var(--line);border-radius:5px;background:var(--bg);color:var(--ink);width:100%}
+#qemu-options .q-config-actions{display:flex;gap:7px;flex-wrap:wrap;margin-top:5px}
+#qemu-options .q-config-actions button{padding:7px 10px}
+@media(min-width:1200px){#qemu-options .q-work{grid-template-columns:minmax(0,1fr) 230px}#qemu-options .q-console{min-height:365px}}
+@media(max-width:850px){#qemu-options .q-layout{grid-template-columns:180px minmax(0,1fr);min-height:850px}#qemu-options .q-app{min-height:889px}#qemu-options .q-work{grid-template-columns:1fr}#qemu-options .q-inspector{display:grid;grid-template-columns:1fr 1fr;gap:0 16px;border-left:0;border-top:1px solid var(--line);padding:16px 0;min-height:0}#qemu-options .q-inspector h3{grid-column:1/-1}#qemu-options .q-inspector .q-row:nth-of-type(4){margin-top:0}#qemu-options .q-inspector .q-config-note{grid-column:1/-1}#qemu-options .q-inspector .q-config-form{grid-column:1/-1}#qemu-options .q-console{min-height:260px}#qemu-options .q-tabs{gap:18px}}
+@media(max-width:540px){#qemu-options .q-layout{display:block;min-height:1150px}#qemu-options .q-app{min-height:1189px}#qemu-options .q-main{padding:17px 14px}#qemu-options .q-name{font-size:21px}#qemu-options .q-inspector{grid-template-columns:1fr 1fr}#qemu-options .q-top{margin-bottom:18px}#qemu-options .q-heading{align-items:flex-start}#qemu-options .q-status .q-muted{width:100%}#qemu-options .q-actions button{padding:9px 10px}}
+</style>
+<div id="qemu-options">
+<div class="qs-scenarios" aria-label="State preview"><span>Preview machine state</span><select aria-label="Machine state scenario"><option value="stopped">Stopped</option><option value="running">Running</option><option value="paused">Paused</option><option value="saved">Saved</option><option value="starting">Starting</option><option value="stopping">Stopping</option><option value="error">Startup error</option></select></div>
+<div class="q-app" aria-label="QEMU VM Manager — machines and stands">
+<div class="q-chrome"><div class="wm-logo">qvm<span><svg viewBox="0 0 24 24" width="19" height="19" fill="none" stroke="currentColor" stroke-width="2" aria-hidden="true"><path d="M5 19 19 5M5 5h14v14"/></svg></span></div><span class="wm-brand-caption">QEMU VM MANAGER<br>LOCAL CONTROL / 2026</span><nav class="wm-navigation" aria-label="Workspace navigation"><button data-view="stands" aria-pressed="true">Stands</button><button data-view="machines" aria-pressed="false">Machines</button></nav><span class="wm-preview">INTERFACE<br>PROTOTYPE</span></div>
+<div class="q-layout">
+<aside class="q-side"><div class="wm-index">01 / SYSTEM INDEX</div><div><div class="q-eyebrow">Library</div><h2 class="qs-library-title">My stands</h2><span class="q-muted qs-count">Total stands: 2</span></div>
+<input class="qs-search" aria-label="Search library" placeholder="Search stands and machines…">
+<div class="wm-library-note">Select a system.<br>Its state takes the stage.</div>
+<div class="qs-tree"></div><button class="q-create" data-action="create">＋ Create stand</button>
+</aside>
+<main class="q-main"><div class="wm-section-label"><span>02 / STATE STAGE</span><span class="wm-section-hint">ONE SYSTEM. CURRENT STATE.</span></div><div class="q-top"><div class="q-muted qs-breadcrumb"></div><button class="q-service" data-action="service">Service ⌄</button></div><div class="qs-detail"></div><div class="q-feedback" aria-live="polite"></div></main>
+</div>
+<div class="qs-footer"><span>QEMU <span class="qs-footer-dot">●</span> local machines</span><span>Prototype · changes stay in the current browser session</span></div>
+</div>
+</div>
+<style>
+#qemu-options .q-app{min-height:750px}
+#qemu-options .q-layout{grid-template-columns:260px minmax(0,1fr);min-height:672px}
+#qemu-options .q-main{padding:18px 21px}
+#qemu-options .q-side{padding:22px 13px 16px;gap:17px}
+#qemu-options .qs-tree{display:flex;flex-direction:column;gap:12px}
+#qemu-options .qs-group{min-width:0}
+#qemu-options .qs-group-head{display:flex;align-items:stretch;border-radius:6px;background:transparent}
+#qemu-options .qs-group-head.selected{background:var(--button)}
+#qemu-options .q-app .qs-expand{background:transparent;color:var(--muted);padding:8px 6px;align-items:flex-start;min-width:24px}
+#qemu-options .q-app .qs-group-select{background:transparent;flex:1;min-width:0;justify-content:flex-start;text-align:left;padding:9px 8px 9px 2px}
+#qemu-options .qs-group-title{font-size:12px;font-weight:600;display:block;overflow-wrap:anywhere}
+#qemu-options .qs-group-sub{font-size:11px;color:var(--muted);display:block;margin-top:4px}
+#qemu-options .qs-children{margin:4px 0 0 12px;padding:0 0 0 9px;border-left:1px solid var(--line);display:flex;flex-direction:column;gap:4px}
+#qemu-options .q-app .qs-machine{background:transparent;width:100%;justify-content:flex-start;text-align:left;padding:9px 7px;gap:8px}
+#qemu-options .qs-machine[aria-pressed=true]{background:var(--button)!important;box-shadow:inset 2px 0 var(--accent)}
+#qemu-options .qs-machine .q-machine-label strong{font-size:12px;font-weight:500}
+#qemu-options .qs-machine .q-os{font-size:21px;width:23px}
+#qemu-options .qs-machine .q-machine-label small{font-size:11px}
+#qemu-options .q-status{color:var(--muted)}
+#qemu-options .q-status[data-state=running]{color:var(--green)}
+#qemu-options .q-status[data-state=error]{color:#efa7a2}
+#qemu-options .q-dot.error{background:#efa7a2}
+#qemu-options .q-dot.saved{background:#b5addb}
+#qemu-options .q-dot.starting,#qemu-options .q-dot.stopping{background:var(--accent)}
+#qemu-options .q-app button:disabled{opacity:.45;cursor:default;filter:none}
+#qemu-options .q-app .qs-more{background:transparent;color:var(--muted);padding:9px}
+#qemu-options .qs-action-wrap{position:relative}
+#qemu-options .qs-dropdown{position:absolute;top:43px;left:0;z-index:8;background:var(--side);border:1px solid var(--line);padding:5px;border-radius:7px;min-width:210px;box-shadow:0 8px 24px #0006}
+#qemu-options .qs-dropdown button{width:100%;justify-content:flex-start;background:transparent}
+#qemu-options .q-name{font-size:22px;line-height:1.3}
+#qemu-options .qs-stand-badge{font-size:11px;color:var(--muted);margin-bottom:6px;display:block}
+#qemu-options .q-work{grid-template-columns:minmax(0,1fr) 190px;gap:18px}
+#qemu-options .q-inspector{padding-left:17px}
+#qemu-options .q-inspector .q-row{flex-wrap:wrap;gap:4px 10px}
+#qemu-options .q-inspector .q-row b{overflow-wrap:anywhere}
+#qemu-options .q-console{min-height:300px}
+#qemu-options .qs-note{font-size:12px;color:var(--muted);background:var(--side);border-radius:6px;padding:11px 13px;margin-top:14px;line-height:1.65}
+#qemu-options .qs-error{color:#efaaa4;border-left:2px solid #d9887f}
+#qemu-options .qs-stand-list{display:flex;flex-direction:column;border:1px solid var(--line);border-radius:8px;overflow:hidden}
+#qemu-options .qs-member{display:flex;flex-wrap:wrap;justify-content:space-between;align-items:center;gap:12px;padding:15px;background:var(--panel);border-bottom:1px solid var(--line)}
+#qemu-options .qs-member:last-child{border-bottom:0}
+#qemu-options .q-app .qs-member-name{padding:0;background:transparent;text-align:left;justify-content:flex-start;flex:1;min-width:130px;gap:10px}
+#qemu-options .qs-member-name strong{font-size:12px;font-weight:500;display:block;overflow-wrap:anywhere}
+#qemu-options .qs-member-name small{font-size:11px;color:var(--muted);display:block;margin-top:4px}
+#qemu-options .q-app .qs-member-action{background:var(--button);font-size:11px;padding:7px 10px}
+#qemu-options .qs-stand-description{font-size:12px;color:var(--muted);margin:0 0 17px;line-height:1.7}
+#qemu-options .qs-section-heading{margin:0 0 15px;font-size:14px;font-weight:500}
+#qemu-options .qs-empty{border:1px dashed var(--line);border-radius:8px;padding:28px 20px;text-align:center;color:var(--muted);font-size:12px}
+#qemu-options .qs-empty p{margin:0 0 17px}
+#qemu-options .qs-log-row{display:flex;gap:12px;border-bottom:1px solid var(--line);padding:10px 0;font-size:12px;overflow-wrap:anywhere}
+#qemu-options .qs-log-time{color:var(--muted);font-variant-numeric:tabular-nums;flex-shrink:0}
+#qemu-options .qs-footer{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;padding:9px 16px;background:var(--side);border-top:1px solid var(--line);color:var(--muted);font-size:11px}
+#qemu-options .qs-footer-dot{color:var(--green);margin:0 5px}
+#qemu-options .qs-scenarios{display:flex;align-items:center;justify-content:flex-end;gap:12px;flex-wrap:wrap;color:#aebbc4;font:12px 'Segoe UI',Arial,sans-serif;margin-bottom:12px}
+#qemu-options .qs-scenarios select{background:#222b32;color:#f2f2ee;border:1px solid #3c4a52;border-radius:6px;padding:7px;font:inherit;max-width:100%}
+#qemu-options .qs-config-form label{display:flex;flex-direction:column;gap:6px;font-size:12px;color:var(--muted);margin:0 0 13px}
+#qemu-options .qs-config-form select{background:var(--bg);color:var(--ink);font:12px 'Segoe UI',sans-serif;padding:8px;border:1px solid var(--line);border-radius:6px;width:100%}
+#qemu-options .qs-config-form input{font-size:12px}
+#qemu-options .qs-config-buttons{display:flex;gap:7px;flex-wrap:wrap}
+#qemu-options .qs-config-buttons button{font-size:11px;padding:8px}
+#qemu-options .qs-group-head:has(.qs-group-select[aria-pressed=true]) .qs-group-title{color:var(--accent)}
+@media(min-width:1200px){#qemu-options .q-work{grid-template-columns:minmax(0,1fr) 220px}#qemu-options .q-console{min-height:340px}}
+@media(max-width:950px){#qemu-options .q-layout{grid-template-columns:230px minmax(0,1fr)}#qemu-options .q-work{grid-template-columns:1fr}#qemu-options .q-inspector{display:grid;grid-template-columns:1fr 1fr;gap:0 16px;border-left:0;border-top:1px solid var(--line);padding:16px 0;min-height:0}#qemu-options .q-inspector h3,#qemu-options .q-config-note,#qemu-options .qs-config-form{grid-column:1/-1}#qemu-options .q-inspector .q-row:nth-of-type(4){margin-top:0}#qemu-options .q-layout{min-height:880px}}
+@media(max-width:600px){#qemu-options .q-layout{display:block;min-height:1200px}#qemu-options .q-side{padding:16px;border-right:0;border-bottom:1px solid var(--line)}#qemu-options .q-main{padding:18px 14px}#qemu-options .qs-tree{display:grid;grid-template-columns:1fr;gap:9px}#qemu-options .q-name{font-size:20px}#qemu-options .q-top{margin-bottom:19px}#qemu-options .q-tabs{gap:18px}#qemu-options .qs-footer{font-size:11px}#qemu-options .q-heading{align-items:flex-start}#qemu-options .qs-breadcrumb{font-size:11px}#qemu-options .q-inspector{grid-template-columns:1fr 1fr}#qemu-options .q-actions button{padding:9px 10px}}
+</style>
+
+<script>
+(function(){
+'use strict';
+const root=document.getElementById('qemu-options');
+const app=root.querySelector('.q-app');
+const tree=app.querySelector('.qs-tree');
+const detail=app.querySelector('.qs-detail');
+const feedback=app.querySelector('.q-feedback');
+const scenario=root.querySelector('.qs-scenarios select');
+const labels={running:'Running',stopped:'Stopped',paused:'Paused',saved:'Saved',starting:'Starting',stopping:'Stopping',error:'Startup error'};
+const machine=(id,name,os,state,memory,cpu,accel,iso,net)=>({id,name,os,state,memory,cpu,accel,iso,net,disk:'Not configured',snapshots:[],logs:[],generation:0});
+const machines={
+desktop:machine('desktop','Ubuntu Desktop','ubuntu','running',8192,4,'Auto','',0),
+server:machine('server','Ubuntu Server','ubuntu','stopped',4096,2,'Auto','',0),
+kali:machine('kali','Kali Linux','kali','paused',4096,2,'Auto','',0),
+tails:machine('tails','Tails','tails','saved',2048,2,'Auto','',0),
+labServer:machine('labServer','Ubuntu Server For IPV6','ubuntu','stopped',256,1,'WHPX','test.iso',1),
+labKali:machine('labKali','Kali · diagnostic machine','kali','stopped',2048,2,'Auto','',1),
+ipv6Desktop:machine('ipv6Desktop','Ubuntu Desktop For IPV6','ubuntu','stopped',4096,2,'WHPX','',1),
+ipv6Server:machine('ipv6Server','Ubuntu Server For IPV6','ubuntu','stopped',256,1,'WHPX','test.iso',1)
+};
+const stands=[{id:'lab',name:'Research laboratory',members:['labServer','labKali'],expanded:true},{id:'ipv6',name:'IPV6',members:['ipv6Desktop','ipv6Server'],expanded:true}];
+const standalone=['desktop','server','kali','tails'];
+const ui={view:'stands',kind:'machine',id:'labServer',stand:'lab',tab:'Console',standTab:'Overview',console:false,editing:false};
+const escape=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const icon=n=>{const shapes={monitor:'<rect x="3" y="4" width="18" height="13" rx="2"/><path d="M8 21h8m-4-4v4"/>',play:'<path d="m8 5 11 7-11 7Z"/>',pause:'<path d="M8 5v14M16 5v14"/>',power:'<path d="M12 3v9m-5-6a8 8 0 1 0 10 0"/>',save:'<path d="M5 3h12l4 4v14H3V3Zm2 0v6h10V3M7 21v-8h10v8"/>',cpu:'<rect x="6" y="6" width="12" height="12" rx="2"/><rect x="9" y="9" width="6" height="6"/><path d="M9 2v4m6-4v4M9 18v4m6-4v4M2 9h4m-4 6h4m12-6h4m-4 6h4"/>',layers:'<path d="m12 3 10 5-10 5L2 8Zm-10 9 10 5 10-5M2 16l10 5 10-5"/>',shield:'<path d="M12 3 3 6v6c0 5 9 9 9 9s9-4 9-9V6Z"/>','sliders-horizontal':'<path d="M3 6h7m4 0h7M3 12h12m4 0h2M3 18h3m4 0h11"/><circle cx="12" cy="6" r="2"/><circle cx="17" cy="12" r="2"/><circle cx="8" cy="18" r="2"/>','triangle-alert':'<path d="m12 3 10 18H2Zm0 5v6m0 3v1"/>','loader-circle':'<path d="M21 12a9 9 0 1 1-5-8"/>','chevron-down':'<path d="m6 9 6 6 6-6"/>','chevron-right':'<path d="m9 6 6 6-6 6"/>',plus:'<path d="M12 5v14M5 12h14"/>'};return '<svg class="qh-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">'+(shapes[n]||shapes.cpu)+'</svg>';};
+const memory=n=>n>=1024&&n%1024===0?n/1024+' GB':n+' MB';
+const row=(l,v)=>'<div class="q-row"><span>'+l+'</span><b>'+escape(v)+'</b></div>';
+const busy=m=>['starting','stopping'].includes(m.state);
+const button=(action,label,primary=false,disabled=false,id='')=>'<button type="button" data-action="'+action+'"'+(id?' data-id="'+id+'"':'')+' class="'+(primary?'q-primary':'')+'"'+(disabled?' disabled':'')+'>'+label+'</button>';
+const os=m=>'<span class="q-os qh-os-'+m.os+'" aria-hidden="true">'+icon(m.os==='kali'?'layers':m.os==='tails'?'shield':'cpu')+'</span>';
+function getStand(){return stands.find(s=>s.id===ui.stand)||stands[0];}
+function counts(s){const ms=s.members.map(id=>machines[id]);const active=ms.filter(m=>m.state==='running').length;const paused=ms.filter(m=>m.state==='paused').length;const saved=ms.filter(m=>m.state==='saved').length;const transition=ms.some(busy);const failed=ms.some(m=>m.state==='error');return{active,paused,total:ms.length,label:failed?'Needs attention':transition?'Changing state':active===ms.length?'Running':active?'Partially running':paused===ms.length?'Paused':paused?'Partially paused':saved===ms.length?'Saved':saved?'Partially saved':'Stopped'};}
+function machineButton(m){return '<button type="button" class="qs-machine" data-machine="'+m.id+'" aria-pressed="'+(ui.kind==='machine'&&ui.id===m.id)+'">'+os(m)+'<span class="q-machine-label"><strong>'+escape(m.name)+'</strong><small>'+labels[m.state]+'</small></span><span class="q-dot '+m.state+'"></span></button>';}
+function drawTree(){
+const query=app.querySelector('.qs-search').value.toLowerCase();
+app.querySelector('.qs-library-title').textContent=ui.view==='stands'?'My stands':'My machines';
+app.querySelector('.qs-count').textContent=ui.view==='stands'?'Total stands: '+stands.length:'Total machines: '+standalone.length;
+app.querySelector('.qs-search').placeholder=ui.view==='stands'?'Search stands and machines…':'Search machines…';
+app.querySelector('.q-create').innerHTML=ui.view==='stands'?icon('plus')+'Create stand':icon('plus')+'New machine';
+app.querySelectorAll('[data-view]').forEach(b=>b.setAttribute('aria-pressed',b.dataset.view===ui.view));
+if(ui.view==='machines')tree.innerHTML=standalone.filter(id=>machines[id].name.toLowerCase().includes(query)).map(id=>machineButton(machines[id])).join('');
+else tree.innerHTML=stands.filter(s=>s.name.toLowerCase().includes(query)||s.members.some(id=>machines[id].name.toLowerCase().includes(query))).map(s=>{const c=counts(s);const members=s.members.filter(id=>!query||s.name.toLowerCase().includes(query)||machines[id].name.toLowerCase().includes(query));return '<section class="qs-group"><div class="qs-group-head '+(ui.stand===s.id?'selected':'')+'"><button class="qs-expand" data-expand="'+s.id+'" aria-expanded="'+(s.expanded||!!query)+'" aria-label="'+(s.expanded?'Collapse':'Expand')+' '+escape(s.name)+'">'+icon(s.expanded||query?'chevron-down':'chevron-right')+'</button><button class="qs-group-select" data-stand="'+s.id+'" aria-pressed="'+(ui.kind==='stand'&&ui.stand===s.id)+'"><span><span class="qs-group-title">'+escape(s.name)+'</span><span class="qs-group-sub">'+c.label+' · '+c.active+'/'+c.total+' running</span></span></button></div><div class="qs-children"'+(!s.expanded&&!query?' hidden':'')+'>'+members.map(id=>machineButton(machines[id])).join('')+'</div></section>';}).join('');
+if(!tree.innerHTML)tree.innerHTML='<div class="q-muted">No matching results</div>';
+}
+function actions(m){
+if(m.state==='running')return button('console',icon('monitor')+'Open console',true)+button('pause',icon('pause')+'Pause')+powerMenu(m);
+if(m.state==='paused')return button('resume',icon('play')+'Resume',true)+powerMenu(m);
+if(m.state==='saved')return button('resume-saved',icon('play')+'Restore',true)+'<div class="qs-action-wrap">'+button('launch-menu','Other launch ⌄')+'<div class="qs-dropdown" hidden>'+button('fresh','Start a new session')+button('snapshot-start','From snapshot',false,!m.snapshots.length)+'</div></div>';
+if(busy(m))return button('noop',icon('loader-circle')+labels[m.state]+'…',true,true);
+return button('start',icon('play')+(m.state==='error'?'Retry startup':'Start'),true)+button('snapshot-start','From snapshot',false,!m.snapshots.length)+(m.state==='error'?button('logs','Open event log'): '');
+}
+function powerMenu(m){return '<div class="qs-action-wrap">'+button('power-menu',icon('power')+'Shut down ⌄')+'<div class="qs-dropdown" hidden>'+button('shutdown','Shut down gracefully')+button('save','Save session state')+button('force','Force shutdown')+'</div></div>';}
+function consolePanel(m){
+if(ui.console&&m.state==='running')return '<div class="wm-guest-console"><div class="wm-guest-toolbar"><span>'+icon('monitor')+'Guest console / '+escape(m.id)+'</span>'+button('close-console','Close')+'</div><div class="wm-guest-placeholder"><span class="wm-console-label">CONSOLE</span><p>Guest display area</p><small>Interface preview · no QEMU connection</small></div></div>';
+const words={stopped:'STOPPED',running:'RUNNING',paused:'PAUSED',saved:'SAVED',starting:'STARTING',stopping:'STOPPING',error:'ERROR'};
+const descriptions={stopped:'Ready when you are. Launch with the current configuration.',running:'The machine is running. Open its console to continue.',paused:'Execution is paused. Resume to continue the current session.',saved:'Your session is saved. Restore it or start a new one.',starting:'Preparing the guest system. Controls will return shortly.',stopping:'Waiting for the guest operating system to shut down.',error:'Startup failed. Review the event log and configuration.'};
+const word=words[m.state];
+return '<section class="wm-stage" data-state="'+m.state+'" aria-label="'+labels[m.state]+' machine"><div class="wm-atmosphere" aria-hidden="true"><span class="wm-orb"></span><span class="wm-ghost wm-ghost-a">'+word+'</span><span class="wm-ghost wm-ghost-b">'+word+'</span></div><div class="wm-stage-top"><span>QEMU / '+escape(m.id)+'</span><span class="wm-state-marker"><i class="q-dot '+m.state+'"></i>'+labels[m.state]+'</span></div><div class="wm-word-frame"><div class="wm-word" aria-label="'+word+'">'+word.split('').map((letter,i)=>'<span aria-hidden="true" style="--letter-index:'+i+'">'+letter+'</span>').join('')+'</div><p>'+descriptions[m.state]+'</p></div><div class="wm-stage-meta"><span><b>'+memory(m.memory)+'</b> MEMORY</span><span><b>'+m.cpu+'</b> vCPU</span><span><b>'+escape(m.accel)+'</b> ACCELERATION</span></div><div class="wm-dock-slot"></div><div class="wm-stage-caption"><span>LIVE STATE / LOCAL UI</span><span>03 — '+(m.iso?'BOOT IMAGE: '+escape(m.iso):'NO ISO ATTACHED')+'</span></div></section>';
+}
+function machineContent(m){
+if(ui.tab==='Console')return consolePanel(m);
+if(ui.tab==='Network')return '<h3 class="qs-section-heading">Network adapters</h3>'+(m.net?Array.from({length:m.net},(_,i)=>'<section class="q-panel">'+row('Adapter',i+1)+row('Connection','NAT')+'</section>').join(''):'<div class="qs-empty"><p>No network adapters have been added</p>'+button('add-network','＋ Add adapter')+'</div>')+(m.net?'<div style="margin-top:12px">'+button('add-network','＋ Add adapter')+'</div>':'');
+if(ui.tab==='Snapshots')return '<h3 class="qs-section-heading">Machine snapshots</h3>'+(m.snapshots.length?m.snapshots.map((s,i)=>'<div class="qs-member"><span><strong>'+escape(s.name)+'</strong><small class="q-muted"> · '+s.date+'</small></span>'+button('restore-snapshot','Restore',false,busy(m),String(i))+'</div>').join(''):'<div class="qs-empty"><p>No snapshots yet. Create a snapshot to capture a restore point.</p></div>')+'<div style="margin-top:14px">'+button('create-snapshot','＋ Create snapshot',false,busy(m))+'</div>';
+return '<h3 class="qs-section-heading">Event log</h3>'+(m.logs.length?m.logs.slice().reverse().map(l=>'<div class="qs-log-row"><span class="qs-log-time">'+l.time+'</span><span>'+escape(l.text)+'</span></div>').join(''):'<div class="qs-empty">No events recorded in this session</div>');
+}
+function inspector(m){
+if(ui.editing)return '<h3>Machine configuration</h3><form class="qs-config-form"><label>Memory, MB<input type="number" name="memory" min="128" max="262144" step="128" value="'+m.memory+'" required></label><label>Number of CPU<input type="number" name="cpu" min="1" max="64" value="'+m.cpu+'" required></label><label>Acceleration<select name="accel">'+['Auto','WHPX','Software'].map(x=>'<option'+(x===m.accel?' selected':'')+'>'+x+'</option>').join('')+'</select></label><label>ISO-image<input name="iso" placeholder="Not connected" value="'+escape(m.iso)+'"></label><div class="qs-config-buttons">'+button('submit-config','Save',true)+button('cancel-config','Cancel')+'</div><div class="q-config-note">Resource changes take effect on the next launch.</div></form>';
+return '<h3>Configuration</h3>'+row('Memory',memory(m.memory))+row('Processor',m.cpu+' CPU')+row('Acceleration',m.accel)+row('Disk',m.disk)+row('ISO-image',m.iso||'Not connected')+row('Network',m.net+' adapters')+button('edit-config',icon('sliders-horizontal')+'Edit configuration',false,busy(m))+'<div class="q-config-note">'+(m.state==='running'||m.state==='paused'?'Resource changes apply on the next launch.':'This configuration will be used on launch.')+'</div>';
+}
+function standInspector(s){const c=counts(s);const ms=s.members.map(id=>machines[id]);return '<h3>Stand members</h3>'+row('Machines',c.total)+row('Running',c.active)+row('Paused',c.paused)+row('Total memory',memory(ms.reduce((n,m)=>n+m.memory,0)))+row('CPU total',ms.reduce((n,m)=>n+m.cpu,0))+'<div class="q-config-note">Total configured resources. Manage the stand together or control each machine individually.</div>';}
+function standTopology(s){const children=s.members.map(id=>machines[id]);const positions=[150,450];const active=children.some(m=>m.state==='running');return '<section class="ce-topology" aria-label="Stand membership diagram"><div class="ce-diagram-head"><span>ENVIRONMENT STRUCTURE</span><span>QEMU / LOCAL</span></div><svg class="ce-architecture" viewBox="0 0 600 158" role="img" aria-label="A stand containing two virtual machines"><path class="ce-wire" d="M300 48v21H150v24m150-24h150v24"/>'+(active?'<path class="ce-data-flow" d="M300 48v21H150v24m150-24h150v24"/>':'')+'<rect class="ce-parent" x="215" y="12" width="170" height="36" rx="5"/><text class="ce-svg-title" x="300" y="35" text-anchor="middle">TEST STAND</text>'+children.map((m,i)=>'<g><rect class="ce-child" x="'+(positions[i]-115)+'" y="94" width="230" height="49" rx="5"/><circle cx="'+(positions[i]-96)+'" cy="112" r="3" fill="'+(m.state==='running'?'#008000':m.state==='paused'?'#b36b00':'#8c98a4')+'"/><text class="ce-svg-label" x="'+(positions[i]-83)+'" y="115">'+escape(m.name.length>26?m.name.slice(0,25)+'…':m.name)+'</text><text class="ce-svg-status" x="'+(positions[i]-83)+'" y="132">'+labels[m.state]+'</text></g>').join('')+'</svg><div class="ce-diagram-note">Stand membership · logical grouping</div></section>';}
+
+function standScene(s){
+const c=counts(s);const members=s.members.map(id=>machines[id]);
+const hasError=members.some(m=>m.state==='error'),starting=members.some(m=>m.state==='starting'),stopping=members.some(m=>m.state==='stopping');
+const saved=members.filter(m=>m.state==='saved').length;
+const scene=hasError?{state:'error',word:'ATTENTION',description:'One or more machines need attention. Open the machine event log to review the startup failure.'}:starting?{state:'starting',word:'STARTING',description:'The stand is starting. Each machine becomes available when its startup completes.'}:stopping?{state:'stopping',word:'STOPPING',description:'The stand is shutting down. Waiting for the guest systems to finish.'}:c.active===c.total?{state:'running',word:'RUNNING',description:'All machines are running. Open a machine to access its console.'}:c.active>0?{state:'mixed',word:'MIXED',description:c.active+' of '+c.total+' machines are running. Start the remaining systems or manage each machine individually.'}:c.paused===c.total?{state:'paused',word:'PAUSED',description:'All machines are paused. Resume the stand to continue the current sessions.'}:c.paused>0?{state:'mixed',word:'MIXED',description:'This stand contains paused and inactive machines. Resume paused sessions or start stopped systems.'}:saved===c.total?{state:'saved',word:'SAVED',description:'All sessions are saved. Start the stand to restore them.'}:saved>0?{state:'mixed',word:'MIXED',description:'The stand contains saved and stopped machines. Starting restores saved sessions and starts the remaining systems.'}:{state:'stopped',word:'STOPPED',description:'Ready when you are. Start the stand with its configured machines, or open a member to inspect it.'};
+const totalMemory=members.reduce((sum,m)=>sum+m.memory,0),totalCpu=members.reduce((sum,m)=>sum+m.cpu,0);
+return '<section class="wm-stage wm-stand-stage" data-state="'+scene.state+'" aria-label="'+escape(c.label)+' stand"><div class="wm-atmosphere" aria-hidden="true"><span class="wm-orb"></span><span class="wm-ghost wm-ghost-a">'+scene.word+'</span><span class="wm-ghost wm-ghost-b">'+scene.word+'</span></div><div class="wm-stage-top"><span>STAND / '+escape(s.id)+'</span><span class="wm-state-marker"><i class="q-dot '+scene.state+'"></i>'+escape(c.label)+'</span></div><div class="wm-word-frame"><div class="wm-word" aria-label="'+scene.word+'">'+scene.word.split('').map((letter,i)=>'<span aria-hidden="true" style="--letter-index:'+i+'">'+letter+'</span>').join('')+'</div><p>'+scene.description+'</p></div><div class="wm-stage-meta"><span><b>'+c.active+'/'+c.total+'</b> RUNNING</span><span><b>'+memory(totalMemory)+'</b> MEMORY</span><span><b>'+totalCpu+'</b> vCPU</span></div><div class="wm-dock-slot"></div><div class="wm-stage-caption"><span>STAND STATE / LOCAL UI</span><span>'+c.total+' MACHINES · '+c.paused+' PAUSED · '+saved+' SAVED</span></div></section>';
+}
+function standMembers(s){return '<div class="wm-members-heading"><div><h3>Machines in this stand</h3><p>Open a machine to inspect its console and configuration.</p></div><span>'+s.members.length+' machines</span></div><div class="qs-stand-list">'+s.members.map(id=>{const m=machines[id];return '<div class="qs-member"><button class="qs-member-name" data-machine="'+id+'">'+os(m)+'<span><strong>'+escape(m.name)+'</strong><small><span class="q-dot '+m.state+'" style="display:inline-block;margin-right:5px"></span>'+labels[m.state]+' · '+memory(m.memory)+' · '+m.cpu+' vCPU</small></span></button>'+button(m.state==='running'?'member-console':m.state==='paused'?'member-resume':'member-start',m.state==='running'?'Console':m.state==='paused'?'Resume':m.state==='saved'?'Restore':busy(m)?'Waiting…':m.state==='error'?'Retry':'Start',false,busy(m),id)+'</div>';}).join('')+'</div>';}
+function standEvents(s){const events=s.members.flatMap(id=>machines[id].logs.map(e=>({...e,machine:machines[id].name}))).sort((a,b)=>(b.order||0)-(a.order||0));return '<div class="wm-stand-events"><div class="wm-members-heading"><div><h3>Stand events</h3><p>Actions recorded for machines in this stand during the current session.</p></div><span>'+events.length+' events</span></div>'+(events.length?'<div class="wm-event-table">'+events.map(e=>'<div class="wm-event-row"><time>'+escape(e.time)+'</time><span>'+escape(e.machine)+'</span><p>'+escape(e.text)+'</p></div>').join('')+'</div>':'<div class="wm-events-empty">No events yet. Start the stand or change a machine to record an event.</div>')+'</div>';}
+function standContent(s){if(ui.standTab==='Machines')return standMembers(s);if(ui.standTab==='Events')return standEvents(s);return standScene(s)+standMembers(s);}
+function render(){
+drawTree();const stand=getStand();const isStand=ui.kind==='stand';const m=machines[ui.id];
+root.querySelector('.qs-scenarios').hidden=isStand;
+if(!isStand)scenario.value=m.state;
+app.querySelector('.qs-breadcrumb').textContent=ui.view==='stands'?'Stands / '+stand.name+(isStand?'':' / Machine'):'Machines / '+m.name;
+let heading,actionHtml,content,right,tabs;
+if(isStand){const c=counts(stand);heading='<div class="q-heading"><span class="q-os qh-stand-icon">'+icon('layers')+'</span><div><span class="qs-stand-badge">Stand · QEMU</span><div class="q-name">'+escape(stand.name)+'</div><div class="q-status">'+c.label+' · '+c.active+'/'+c.total+' running</div></div></div>';const ms=stand.members.map(id=>machines[id]);actionHtml=button('stand-start',icon('play')+'Start stand',true,!ms.some(m=>['stopped','saved','error'].includes(m.state)))+button('stand-resume',icon('play')+'Resume',false,!ms.some(m=>m.state==='paused'))+button('stand-pause',icon('pause')+'Pause',false,!ms.some(m=>m.state==='running'))+button('stand-stop',icon('power')+'Shut down',false,!ms.some(m=>['running','paused'].includes(m.state)));tabs='<div class="q-tabs" role="tablist" aria-label="Stand sections">'+['Overview','Machines','Events'].map(t=>'<button type="button" role="tab" aria-selected="'+(ui.standTab===t)+'" data-stand-tab="'+t+'">'+t+'</button>').join('')+'</div>';content=standContent(stand);right=standInspector(stand);
+}else{heading='<div class="q-heading">'+os(m)+'<div>'+(ui.view==='stands'?'<span class="qs-stand-badge">'+escape(stand.name)+'</span>':'')+'<div class="q-name">'+escape(m.name)+'</div><div class="q-status" data-state="'+m.state+'"><span class="q-dot '+m.state+'"></span>'+labels[m.state]+'<span class="q-muted"> · QEMU</span></div></div></div>';actionHtml=actions(m);tabs='<div class="q-tabs" role="tablist" aria-label="Machine sections">'+['Console','Network','Snapshots','Events'].map(t=>'<button type="button" role="tab" aria-selected="'+(ui.tab===t)+'" data-tab="'+t+'">'+t+(t==='Snapshots'&&m.snapshots.length?' · '+m.snapshots.length:'')+'</button>').join('')+'</div>';content=machineContent(m);right=inspector(m);}
+detail.innerHTML='<div class="wm-selected-wrap"><div class="wm-focus-head">'+heading+'</div><details class="wm-config"'+(ui.editing?' open':'')+'><summary><span>'+icon('sliders-horizontal')+'Configuration</span><span>'+icon('chevron-down')+'</span></summary><aside class="q-inspector">'+right+'</aside></details></div><div class="wm-action-parking"><div class="q-actions">'+actionHtml+'</div></div><section class="wm-workspace">'+tabs+content+'</section>';const slot=app.querySelector('.wm-dock-slot');if(slot)slot.appendChild(app.querySelector('.q-actions'));
+if(globalThis.lucide)lucide.createIcons({attrs:{width:16,height:16}});
+}
+let standEventSequence=0;
+function log(m,text){m.logs.push({order:++standEventSequence,time:new Date().toLocaleTimeString('ru-RU',{hour:'2-digit',minute:'2-digit',second:'2-digit'}),text});}
+function transition(m,next,final){m.generation++;const generation=m.generation;m.state=next;log(m,labels[next]);render();setTimeout(()=>{if(m.generation!==generation)return;m.state=final;log(m,labels[final]);render();},750);}
+function setState(m,state,text){m.generation++;m.state=state;log(m,text||labels[state]);render();}
+function selectMachine(id){ui.kind='machine';ui.id=id;ui.console=false;ui.editing=false;ui.tab='Console';const parent=stands.find(s=>s.members.includes(id));if(parent)ui.stand=parent.id;feedback.textContent='';render();}
+app.querySelector('.qs-search').addEventListener('input',drawTree);
+scenario.addEventListener('change',()=>{const m=machines[ui.id];m.generation++;m.state=scenario.value;ui.console=false;log(m,'Preview state: '+labels[m.state]);render();});
+app.addEventListener('submit',e=>{if(e.target.matches('.qs-config-form')){e.preventDefault();saveConfig(e.target);}});
+function saveConfig(form){if(!form.reportValidity())return;const m=machines[ui.id];m.memory=Number(form.elements.memory.value);m.cpu=Number(form.elements.cpu.value);m.accel=form.elements.accel.value;m.iso=form.elements.iso.value.trim();ui.editing=false;log(m,'Configuration updated');feedback.textContent='Configuration saved'+(['running','paused'].includes(m.state)?' · applies on the next launch':'');render();}
+app.addEventListener('click',e=>{
+const b=e.target.closest('button');if(!b||b.disabled)return;
+if(b.dataset.expand){const s=stands.find(s=>s.id===b.dataset.expand);s.expanded=!s.expanded;drawTree();return;}
+if(b.dataset.machine){selectMachine(b.dataset.machine);return;}
+if(b.dataset.stand){ui.kind='stand';ui.stand=b.dataset.stand;ui.standTab='Overview';ui.editing=false;feedback.textContent='';render();return;}
+if(b.dataset.view){ui.view=b.dataset.view;app.querySelector('.qs-search').value='';if(ui.view==='machines')selectMachine(standalone[0]);else{ui.kind='stand';ui.stand='lab';ui.standTab='Overview';render();}return;}
+if(b.dataset.standTab){ui.standTab=b.dataset.standTab;feedback.textContent='';render();return;}
+if(b.dataset.tab){ui.tab=b.dataset.tab;ui.console=false;render();return;}
+const m=machines[ui.id],s=getStand();
+switch(b.dataset.action){
+case'console':ui.console=true;ui.tab='Console';render();break;
+case'close-console':ui.console=false;render();break;
+case'pause':setState(m,'paused');ui.console=false;render();break;
+case'resume':setState(m,'running');break;
+case'start':case'resume-saved':case'fresh':ui.console=false;transition(m,'starting','running');break;
+case'power-menu':case'launch-menu':{const menu=b.parentElement.querySelector('.qs-dropdown');menu.hidden=!menu.hidden;break;}
+case'shutdown':ui.console=false;transition(m,'stopping','stopped');break;
+case'force':ui.console=false;setState(m,'stopped','Forced shutdown');break;
+case'save':ui.console=false;setState(m,'saved','Session state saved');break;
+case'logs':ui.tab='Events';render();break;
+case'snapshot-start':ui.tab='Snapshots';render();break;
+case'create-snapshot':m.snapshots.push({name:'Snapshot '+(m.snapshots.length+1),date:new Date().toLocaleDateString('ru-RU')});log(m,'Snapshot created');render();break;
+case'restore-snapshot':ui.tab='Console';ui.console=false;transition(m,'starting','running');break;
+case'add-network':m.net++;log(m,'Network adapter added');render();break;
+case'edit-config':ui.editing=true;render();break;
+case'cancel-config':ui.editing=false;render();break;
+case'submit-config':saveConfig(app.querySelector('.qs-config-form'));break;
+case'member-console':selectMachine(b.dataset.id);ui.console=true;render();break;
+case'member-resume':setState(machines[b.dataset.id],'running');break;
+case'member-start':transition(machines[b.dataset.id],'starting','running');break;
+case'stand-start':s.members.map(id=>machines[id]).filter(m=>['stopped','saved','error'].includes(m.state)).forEach(m=>transition(m,'starting','running'));break;
+case'stand-resume':s.members.map(id=>machines[id]).filter(m=>m.state==='paused').forEach(m=>setState(m,'running'));break;
+case'stand-pause':s.members.map(id=>machines[id]).filter(m=>m.state==='running').forEach(m=>setState(m,'paused'));break;
+case'stand-stop':s.members.map(id=>machines[id]).filter(m=>['running','paused'].includes(m.state)).forEach(m=>transition(m,'stopping','stopped'));break;
+case'create':feedback.textContent=ui.view==='stands'?'New stand: name → select machines → configure network':'New machine: operating system → resources → disk → network';break;
+case'service':feedback.textContent='Service: settings QEMU · diagnostics · application settings';break;
+}
+});
+
+app.addEventListener('pointermove',event=>{if(event.pointerType==='touch'||window.matchMedia('(prefers-reduced-motion: reduce)').matches)return;const stage=event.target.closest('.wm-stage');if(!stage)return;const r=stage.getBoundingClientRect();const x=(event.clientX-r.left)/r.width-.5;const y=(event.clientY-r.top)/r.height-.5;stage.style.setProperty('--pointer-x',(x*9).toFixed(2)+'px');stage.style.setProperty('--pointer-y',(y*6).toFixed(2)+'px');});
+app.addEventListener('pointerout',event=>{const stage=event.target.closest('.wm-stage');if(stage&&!stage.contains(event.relatedTarget)){stage.style.setProperty('--pointer-x','0px');stage.style.setProperty('--pointer-y','0px');}});
+
+render();
+})();
+
+</script>
+
+
+<style>
+#qemu-options .q-app{--paper:#F4F1EA;--ink:#141210;--accent:#FF3B00;--mono:'Courier New',Courier,monospace;--bg:var(--paper);--side:#ebe7df;--panel:#f7f5ef;--button:#e4dfd6;--line:#c6c0b4;--muted:#777065;font:13px/1.5 Arial,Helvetica,sans-serif;color:var(--ink);background:var(--paper);border:1px solid #141210;border-radius:0;box-shadow:0 15px 45px #14121015;min-height:0;overflow:visible;color-scheme:light;position:relative}
+#qemu-options .q-chrome{height:91px;background:transparent;border-bottom:1px solid #141210;display:flex;align-items:center;gap:21px;padding:0 27px;color:var(--ink)}
+#qemu-options .wm-logo{font:900 47px/.8 Arial Black,Arial,sans-serif;letter-spacing:-5px;color:var(--ink);display:flex;align-items:flex-start}
+#qemu-options .wm-logo>span{font:700 21px Arial,sans-serif;color:var(--accent);letter-spacing:0;margin:-1px 0 0 6px}
+#qemu-options .wm-brand-caption{font:8px/1.9 var(--mono);color:#736c62;letter-spacing:.8px;border-left:1px solid #b2ab9e;padding-left:17px}
+#qemu-options .wm-navigation{display:flex;gap:5px;margin-left:auto;padding:4px;border:1px solid #c8c1b4;border-radius:999px;background:#ebe6dc}
+#qemu-options .wm-navigation button{font:10px var(--mono);letter-spacing:0;background:transparent;border:0;padding:9px 14px;border-radius:999px;color:#7d756a;box-shadow:none}
+#qemu-options .wm-navigation button[aria-pressed=true]{background:var(--ink);color:var(--paper);box-shadow:none}
+#qemu-options .wm-preview{font:8px/1.8 var(--mono);color:#958b7c;letter-spacing:.6px;margin-left:5px}
+#qemu-options .q-layout{display:grid;grid-template-columns:238px minmax(0,1fr);gap:0;min-height:670px;background:transparent}
+#qemu-options .q-side{background:#ece8df;border-right:1px solid #c8c0b3;border-left:0;padding:25px 14px 20px;gap:17px;min-width:0}
+#qemu-options .wm-index{font:8px var(--mono);letter-spacing:1px;color:#82786b;border-bottom:1px solid #bdb3a3;padding:0 7px 12px}
+#qemu-options .q-side>div:nth-child(2){padding:0 7px}
+#qemu-options .q-eyebrow{font:8px var(--mono);letter-spacing:1.4px;color:#8a7d6a}
+#qemu-options .q-app h2{font:700 20px/1.3 Arial,Helvetica,sans-serif;letter-spacing:-.6px;color:var(--ink);margin:6px 0 4px}
+#qemu-options .qs-count{font:10px var(--mono);color:#8b7e6d}
+#qemu-options .wm-library-note{font:11px/1.8 Arial,sans-serif;color:#8c7e6a;margin:-4px 7px 1px}
+#qemu-options .q-app input{background:#f7f3e9;color:#30271b;border:1px solid #b9ab96;border-radius:0;font:11px var(--mono);padding:10px 11px;box-shadow:none;transition:all .15s}
+#qemu-options .q-app input::placeholder{color:#9c8a71}
+#qemu-options .q-app button{font:11px Arial,Helvetica,sans-serif;border-radius:0;background:#e2d8c8;color:#59462c;border:1px solid #b5a184;box-shadow:none;font-weight:500;cursor:pointer;transition:background .18s,color .18s,transform .18s,border-color .18s}
+#qemu-options .q-app button:hover:not(:disabled){background:#d8c9b3;color:#21190f;filter:none;transform:translateY(-1px);box-shadow:none}
+#qemu-options .q-app button:active:not(:disabled){transform:translateY(1px)}
+#qemu-options .q-app button:disabled{opacity:.35;cursor:default}
+#qemu-options .q-app button:focus-visible,#qemu-options .q-app input:focus-visible,#qemu-options .q-app select:focus-visible,#qemu-options summary:focus-visible{outline:2px solid var(--accent);outline-offset:3px}
+#qemu-options .qs-tree{display:flex;flex-direction:column;gap:15px}
+#qemu-options .qs-group-head{background:transparent;border:1px solid transparent;border-radius:0}
+#qemu-options .qs-group-head.selected{background:#e5d8c4;border-color:#bfa580;box-shadow:none}
+#qemu-options .qs-group-head:has(.qs-group-select[aria-pressed=true]) .qs-group-title{color:#6f3d12}
+#qemu-options .q-app .qs-expand{padding:12px 4px;background:transparent;border:0;color:#93734d;box-shadow:none}
+#qemu-options .qs-expand svg{height:12px;width:12px}
+#qemu-options .q-app .qs-group-select{background:transparent;border:0;box-shadow:none;padding:10px 7px 10px 2px;text-align:left}
+#qemu-options .qs-group-title{font:500 11px/1.8 Arial,sans-serif;color:#654522}
+#qemu-options .qs-group-sub{font:9px/1.8 var(--mono);color:#a07f55;margin-top:3px}
+#qemu-options .qs-children{border-left:1px solid #c3a57d;margin:7px 0 0 12px;padding-left:8px;gap:4px}
+#qemu-options .q-app .qs-machine{padding:9px 6px;border:1px solid transparent;background:transparent;gap:8px;border-radius:0;box-shadow:none}
+#qemu-options .qs-machine[aria-pressed=true]{background:#d8bd98!important;border-color:#a17c4e!important;box-shadow:inset 2px 0 var(--accent)}
+#qemu-options .qs-machine .q-machine-label strong{font-size:11px;line-height:1.7;font-weight:400;color:#67441e}
+#qemu-options .qs-machine .q-machine-label small{font:9px/1.7 var(--mono);color:#9f7746;margin-top:3px}
+#qemu-options .q-os{width:23px;height:23px;color:#9b541d}
+#qemu-options .q-os svg{width:20px;height:20px}
+#qemu-options .qh-os-kali{color:#6b6660}
+#qemu-options .qh-os-tails{color:#8b6b4c}
+#qemu-options .q-dot{height:5px;width:5px;background:#a79073;border-radius:50%;box-shadow:none}
+#qemu-options .q-dot.running{background:#67784e}
+#qemu-options .q-dot.paused{background:#bb7a2f}
+#qemu-options .q-dot.saved{background:#887562}
+#qemu-options .q-dot.error{background:#b74c23}
+#qemu-options .q-dot.starting,#qemu-options .q-dot.stopping{background:var(--accent)}
+#qemu-options .q-create{margin-top:auto;padding:11px!important;width:100%;font:10px var(--mono)!important;text-transform:uppercase;letter-spacing:.5px;border:1px solid #b58b54!important;background:#dbc29d!important;color:#6a3f0c!important;border-radius:0!important;box-shadow:none}
+#qemu-options .q-main{padding:24px 28px 28px;min-width:0;background:var(--paper)}
+#qemu-options .wm-section-label{display:flex;justify-content:space-between;gap:15px;font:8px var(--mono);letter-spacing:.8px;color:#8a7254;padding-bottom:12px;margin-bottom:16px;border-bottom:1px solid #c8b190}
+#qemu-options .wm-section-hint{font-size:7px;color:#a38a67}
+#qemu-options .q-top{margin:0 0 20px;gap:12px}
+#qemu-options .qs-breadcrumb{font:10px/1.8 var(--mono);color:#8b6a42}
+#qemu-options .q-app .q-service{font:9px var(--mono);padding:5px 10px;background:transparent;border:1px solid #c0a178;color:#936a36}
+#qemu-options .wm-selected-wrap{position:relative;margin-bottom:21px;min-height:60px}
+#qemu-options .wm-focus-head{padding-right:225px}
+#qemu-options .q-heading{margin:0;gap:11px}
+#qemu-options .q-heading .q-os{height:40px;width:40px;background:#e6d2b6;border:1px solid #b78d55;border-radius:50%;color:#8f4d13;box-shadow:none;flex-shrink:0}
+#qemu-options .q-heading .q-os svg{height:22px;width:22px}
+#qemu-options .q-name{font:700 22px/1.3 Arial,Helvetica,sans-serif;letter-spacing:-.7px;color:#30200e}
+#qemu-options .qs-stand-badge{font:8px var(--mono);color:#9a703b;margin-bottom:6px}
+#qemu-options .q-status{font:10px/1.8 var(--mono);color:#947247;margin-top:5px;gap:6px}
+#qemu-options .q-status[data-state=running]{color:#5f7245}
+#qemu-options .q-status[data-state=error]{color:#ae4a24}
+#qemu-options .q-status .q-muted{font:8px var(--mono);color:#ad8c61}
+#qemu-options .wm-config{position:absolute;right:0;top:3px;width:205px;border:1px solid #bea17b;background:#f8eee0b8;backdrop-filter:blur(18px);border-radius:999px;z-index:200;box-shadow:0 3px 9px #51310d09}
+#qemu-options .wm-config summary{list-style:none;cursor:pointer;padding:10px 13px;display:flex;justify-content:space-between;align-items:center;gap:11px;font-size:11px;color:#80531f;transition:background .18s;border-radius:inherit}
+#qemu-options .wm-config summary::-webkit-details-marker{display:none}
+#qemu-options .wm-config summary:hover{background:#e4c8a170}
+#qemu-options .wm-config summary>span{display:flex;align-items:center;gap:7px}
+#qemu-options .wm-config summary svg{height:14px;width:14px}
+#qemu-options .wm-config[open]{width:300px;border-radius:13px;background:#f4e6d1ec;box-shadow:0 15px 35px #47290a1a}
+#qemu-options .wm-config[open] summary{border-bottom:1px solid #c9a578;border-radius:12px 12px 0 0}
+#qemu-options .wm-config[open] summary>span:last-child svg{transform:rotate(180deg)}
+#qemu-options .q-inspector{padding:14px 17px 18px;background:transparent;border:0;box-shadow:none;border-radius:0;min-height:0;margin:0;display:grid;grid-template-columns:1fr 1fr;gap:0 16px}
+#qemu-options .q-inspector h3{display:none}
+#qemu-options .q-inspector .q-row{border-top:0;border-bottom:1px solid #cbb08e;display:flex;flex-wrap:wrap;gap:5px;padding:10px 0;font-size:10px}
+#qemu-options .q-inspector .q-row span{font-size:10px;color:#8a622e}
+#qemu-options .q-inspector .q-row b{font:10px var(--mono);color:#55300a;font-weight:500}
+#qemu-options .q-inspector .q-row:nth-of-type(4){margin:0}
+#qemu-options .q-inspector>button{font-size:10px;padding:8px 11px;margin-top:16px;background:#e0be8e;border:1px solid #b27b34;color:#673b05;box-shadow:none;width:fit-content;grid-column:1/-1}
+#qemu-options .q-config-note{font:9px/1.8 var(--mono);color:#97713e;grid-column:1/-1;margin-top:11px}
+#qemu-options .qs-config-form{grid-column:1/-1;display:flex;flex-direction:column;gap:13px}
+#qemu-options .qs-config-form label{font-size:11px;color:#936021;margin:0}
+#qemu-options .qs-config-form input,#qemu-options .qs-config-form select{font:11px var(--mono);background:#f8ebd6;border:1px solid #b78b51;border-radius:0;padding:9px;color:#714209}
+#qemu-options .qs-config-buttons button{font-size:10px;padding:8px 11px}
+#qemu-options .wm-action-parking{margin-bottom:18px}
+#qemu-options .wm-action-parking:empty{display:none}
+#qemu-options .q-actions{padding:0;margin:0;display:flex;flex-wrap:wrap;gap:8px}
+#qemu-options .q-actions button{font-size:10px;min-height:35px;padding:9px 13px;border:1px solid #c2a075;background:#ead2af;color:#80500f;box-shadow:none;border-radius:999px}
+#qemu-options .q-app .q-primary{background:var(--accent)!important;color:#fff!important;border:1px solid #dc3b08!important;font-weight:600;box-shadow:none}
+#qemu-options .q-app .q-primary:hover:not(:disabled){background:#e93400!important;border-color:#bf2b00!important;color:#fff;box-shadow:none}
+#qemu-options .wm-workspace{background:transparent;padding:0;min-width:0}
+#qemu-options .q-tabs{gap:24px;border-bottom:1px solid #bfb0a0;margin-bottom:20px}
+#qemu-options .q-tabs button{background:transparent!important;font-size:10px;font-weight:500;padding:0 0 11px;border:0;border-bottom:2px solid transparent;border-radius:0;color:#8e7554;box-shadow:none}
+#qemu-options .q-tabs button[aria-selected=true]{color:#44321c;border-color:var(--accent)}
+#qemu-options .wm-stage{container-type:inline-size;min-height:390px;position:relative;border:1px solid #b9a68e;background:linear-gradient(135deg,#e9dfd0,#f4f1ea 50%,#ead7bb);overflow:visible;isolation:isolate;display:flex;flex-direction:column;perspective:1000px}
+#qemu-options .wm-atmosphere{position:absolute;inset:0;overflow:hidden;z-index:-1;pointer-events:none}
+#qemu-options .wm-orb{position:absolute;width:62%;height:75%;right:-14%;top:19%;background:radial-gradient(ellipse,#ff3b0024,transparent 65%);filter:blur(17px);transform:translate(var(--pointer-x,0),var(--pointer-y,0));transition:transform .4s ease}
+#qemu-options .wm-ghost{position:absolute;font:900 clamp(60px,17cqw,140px)/.8 Arial Black,Arial,sans-serif;letter-spacing:-.085em;color:#ff3b00;white-space:nowrap;opacity:.09;left:8%;top:25%;filter:blur(4px);transform-origin:center}
+#qemu-options .wm-ghost-a{animation:wm-ghost-drift 13s ease-in-out infinite alternate;transform:translate(-8px,20px) rotate(-7deg)}
+#qemu-options .wm-ghost-b{left:2%;top:38%;opacity:.055;filter:blur(12px);transform:translate(35px,-6px) rotate(5deg);animation:wm-ghost-drift-b 16s ease-in-out infinite alternate}
+#qemu-options .wm-stage-top{display:flex;justify-content:space-between;align-items:center;gap:14px;padding:17px 19px;font:8px/1.8 var(--mono);letter-spacing:.5px;color:#9b7650;border-bottom:1px solid #c9b39980}
+#qemu-options .wm-state-marker{display:flex;align-items:center;gap:7px;color:#8d6840}
+#qemu-options .wm-word-frame{display:flex;flex-direction:column;justify-content:center;align-items:center;flex:1;min-height:210px;padding:28px 16px 24px;overflow:hidden;text-align:center}
+#qemu-options .wm-word{font:900 clamp(38px,13.5cqw,112px)/.88 Arial Black,Arial,sans-serif;letter-spacing:-.075em;color:#141210;white-space:nowrap;display:flex;align-items:center;justify-content:center;transform:translate(calc(var(--pointer-x,0px)*.45),calc(var(--pointer-y,0px)*.45));transition:transform .25s ease;text-shadow:0 1px 0 #ffffff60}
+#qemu-options .wm-word>span{display:inline-block;animation:wm-letter-in .56s cubic-bezier(.17,.85,.28,1) both;animation-delay:calc(var(--letter-index)*32ms)}
+#qemu-options .wm-word>span:nth-child(3n){color:#3f2c19}
+#qemu-options .wm-stage[data-state=error] .wm-word{color:#ff3b00}
+#qemu-options .wm-stage[data-state=error] .wm-word>span{color:#ff3b00}
+#qemu-options .wm-stage[data-state=running] .wm-word>span:nth-child(2){color:#ff3b00}
+#qemu-options .wm-word-frame>p{font-size:12px;color:#94724b;line-height:1.8;max-width:360px;margin:24px 0 0}
+#qemu-options .wm-stage-meta{display:flex;justify-content:center;gap:25px;flex-wrap:wrap;padding:0 15px 22px;font:8px var(--mono);letter-spacing:.3px;color:#aa8150}
+#qemu-options .wm-stage-meta b{font:500 10px var(--mono);color:#795022;margin-right:4px}
+#qemu-options .wm-dock-slot{align-self:center;max-width:calc(100% - 32px);margin:0 16px 20px;padding:8px;border:1px solid #c4a57e;background:#fff8ee9c;backdrop-filter:blur(20px);border-radius:999px;box-shadow:0 9px 20px #75501e08;z-index:2}
+#qemu-options .wm-dock-slot .q-actions{justify-content:center}
+#qemu-options .wm-dock-slot .q-actions button{font-size:10px;padding:8px 13px;min-height:33px;background:#e5c8a17a;border:1px solid #c8a579;color:#885712}
+#qemu-options .wm-stage-caption{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap;padding:10px 17px;border-top:1px solid #c4ab8c70;font:7px/1.8 var(--mono);letter-spacing:.7px;color:#a78354}
+#qemu-options .wm-guest-console{border:1px solid #aa8c63;background:#1b1915}
+#qemu-options .wm-guest-toolbar{display:flex;justify-content:space-between;align-items:center;gap:12px;padding:9px 12px;background:#e0c7a3;color:#805619;border-bottom:1px solid #9b794b;font:10px var(--mono)}
+#qemu-options .wm-guest-toolbar>span{display:flex;align-items:center;gap:8px;overflow-wrap:anywhere}
+#qemu-options .wm-guest-toolbar svg{height:14px;width:14px}
+#qemu-options .wm-guest-toolbar button{font-size:10px;background:#e7ccaa;padding:5px 9px}
+#qemu-options .wm-guest-placeholder{min-height:340px;display:flex;align-items:center;justify-content:center;flex-direction:column;gap:18px;text-align:center;padding:25px}
+#qemu-options .wm-console-label{font:900 clamp(38px,6vw,75px)/1 Arial Black,Arial,sans-serif;color:#e6d1ae;letter-spacing:-4px;filter:blur(.3px)}
+#qemu-options .wm-guest-placeholder p{font-size:12px;color:#a48b65;margin:0}
+#qemu-options .wm-guest-placeholder small{font:9px var(--mono);color:#776042}
+#qemu-options .qs-stand-description{font-size:12px;color:#8e6d40;line-height:1.8}
+#qemu-options .ce-topology{background:#efe0c9;border:1px solid #ba9665;border-radius:0;padding:15px 11px 10px;margin-bottom:19px;box-shadow:none}
+#qemu-options .ce-diagram-head{display:flex;justify-content:space-between;gap:12px;flex-wrap:wrap;font:8px var(--mono);color:#ac8654;letter-spacing:.6px;margin-bottom:8px}
+#qemu-options .ce-architecture{display:block;width:100%;height:auto}
+#qemu-options .ce-wire{fill:none;stroke:#b89668;stroke-width:1.5}
+#qemu-options .ce-data-flow{fill:none;stroke:#ff3b00;stroke-width:1.5;stroke-dasharray:4 7;animation:wm-flow 3s linear infinite}
+#qemu-options .ce-parent{fill:#e1bf90;stroke:#b3792b;stroke-width:1;rx:18}
+#qemu-options .ce-child{fill:#f5e5ca;stroke:#b89560;stroke-width:1;rx:14}
+#qemu-options .ce-svg-title{font:700 10px var(--mono);fill:#906018}
+#qemu-options .ce-svg-label{font:11px Arial,sans-serif;fill:#84550d}
+#qemu-options .ce-svg-status{font:9px var(--mono);fill:#b08a4f}
+#qemu-options .ce-diagram-note{font:8px var(--mono);color:#b08b50;margin-top:7px}
+#qemu-options .qs-stand-list{border:1px solid #b78b4d;border-radius:0;box-shadow:none}
+#qemu-options .qs-member{background:#eed8b4;border-color:#c8a46c;padding:14px}
+#qemu-options .q-app .qs-member-name{background:transparent;border:0;box-shadow:none;color:#714610}
+#qemu-options .qs-member-name strong{font-size:12px;font-weight:500;color:#795010}
+#qemu-options .qs-member-name small{font:10px/1.8 var(--mono);color:#a17a3c;margin-top:4px}
+#qemu-options .qs-member-name .q-os svg{height:20px;width:20px}
+#qemu-options .qs-member>button:last-child{font-size:10px;padding:8px 12px;background:#e0b97d;color:#8e590e;border:1px solid #b88337;border-radius:999px}
+#qemu-options .qs-note{font-size:11px;line-height:1.8;background:#ead2ae;color:#99713d;border:1px solid #c4a06b;border-radius:0;padding:11px 12px;margin-top:15px}
+#qemu-options .qs-section-heading{font-size:13px;font-weight:600;color:#8e590a}
+#qemu-options .q-panel{background:#ecd1a8;border:1px solid #b88b45;border-radius:0;box-shadow:none}
+#qemu-options .q-panel .q-row{border-color:#c7a166}
+#qemu-options .q-panel .q-row span{color:#a07736}
+#qemu-options .q-panel .q-row b{color:#83520b;font-weight:500}
+#qemu-options .qs-empty{font-size:12px;line-height:1.8;background:#efdbbd;color:#a17b40;border:1px dashed #bd975f;border-radius:0}
+#qemu-options .qs-log-row{font:10px/1.8 var(--mono);background:#e6c999;color:#8d6220;border-color:#b78a43;padding:10px}
+#qemu-options .qs-log-time{color:#ad8647}
+#qemu-options .qs-dropdown{background:#f5e3c7e8;backdrop-filter:blur(20px);border:1px solid #bb8c45;border-radius:15px;box-shadow:0 10px 25px #82541615;left:auto;right:0;z-index:200;padding:5px}
+#qemu-options .qs-dropdown button{font-size:11px;border:0;background:transparent;box-shadow:none;color:#956116;border-radius:10px}
+#qemu-options .qs-dropdown button[data-action=force]{color:#b94824}
+#qemu-options .q-feedback{font:11px/1.9 var(--mono);color:#ae6e18;background:#f2d6ae;border:1px solid #c69752;padding:10px 12px;margin-top:15px}
+#qemu-options .q-feedback:empty{display:none}
+#qemu-options .qs-footer{background:#e6d1ae;border-top:1px solid #b38a50;color:#a1773c;font:8px/1.8 var(--mono);padding:13px 23px;letter-spacing:.2px}
+#qemu-options .qs-footer-dot{color:#7a7c4c;font-size:7px}
+#qemu-options .qs-scenarios{font:11px 'Courier New',Courier,monospace;color:#c1b5a2;gap:12px;margin-bottom:14px}
+#qemu-options .qs-scenarios select{font:11px 'Courier New',Courier,monospace;background:#eee1cc;color:#795011;border:1px solid #b78f54;border-radius:999px;padding:8px 12px;cursor:pointer;transition:all .18s}
+#qemu-options .qh-icon{display:inline-block;vertical-align:middle;flex-shrink:0}
+@keyframes wm-letter-in{from{opacity:0;transform:translateY(35px) rotateX(-15deg)}to{opacity:1;transform:translateY(0) rotateX(0)}}
+@keyframes wm-ghost-drift{from{transform:translate(-8px,20px) rotate(-7deg);opacity:.07}to{transform:translate(20px,5px) rotate(-3deg);opacity:.11}}
+@keyframes wm-ghost-drift-b{from{transform:translate(35px,-6px) rotate(5deg)}to{transform:translate(10px,16px) rotate(8deg)}}
+@keyframes wm-flow{to{stroke-dashoffset:-44}}
+@media(min-width:1300px){#qemu-options .q-layout{grid-template-columns:265px minmax(0,1fr)}#qemu-options .q-main{padding:29px 35px 31px}#qemu-options .q-side{padding:29px 18px 23px}#qemu-options .wm-stage{min-height:435px}#qemu-options .wm-word-frame{min-height:260px}#qemu-options .q-name{font-size:25px}}
+@media(max-width:1050px){#qemu-options .q-layout{grid-template-columns:216px minmax(0,1fr)}#qemu-options .q-main{padding:22px}#qemu-options .q-side{padding:24px 12px 19px}#qemu-options .q-chrome{padding:0 23px;gap:18px}#qemu-options .wm-brand-caption{font-size:7px;padding-left:14px}#qemu-options .wm-focus-head{padding-right:208px}#qemu-options .wm-config{width:188px}#qemu-options .q-name{font-size:21px}#qemu-options .wm-stage-meta{gap:18px}#qemu-options .wm-stage{min-height:400px}}
+@media(max-width:800px){#qemu-options .q-layout{grid-template-columns:195px minmax(0,1fr);min-height:0}#qemu-options .q-main{padding:21px 18px}#qemu-options .q-side{padding:23px 10px 18px}#qemu-options .wm-brand-caption{display:none}#qemu-options .wm-logo{font-size:43px}#qemu-options .wm-preview{font-size:7px}#qemu-options .wm-section-hint{display:none}#qemu-options .wm-selected-wrap{margin-bottom:19px;padding-top:0}#qemu-options .wm-focus-head{padding-right:0;margin-bottom:15px}#qemu-options .wm-config{position:relative;top:0;width:100%;max-width:none}#qemu-options .wm-config[open]{width:100%}#qemu-options .wm-config summary{padding:9px 12px;font-size:10px}#qemu-options .wm-stage{min-height:385px}#qemu-options .wm-stage-top{padding:13px 14px;font-size:7px;flex-wrap:wrap;gap:5px}#qemu-options .wm-word-frame{min-height:190px}#qemu-options .wm-word-frame>p{font-size:11px;margin-top:20px}#qemu-options .wm-stage-meta{gap:10px;font-size:7px;padding-bottom:17px}#qemu-options .wm-stage-meta b{font-size:9px}#qemu-options .wm-dock-slot{border-radius:20px;padding:7px;max-width:calc(100% - 22px);margin:0 11px 16px}#qemu-options .wm-dock-slot .q-actions{gap:6px}#qemu-options .wm-dock-slot .q-actions button{font-size:9px;padding:8px 10px;min-height:31px}#qemu-options .wm-stage-caption{font-size:6px;padding:10px 12px}#qemu-options .q-tabs{gap:20px}#qemu-options .q-tabs button{font-size:10px}}
+@media(max-width:600px){#qemu-options .q-chrome{height:78px;padding:0 16px;gap:15px}#qemu-options .wm-logo{font-size:38px;letter-spacing:-4px}#qemu-options .wm-logo>span{font-size:18px;margin-left:5px}#qemu-options .wm-navigation{padding:3px;gap:2px}#qemu-options .wm-navigation button{font-size:9px;padding:8px 10px}#qemu-options .wm-preview{display:none}#qemu-options .q-layout{display:flex;flex-direction:column;min-height:0}#qemu-options .q-side{padding:20px 14px;border-right:0;border-bottom:1px solid #c1a57b;gap:14px}#qemu-options .wm-index{padding-bottom:10px}#qemu-options .wm-library-note{font-size:10px}#qemu-options .qs-tree{display:flex;flex-direction:column;gap:11px}#qemu-options .qs-children{display:grid;grid-template-columns:1fr 1fr;gap:6px}#qemu-options .qs-machine .q-machine-label strong{font-size:10px}#qemu-options .qs-machine .q-machine-label small{font-size:9px}#qemu-options .q-create{margin-top:2px}#qemu-options .q-main{padding:21px 15px 23px}#qemu-options .wm-section-label{font-size:8px}#qemu-options .wm-focus-head{padding-right:0}#qemu-options .q-name{font-size:23px}#qemu-options .q-heading{gap:11px}#qemu-options .q-status .q-muted{width:auto}#qemu-options .wm-config{width:100%;position:relative}#qemu-options .wm-config[open]{width:100%}#qemu-options .wm-config summary{font-size:11px;padding:10px 13px}#qemu-options .wm-stage{min-height:410px}#qemu-options .wm-stage-top{font-size:8px;padding:14px;gap:8px}#qemu-options .wm-word{font-size:clamp(36px,13.5cqw,85px)}#qemu-options .wm-word-frame{min-height:200px;padding:27px 13px 24px}#qemu-options .wm-word-frame>p{font-size:11px;line-height:1.9;max-width:270px;margin-top:23px}#qemu-options .wm-stage-meta{font-size:7px;gap:13px;padding:0 10px 21px}#qemu-options .wm-stage-meta b{font-size:9px}#qemu-options .wm-dock-slot{padding:8px;margin:0 12px 20px;max-width:calc(100% - 24px);border-radius:999px}#qemu-options .wm-dock-slot .q-actions button{font-size:10px;padding:8px 12px;min-height:33px}#qemu-options .wm-stage-caption{font-size:7px;padding:10px 12px}#qemu-options .q-tabs{gap:22px}#qemu-options .q-tabs button{font-size:11px}#qemu-options .qs-breadcrumb{font-size:9px}#qemu-options .q-inspector{padding:14px;gap:0 17px}#qemu-options .q-config-note{font-size:10px}#qemu-options .qs-footer{font-size:8px;padding:13px 16px}#qemu-options .qs-scenarios{justify-content:flex-start;gap:8px}#qemu-options .ce-architecture{min-height:120px}}
+@media(prefers-reduced-motion:reduce){#qemu-options *,#qemu-options *:before,#qemu-options *:after{animation:none!important;transition:none!important}#qemu-options .wm-word{transform:none}#qemu-options .wm-ghost{animation:none;opacity:.06}}
+</style><style>#qemu-options .wm-word-frame>p,#qemu-options .wm-stage-meta,#qemu-options .wm-stage-caption,#qemu-options .wm-stage-top,#qemu-options .wm-state-marker,#qemu-options .wm-library-note,#qemu-options .qs-group-sub,#qemu-options .qs-machine .q-machine-label small,#qemu-options .q-config-note,#qemu-options .qs-count,#qemu-options .q-status .q-muted{color:#796a56}#qemu-options .qs-group-sub,#qemu-options .qs-machine .q-machine-label small,#qemu-options .q-config-note{font-size:10px}#qemu-options .wm-stage-caption{font-size:8px}#qemu-options .wm-stage-meta{font-size:9px}#qemu-options .wm-section-label,#qemu-options .wm-stage-top{font-size:9px}</style><style>#qemu-options .q-name,#qemu-options .q-app h2,#qemu-options .qs-group-title,#qemu-options .qs-machine .q-machine-label strong,#qemu-options .q-inspector .q-row b{color:var(--ink)}#qemu-options .qs-group-head.selected{background:#e5e0d6;border-color:#b8b0a1}#qemu-options .qs-machine[aria-pressed=true]{background:#ded8ce!important;border-color:#aaa090!important}#qemu-options .qs-children{border-color:#c8beb0}#qemu-options .q-side .q-os{color:#6f675b}#qemu-options .q-heading .q-os{background:#ebe5dc;border-color:#b9aea0;color:var(--ink)}#qemu-options .q-app input{background:#faf7f0;border-color:#c4baab;color:var(--ink)}#qemu-options .q-create{background:#e3ddd3!important;border-color:#afa494!important;color:var(--ink)!important}#qemu-options .wm-config{background:#fffaf0b8;border-color:#c4baab}#qemu-options .wm-config summary{color:var(--ink)}#qemu-options .wm-config[open]{background:#f8f3e9ed;border-color:#b9ad9b}#qemu-options .wm-config[open] summary{border-color:#d5cbbc}#qemu-options .q-inspector .q-row{border-color:#d5ccbe}#qemu-options .q-inspector .q-row span,#qemu-options .q-config-note{color:#7d7467}#qemu-options .q-inspector>button{background:#e6dfd4;border-color:#b8aa94;color:var(--ink)}#qemu-options .wm-stage{background:linear-gradient(135deg,#eae5dc,#f4f1ea 50%,#e9e2d6);border-color:#bcb3a5}#qemu-options .wm-stage-top{border-color:#c9c0b380}#qemu-options .wm-stage-meta b{color:#504638}#qemu-options .wm-dock-slot{background:#fffdf5a6;border-color:#c8bdad}#qemu-options .wm-dock-slot .q-actions button{background:#e8e1d680;border-color:#c4b7a2;color:#3e3427}#qemu-options .wm-dock-slot .q-actions .q-primary{color:#fff!important;background:var(--accent)!important;border-color:var(--accent)!important}#qemu-options .qs-footer{background:#e8e1d5;border-color:#c1b4a0;color:#7c7162}</style>
+<style>
+/* Fill the workspace grid column; center only the outer document shell. */
+#qemu-options .q-main{width:100%;max-width:none;margin:0;padding:25px 24px 28px;justify-self:stretch;align-self:stretch}
+#qemu-options .wm-section-label,#qemu-options .q-top,#qemu-options .qs-detail,#qemu-options .wm-selected-wrap,#qemu-options .wm-workspace{width:100%;max-width:none;margin-left:0;margin-right:0;box-sizing:border-box}
+#qemu-options .wm-members-heading{display:flex;justify-content:space-between;align-items:center;gap:18px;padding-top:25px;margin-bottom:15px}
+#qemu-options .wm-members-heading h3{margin:0;font:600 15px/1.4 Arial,Helvetica,sans-serif;color:var(--ink);letter-spacing:-.25px}
+#qemu-options .wm-members-heading p{font:11px/1.8 Arial,Helvetica,sans-serif;color:#796a56;margin:5px 0 0}
+#qemu-options .wm-members-heading>span{font:10px var(--mono);color:#8d7d67;white-space:nowrap}
+#qemu-options .wm-stand-stage .wm-word{font-size:clamp(34px,12cqw,108px)}
+#qemu-options .wm-stand-stage[data-state=error] .wm-word{font-size:clamp(30px,10.8cqw,104px)}
+#qemu-options .wm-stand-stage .wm-word-frame>p{max-width:440px;font-size:12px;line-height:1.85}
+#qemu-options .wm-stand-stage .wm-stage-meta{gap:29px}
+#qemu-options .wm-stage .wm-dock-slot{margin-bottom:22px}
+#qemu-options .q-dot.mixed{background:#8f826d}
+#qemu-options .wm-event-table{border-top:1px solid #c4b7a3}
+#qemu-options .wm-event-row{display:grid;grid-template-columns:85px minmax(130px,.8fr) minmax(140px,1fr);gap:16px;align-items:start;padding:15px 0;border-bottom:1px solid #d0c3b0;font-size:12px;color:#5e5140}
+#qemu-options .wm-event-row time{font:10px/1.8 var(--mono);color:#91816b}
+#qemu-options .wm-event-row>span{font-size:11px;font-weight:500;line-height:1.8;overflow-wrap:anywhere}
+#qemu-options .wm-event-row p{font:11px/1.8 Arial,sans-serif;margin:0;overflow-wrap:anywhere}
+#qemu-options .wm-events-empty{padding:34px 20px;background:#ebe3d6;border:1px solid #cabaa3;color:#8b775c;font-size:12px;line-height:1.9;text-align:center}
+#qemu-options .wm-action-parking .q-actions{margin-bottom:20px}
+#qemu-options .wm-stage .q-actions{justify-content:center}
+#qemu-options .qs-stand-list{width:100%;box-sizing:border-box}
+#qemu-options .qs-member{padding:16px;gap:15px}
+#qemu-options .qs-member-name strong{font-size:12px}
+#qemu-options .qs-member-name small{font-size:11px;line-height:1.8}
+@media(min-width:1300px){#qemu-options .q-main{padding:28px 24px 30px}#qemu-options .wm-stage{min-height:420px}#qemu-options .wm-word-frame{min-height:245px}}
+@media(max-width:1050px){#qemu-options .q-main{padding:23px 20px 26px}#qemu-options .wm-stage{min-height:390px}}
+@media(max-width:800px){#qemu-options .q-main{padding:22px 18px 25px}#qemu-options .wm-event-row{grid-template-columns:75px 1fr;gap:8px 14px}#qemu-options .wm-event-row p{grid-column:2}#qemu-options .wm-stand-stage .wm-stage-meta{gap:18px}#qemu-options .wm-stand-stage .wm-word-frame>p{font-size:11px}}
+@media(max-width:600px){#qemu-options .q-main{padding:21px 14px 24px}#qemu-options .wm-members-heading{align-items:flex-start;padding-top:23px;gap:12px}#qemu-options .wm-members-heading p{font-size:11px}#qemu-options .wm-members-heading>span{font-size:9px}#qemu-options .wm-stand-stage .wm-stage-meta{gap:13px}#qemu-options .wm-stand-stage .wm-word{font-size:clamp(32px,12cqw,84px)}#qemu-options .wm-stand-stage[data-state=error] .wm-word{font-size:clamp(27px,10.8cqw,75px)}#qemu-options .wm-dock-slot{border-radius:22px}#qemu-options .wm-event-row{grid-template-columns:65px 1fr;gap:7px 10px}#qemu-options .wm-event-row time{font-size:9px}#qemu-options .wm-event-row>span,#qemu-options .wm-event-row p{font-size:11px}#qemu-options .qs-member{padding:14px 12px}#qemu-options .qs-member-name strong{font-size:11px}#qemu-options .qs-member-name small{font-size:10px}}
+</style></main><!-- QemuM dialog studies. Browser-session demonstration; no backend connection. -->
+<style>
+.ds-bar,.dw,.dc,.ds-toast{--paper:#F4F1EA;--ink:#141210;--accent:#FF3B00;--line:#c9c0b3;--muted:#756d61;--mono:'Courier New',monospace;font-family:system-ui,-apple-system,'Segoe UI',sans-serif;color:var(--ink);box-sizing:border-box}.ds-bar *,.dw *,.dc *{box-sizing:border-box}.ds-bar{max-width:1600px;margin:0 auto 16px;background:#f4f1ea;padding:16px 22px;display:flex;align-items:center;gap:22px;border:1px solid #b6ac9e}.ds-brand{white-space:nowrap;font:10px/1.7 var(--mono);letter-spacing:1px}.ds-brand b{color:var(--accent)}.ds-buttons{display:flex;gap:7px;flex-wrap:wrap}.ds-bar button,.dw button,.dc button{cursor:pointer;font:11px system-ui,sans-serif;border:1px solid #c5baaa;color:#332d25;background:#e9e2d7;padding:10px 15px;border-radius:999px;display:inline-flex;align-items:center;justify-content:center;gap:7px;transition:background .18s,transform .18s,border-color .18s;min-height:36px;white-space:normal}.ds-bar button:hover,.dw button:hover:not(:disabled),.dc button:hover:not(:disabled){background:#ded4c5;border-color:#aa9982;transform:translateY(-1px)}.ds-bar button:active,.dw button:active,.dc button:active{transform:translateY(1px)}.ds-bar button[aria-pressed=true]{background:#141210;color:#f4f1ea;border-color:#141210}.dw button:disabled{opacity:.35;cursor:not-allowed}.dw button.primary,.dc button.primary{background:var(--accent);border-color:var(--accent);color:white;font-weight:600}.dw button.primary:hover,.dc button.primary:hover{background:#df3400;border-color:#df3400}.dw button.quiet{background:transparent;border-color:transparent}.dw button.danger,.dc button.danger{color:#c3340a;background:#ff3b000b;border-color:#ff3b0050}.dw button.on{background:#141210;color:white;border-color:#141210}.dw button svg,.dc button svg,.ds-bar svg{width:16px;height:16px;flex-shrink:0}.dw svg,.dc svg{fill:none;stroke:currentColor;stroke-width:1.6;stroke-linecap:round;stroke-linejoin:round}.dw :focus-visible,.dc :focus-visible,.ds-bar :focus-visible{outline:2px solid var(--accent);outline-offset:3px}.dw{width:min(1000px,calc(100vw - 40px));max-width:none;max-height:calc(100dvh - 40px);padding:0;border:1px solid #c1b6a5;border-radius:16px;background:#f4f1eaf5;box-shadow:0 30px 100px #21170d35;overflow:hidden;animation:dw-enter .3s cubic-bezier(.2,.8,.2,1) .25s both}.dw[open]{display:flex;flex-direction:column}.dw::backdrop,.dc::backdrop{background:#1c181349;backdrop-filter:blur(10px);animation:dw-backdrop .25s ease-out both}.dw.small{width:min(700px,calc(100vw - 40px))}.dw-header{padding:27px 30px 24px;position:relative;border-bottom:1px solid var(--line);flex-shrink:0;overflow:hidden;background:linear-gradient(120deg,#f8f5ef,#eee5d8)}.dw-overline,.dw-meta,.dw-label,.dw-index{font:9px/1.6 var(--mono);text-transform:uppercase;letter-spacing:1px;color:var(--muted)}.dw-overline{display:flex;justify-content:space-between;padding-right:40px}.dw-overline b{color:var(--accent);font-weight:400}.dw-header h1{font:900 clamp(30px,5vw,56px)/1.05 'Arial Black',Arial,sans-serif;letter-spacing:-2.6px;margin:13px 0 12px;position:relative;z-index:1}.dw-header .ghost{position:absolute;right:80px;top:29px;font:900 110px/1 'Arial Black',Arial,sans-serif;letter-spacing:-8px;color:#ff3b0010;filter:blur(3px);transform:rotate(-5deg);pointer-events:none;animation:dw-drift 14s ease-in-out infinite alternate}.dw-head-info{display:flex;align-items:center;gap:10px;font-size:12px}.dw-led{height:6px;width:6px;background:#6b7b54;border-radius:50%;display:inline-block}.dw-close{position:absolute;top:21px;right:22px;width:34px;height:34px;padding:8px!important;background:#fff7!important}.dw-body{overflow:auto;min-height:0;padding:26px 30px;scrollbar-width:thin;scrollbar-color:#b6a995 transparent}.dw-footer{flex-shrink:0;padding:16px 30px;border-top:1px solid var(--line);display:flex;align-items:center;justify-content:space-between;gap:18px;background:#f1ece3}.dw-footer .actions,.dw-inline{display:flex;gap:8px;align-items:center;flex-wrap:wrap}.dw-meta{font-size:9px;letter-spacing:.3px}.dw-footer .actions{justify-content:flex-end;margin-left:auto}.dw-toolbar{display:flex;gap:12px;align-items:center;flex-wrap:wrap;margin-bottom:22px}.dw input,.dw select,.dw textarea,.dc input,.dc select{font:12px system-ui,sans-serif;color:var(--ink);border:1px solid #c6bba9;border-radius:4px;background:#fcf9f3;padding:11px 12px;min-width:0;max-width:100%;width:100%;transition:border-color .2s}.dw input:focus,.dw select:focus,.dw textarea:focus{border-color:var(--accent)}.dw-toolbar input{flex:1;min-width:180px}.dw-toolbar select{width:160px}.dw-split{display:grid;grid-template-columns:minmax(0,1fr) 320px;gap:24px;min-height:270px}.dw-list{display:flex;flex-direction:column;gap:8px}.dw-snapshot{width:100%;text-align:left;justify-content:flex-start!important;gap:14px!important;border-radius:8px!important;background:#ece7dd!important;padding:16px!important}.dw-snapshot[aria-selected=true]{background:#eee0ce!important;border-color:#c9a078!important;box-shadow:inset 3px 0 var(--accent)}.dw-snapshot strong{display:block;font-size:12px;font-weight:600}.dw-snapshot small{display:block;font:10px/1.6 var(--mono);color:var(--muted);margin-top:5px}.dw-snapshot>svg{width:22px;height:22px;color:#8b6d47}.dw-tag{font:8px var(--mono);padding:5px 7px;border:1px solid #c3b6a4;border-radius:4px;margin-left:auto;white-space:nowrap;color:#776347}.dw-card{padding:20px;border:1px solid #c7bcac;background:#faf6eea8;border-radius:10px;min-width:0}.dw-card h2,.dw h2{font-size:14px;font-weight:600;margin:0 0 15px;letter-spacing:-.25px}.dw-row{display:flex;justify-content:space-between;gap:18px;padding:11px 0;border-bottom:1px solid #ddd4c7;font-size:11px}.dw-row:last-child{border:0}.dw-row>span{color:var(--muted)}.dw-row>b{font:11px var(--mono);font-weight:400;text-align:right;overflow-wrap:anywhere}.dw-detail-name{font-size:22px;font-weight:650;letter-spacing:-.7px;margin:12px 0 20px;overflow-wrap:anywhere}.dw-note{font-size:11px;line-height:1.7;color:var(--muted);margin:18px 0 0}.dw-empty{padding:38px 20px;border:1px dashed #bfb2a0;text-align:center;color:var(--muted);font-size:12px;line-height:1.8}.dw-grid{display:grid;grid-template-columns:1fr 1fr;gap:20px}.dw-field{display:grid;gap:8px;font-size:11px;align-content:start}.dw-field>span{color:#736854}.dw-field.wide{grid-column:1/-1}.dw-section{margin-bottom:26px}.dw-section:last-child{margin-bottom:0}.dw-tabs{display:flex;gap:22px;border-bottom:1px solid var(--line);margin-bottom:24px;flex-wrap:wrap}.dw-tabs button{border:0;border-bottom:2px solid transparent;background:transparent;border-radius:0;padding:0 0 12px;color:#89775e}.dw-tabs button[aria-selected=true]{color:var(--ink);border-color:var(--accent)}.dw-tabs button:hover{background:transparent}.dw-radio-group{display:flex;gap:6px;flex-wrap:wrap}.dw-radio-group button{border-radius:5px;flex:1;font-size:10px;min-width:60px}.dw-nav{width:190px;flex-shrink:0;display:flex;flex-direction:column;gap:8px}.dw-nav button{border-radius:6px;justify-content:space-between;text-align:left;padding:12px}.dw-nav button.active{background:#e7dac8;border-color:#c8a67b;box-shadow:inset 2px 0 var(--accent)}.dw-settings{display:flex;gap:30px}.dw-settings>section{flex:1;min-width:0}.dw-adapter{display:grid;grid-template-columns:40px 1fr auto;gap:15px;align-items:center;padding:17px;border:1px solid #cbbda8;background:#ede6da;border-radius:8px;margin-bottom:10px}.dw-adapter-icon{width:35px;height:35px;border-radius:8px;border:1px solid #c7b49b;display:grid;place-items:center;background:#f9f2e7}.dw-adapter strong{font-size:12px;display:block}.dw-adapter small{font:10px/1.8 var(--mono);color:var(--muted);display:block;margin-top:5px}.dw-adapter>button{font-size:10px;padding:8px 12px}.dw-stepper{display:flex;gap:0;margin-bottom:26px}.dw-step{font:10px var(--mono);padding:12px 10px;border-bottom:1px solid #c8beaf;flex:1;color:#9b9183}.dw-step.active{border-bottom:2px solid var(--accent);color:var(--ink)}.dw-step b{font-weight:400;color:var(--accent);margin-right:8px}.dw-range{display:flex;align-items:center;gap:15px}.dw-range input[type=range]{padding:0;accent-color:var(--accent)}.dw-range output{font:12px var(--mono);min-width:70px;text-align:right}.dw-choice{display:flex;align-items:center;justify-content:space-between;gap:14px;border-bottom:1px solid #d7cebf;padding:14px 0}.dw-choice:first-child{padding-top:0}.dw-choice strong{font-size:12px;display:block}.dw-choice small{font:10px var(--mono);color:var(--muted);display:block;margin-top:5px}.dw-choice button{min-width:90px}.dw-service-grid{display:grid;grid-template-columns:repeat(2,1fr);gap:12px}.dw-service{border-radius:10px!important;display:flex!important;flex-direction:column;align-items:flex-start!important;text-align:left;padding:22px!important;background:#ede7dd!important;gap:15px!important}.dw-service svg{width:23px!important;height:23px!important;color:var(--accent)}.dw-service strong{font-size:14px}.dw-service small{font:10px/1.7 var(--mono);color:var(--muted)}.dw-operation{position:relative;padding:32px 24px;border:1px solid #c3b5a2;background:linear-gradient(130deg,#e9e1d5,#faf6ee);overflow:hidden}.dw-operation-word{font:900 clamp(34px,7vw,66px)/1 'Arial Black',Arial,sans-serif;letter-spacing:-3px;position:relative;z-index:1;margin:10px 0 24px}.dw-operation-word span{color:var(--accent)}.dw-progress{height:4px;background:#d7cdbf;margin:20px 0}.dw-progress>i{display:block;height:100%;background:var(--accent);width:var(--progress,40%);transition:width .5s}.dw-operation-steps{margin-top:20px;display:grid;gap:14px}.dw-operation-steps>div{display:flex;gap:14px;font:11px var(--mono);color:var(--muted)}.dw-operation-steps b{font-weight:400;color:var(--accent)}.dw-operation-steps .current{color:var(--ink)}.dw-validation{color:#b33f20;font-size:11px;min-height:0;margin-top:14px}.dw-validation:empty{display:none}.dc{padding:0;border:1px solid #beae98;border-radius:14px;background:#f4f1ea;width:min(430px,calc(100vw - 32px));max-height:90dvh;box-shadow:0 25px 80px #21170d38}.dc-body{padding:28px}.dc h2{font:700 27px/1.15 system-ui,sans-serif;letter-spacing:-1px;margin:15px 0}.dc #confirmDescription{font-size:12px;line-height:1.8;color:var(--muted);margin:0}.dc .actions{display:flex;justify-content:flex-end;gap:8px;padding:16px 24px;border-top:1px solid var(--line)}.dc-icon{width:40px;height:40px;border:1px solid #ff3b0040;border-radius:10px;display:grid;place-items:center;background:#ff3b0009;color:var(--accent)}.dc-icon svg{width:22px;height:22px}.ds-toast{position:fixed;bottom:24px;left:50%;transform:translateX(-50%);z-index:1000;border:1px solid #c4b5a0;background:#fcf8eff2;backdrop-filter:blur(20px);box-shadow:0 8px 25px #21170d20;padding:13px 20px;border-radius:999px;font:11px var(--mono);max-width:90vw}.ds-toast[hidden]{display:none}.dw [hidden],.dc [hidden]{display:none!important}@keyframes dw-backdrop{from{background:#1c181300;backdrop-filter:blur(0)}to{background:#1c181349;backdrop-filter:blur(10px)}}@keyframes dw-enter{from{opacity:0;transform:translateY(18px)}to{opacity:1;transform:translateY(0)}}@keyframes dw-drift{to{transform:translate(-15px,4px) rotate(-2deg)}}
+@media(max-width:740px){.ds-bar{align-items:flex-start;flex-direction:column;gap:12px;padding:15px}.dw{width:calc(100vw - 20px);max-height:calc(100dvh - 20px)}.dw-header{padding:22px 20px}.dw-header h1{font-size:37px;letter-spacing:-1.7px}.dw-body{padding:22px 20px}.dw-footer{padding:14px 20px;flex-wrap:wrap}.dw-split{grid-template-columns:1fr}.dw-split>.dw-card{border-top:1px solid var(--line)}.dw-grid{gap:16px}.dw-settings{flex-direction:column;gap:20px}.dw-nav{width:100%;flex-direction:row;overflow:auto;gap:6px;padding-bottom:8px}.dw-nav button{white-space:nowrap;flex-shrink:0}.dw-service-grid{gap:10px}.dw-service{padding:16px!important}.dw-adapter{grid-template-columns:35px 1fr}.dw-adapter>button{grid-column:2;justify-self:start}.dw-step{font-size:9px;padding:10px 4px}.dw-step b{display:block;margin-bottom:5px}.dw-overline{font-size:8px}.dw-toolbar select{width:140px}}
+@media(max-width:450px){.dw-grid,.dw-service-grid{grid-template-columns:1fr}.dw-header h1{font-size:32px}.dw-header .ghost{font-size:80px;right:15px;top:35px}.dw-footer .dw-meta{display:none}.dw-footer .actions{width:100%}.dw-radio-group button{min-width:75px}.dw-toolbar input,.dw-toolbar select{width:100%;flex:auto}.dw-stepper{margin-bottom:20px}.ds-buttons button{font-size:10px;padding:8px 10px}.dw-snapshot{padding:12px!important;gap:10px!important}.dw-tag{font-size:7px;padding:4px}.dw-overline>span:last-child{display:none}}
+@media(prefers-reduced-motion:reduce){.dw,.dw *,.dc *{animation:none!important;transition:none!important}}
+</style>
+<div class="ds-bar" id="dialogGallery"><div class="ds-brand"><b>qvm / WINDOW STUDIES</b><br>09 WINDOWS · SESSION PREVIEW</div><div class="ds-buttons" id="dialogLaunchers"></div></div>
+<dialog class="dw" id="windowStudy" aria-labelledby="windowTitle"><header class="dw-header"><div class="dw-overline"><span id="windowIndex"></span><span>QEMU VM MANAGER / LOCAL UI</span></div><span class="ghost" aria-hidden="true" id="windowGhost"></span><h1 id="windowTitle"></h1><div class="dw-head-info"><i class="dw-led"></i><span id="windowScope"></span></div><button class="dw-close" id="windowClose" aria-label="Close window"></button></header><div class="dw-body" id="windowBody"></div><footer class="dw-footer"><span class="dw-meta" id="windowMeta"></span><div class="actions" id="windowActions"></div></footer></dialog>
+<dialog class="dc" id="confirmStudy" aria-labelledby="confirmTitle"><div class="dc-body"><div class="dc-icon" id="confirmIcon"></div><h2 id="confirmTitle"></h2><div id="confirmDescription"></div></div><div class="actions"><button id="confirmCancel">Cancel</button><button class="primary" id="confirmAccept">Confirm</button></div></dialog><div class="ds-toast" id="studyToast" role="status" hidden></div>
+<script>
+(()=>{'use strict';
+const $=s=>document.querySelector(s),E=s=>String(s).replace(/[&<>"']/g,c=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+const paths={close:'<path d="m6 6 12 12M18 6 6 18"/>',layers:'<path d="m12 3 10 5-10 5L2 8Zm-10 9 10 5 10-5M2 16l10 5 10-5"/>',network:'<rect x="8" y="2" width="8" height="5" rx="1"/><rect x="2" y="17" width="7" height="5" rx="1"/><rect x="15" y="17" width="7" height="5" rx="1"/><path d="M12 7v5H5v5m7-5h7v5"/>',settings:'<path d="M3 6h18M3 12h18M3 18h18M8 3v6m8 0v6M8 15v6"/>',plus:'<path d="M12 5v14M5 12h14"/>',monitor:'<rect x="3" y="3" width="18" height="13" rx="2"/><path d="M12 16v5m-5 0h10"/>',shield:'<path d="m12 3 8 3v6c0 5-8 9-8 9s-8-4-8-9V6Z"/><path d="m8 12 3 3 5-6"/>',arrow:'<path d="M5 12h14m-5-5 5 5-5 5"/>',folder:'<path d="M3 7V4h7l2 3h9v13H3Z"/>',alert:'<path d="m12 3 10 18H2Zm0 5v6m0 3v1"/>',check:'<path d="m5 12 5 5L20 6"/>'};
+const I=n=>'<svg viewBox="0 0 24 24" aria-hidden="true">'+(paths[n]||paths.monitor)+'</svg>';
+const B=(action,text,cls='',extra='')=>'<button type="button" data-dw="'+action+'" class="'+cls+'" '+extra+'>'+text+'</button>';
+const field=(label,name,value,type='text',extra='')=>'<label class="dw-field"><span>'+label+'</span><input name="'+name+'" type="'+type+'" value="'+E(value)+'" '+extra+'></label>';
+const row=(key,value)=>'<div class="dw-row"><span>'+key+'</span><b>'+E(value)+'</b></div>';
+const machineNames=['Ubuntu Server For IPV6','Ubuntu Desktop','Kali Linux','FreeBSD Server'];
+let snaps=[{id:1,name:'Clean installation',date:'14 Nov 2026 · 10:42',size:'2.4 GB',type:'disk',protected:true,note:'Base system and guest tools.'},{id:2,name:'Before network changes',date:'14 Nov 2026 · 11:18',size:'3.1 GB',type:'disk',protected:false,note:'Known configuration before changing the lab network.'},{id:3,name:'Paused development session',date:'14 Nov 2026 · 11:54',size:'4.8 GB',type:'ram',protected:false,note:'TCG session · memory and CPU state.'}];
+let nics=[{id:'net0',mode:'NAT',model:'e1000e',mac:'52:54:00:12:34:01'},{id:'lan',mode:'Isolated LAN',model:'virtio-net-pci',mac:'52:54:00:12:34:02'}];
+let config={name:machineNames[0],memory:4096,cpu:2,accel:'TCG',iso:'debian-12.iso',disk:'server.qcow2'};
+let members=[0,2],standName='Research laboratory';let rollback=null;let selected=2,screen='snapshots',configTab='Resources',networkTab='Adapters',wizardStep=0,wizard={name:'New machine',iso:'',ram:4096,cpu:2,disk:32};let toastTimer,operationTimer,operationStage=0,confirmAction=null;
+const views=[['snapshots','Snapshots'],['create-snapshot','New snapshot'],['network','Network adapters'],['configuration','Configuration'],['new-machine','New machine'],['stand','Stand settings'],['operation','Operation'],['service','Service'],['delete-machine','Delete machine']];
+$('#dialogLaunchers').innerHTML=views.map(([id,label])=>B('open:'+id,label)).join('');$('#windowClose').innerHTML=I('close');$('#confirmIcon').innerHTML=I('alert');
+function toast(text){queueMicrotask(()=>{clearTimeout(toastTimer);const t=$('#studyToast');($('#windowStudy').open?$('#windowStudy'):document.body).appendChild(t);t.textContent=text;t.hidden=false;toastTimer=setTimeout(()=>t.hidden=true,3000);});}
+function open(kind){if(rollback){rollback();rollback=null;}if(kind==='configuration'){const previous={...config};rollback=()=>{config=previous;};}if(kind==='network'){const previous=nics.map(n=>({...n}));rollback=()=>{nics=previous;};}if(kind==='stand'){const previous=[...members],name=standName;rollback=()=>{members=previous;standName=name;};}clearInterval(operationTimer);screen=kind;$('#windowStudy').classList.toggle('small',['create-snapshot','new-machine','stand','operation','delete-machine'].includes(kind));render();if(!$('#windowStudy').open)$('#windowStudy').showModal();if(kind==='operation')runOperation();}
+function chrome(index,title,scope,meta){$('#windowIndex').innerHTML='<b>'+index+'</b> / '+title.toUpperCase();$('#windowTitle').textContent=title;$('#windowGhost').textContent=title.split(' ')[0].toUpperCase();$('#windowScope').textContent=scope;$('#windowMeta').textContent=meta;document.querySelectorAll('#dialogLaunchers button').forEach(b=>b.removeAttribute('aria-pressed'));}
+function render(){let body='',actions='';const m=config.name;
+if(screen==='snapshots'){chrome('01','Snapshots',m+' · stopped','LOCAL CATALOG / '+String(snaps.length).padStart(2,'0')+' RESTORE POINTS');body='<div class="dw-toolbar"><input id="snapshotQuery" aria-label="Search snapshots" placeholder="Search restore points…"><select id="snapshotType" aria-label="Filter snapshot type"><option value="all">All types</option><option value="disk">Disk only</option><option value="ram">Full state / RAM</option></select></div><div class="dw-split"><div class="dw-list" id="snapshotRows"></div><section class="dw-card" id="snapshotDetails"></section></div>';actions=B('open:create-snapshot',I('plus')+'Create snapshot','primary')+B('restore','Restore')+B('delete-snapshot','Delete','danger')+B('close','Close');}
+else if(screen==='create-snapshot'){chrome('02','New snapshot',m,'CREATE / RESTORE POINT');body='<form id="snapshotForm" class="dw-grid">'+field('Snapshot name','name','Before system changes','text','required maxlength="100"')+'<label class="dw-field"><span>Snapshot type</span><select name="type"><option value="disk">Disk snapshot</option><option value="ram">Full state / RAM · TCG</option></select></label><label class="dw-field wide"><span>Description</span><textarea name="note" rows="3" placeholder="Optional notes for this restore point"></textarea></label><div class="dw-field wide"><span>Protection</span><div>'+B('protect-new','Protect from deletion','','aria-pressed="false" id="protectNew"')+'</div></div></form><div class="dw-card" style="margin-top:22px">'+row('Machine state','Stopped')+row('Disk','server.qcow2')+row('Available space','48.6 GB')+'</div>';actions=B('open:snapshots','Cancel')+'<button class="primary" type="submit" form="snapshotForm">'+I('layers')+'Create snapshot</button>';}
+else if(screen==='network'){chrome('03','Network adapters',m,'NETWORK / DRAFT CONFIGURATION');body='<nav class="dw-tabs" aria-label="Network sections">'+['Adapters','Port forwarding'].map(t=>B('network-tab:'+t,t,'','aria-selected="'+(t===networkTab)+'"')).join('')+'</nav><section id="networkContent"></section>';actions=B('add-adapter',I('plus')+'Add adapter')+B('close','Cancel')+B('save-network','Save changes','primary');}
+else if(screen==='configuration'){chrome('04','Configuration',m,'VM / NEXT START');body='<div class="dw-settings"><nav class="dw-nav" aria-label="Configuration pages">'+['Resources','Storage','Display','Appearance'].map((t,i)=>B('config-tab:'+t,'<span>'+t+'</span><span class="dw-index">0'+(i+1)+'</span>',t===configTab?'active':'')).join('')+'</nav><section id="configContent"></section></div>';actions=B('close','Cancel')+'<button class="primary" type="submit" form="configStudy">Save changes</button>';}
+else if(screen==='new-machine'){chrome('05','New machine','Create a local system','CREATION / '+(wizardStep+1)+' OF 3');body='<div class="dw-stepper">'+['Identity','Resources','Review'].map((t,i)=>'<div class="dw-step '+(wizardStep===i?'active':'')+'"><b>0'+(i+1)+'</b>'+t+'</div>').join('')+'</div><form id="wizardForm"></form>';actions=B(wizardStep?'wizard-back':'close',wizardStep?'Back':'Cancel')+'<button class="primary" type="submit" form="wizardForm">'+(wizardStep===2?'Create machine':('Continue '+I('arrow')))+'</button>';}
+else if(screen==='stand'){chrome('06','Stand settings',standName,'STAND / MEMBERSHIP');body='<form id="standStudy">'+field('Stand name','name',standName,'text','required maxlength="120"')+'<section style="margin-top:24px"><h2>Members</h2>'+machineNames.map((name,i)=>'<div class="dw-choice"><span><strong>'+name+'</strong><small>'+([4,8,4,2][i])+' GB · '+([2,4,2,1][i])+' vCPU</small></span>'+B('toggle-member:'+i,members.includes(i)?'Included':'Include',members.includes(i)?'on':'','aria-pressed="'+members.includes(i)+'"')+'</div>').join('')+'</section><div class="dw-validation" id="standValidation"></div></form>';actions=B('close','Cancel')+'<button type="submit" form="standStudy" class="primary">Save stand</button>';}
+else if(screen==='operation'){chrome('07','Operation',m,'PREVIEW / SIMULATED PROGRESS');body='<div class="dw-operation"><div class="dw-label">SNAPSHOT / CREATE</div><div class="dw-operation-word" id="operationWord">SAV<span>ING</span></div><div class="dw-progress" id="progress"><i></i></div><div class="dw-meta" id="progressText"></div></div><div class="dw-operation-steps" id="operationSteps"></div>';actions=B('cancel-operation','Cancel operation','danger')+B('close','Close','','disabled id="operationClose"');}
+else if(screen==='service'){chrome('08','Service','Workspace tools','LOCAL CONTROL / UTILITIES');const tiles=[['settings','Application settings','Theme, density and motion','preferences'],['shield','Diagnostics','QEMU, runtime and capabilities','diagnostics'],['folder','Configuration copies','Saved machine parameters','copies'],['layers','Updates','Application version and channel','updates']];body='<div class="dw-service-grid">'+tiles.map(([i,title,text,act])=>B('service:'+act,I(i)+'<span><strong>'+title+'</strong><br><small>'+text+'</small></span>','dw-service')).join('')+'</div>';actions=B('close','Close');}
+else{chrome('09','Delete machine',m,'DESTRUCTIVE ACTION / REVIEW');body='<div class="dw-card">'+row('Machine',m)+row('State','Stopped')+row('Disk',config.disk)+row('ISO',config.iso||'Not attached')+'</div><p class="dw-note">This preview removes the demo entry only. No disk files will be deleted.</p><form id="deleteStudy" style="margin-top:22px">'+field('Type DELETE to confirm','confirm','','text','required pattern="DELETE" autocomplete="off"')+'</form>';actions=B('close','Cancel')+'<button type="submit" form="deleteStudy" class="danger">Delete demo machine</button>';}
+$('#windowBody').innerHTML=body;$('#windowActions').innerHTML=actions;
+if(screen==='snapshots'){drawSnapshots();$('#snapshotQuery').addEventListener('input',drawSnapshots);$('#snapshotType').addEventListener('change',drawSnapshots);}if(screen==='network')drawNetwork();if(screen==='configuration')drawConfig();if(screen==='new-machine')drawWizard();}
+function drawSnapshots(){const query=$('#snapshotQuery').value.toLowerCase(),type=$('#snapshotType').value;const rows=snaps.filter(s=>s.name.toLowerCase().includes(query)&&(type==='all'||s.type===type));if(!rows.some(s=>s.id===selected))selected=rows[0]?.id;$('#snapshotRows').innerHTML=rows.length?rows.map(s=>B('select-snapshot:'+s.id,I(s.type==='ram'?'monitor':'layers')+'<span><strong>'+E(s.name)+'</strong><small>'+s.date+'</small></span><span class="dw-tag">'+(s.protected?'LOCKED':s.type.toUpperCase())+'</span>','dw-snapshot','aria-selected="'+(selected===s.id)+'"')).join(''):'<div class="dw-empty">No matching snapshots.</div>';const s=snaps.find(s=>s.id===selected);$('#snapshotDetails').innerHTML=s?'<div class="dw-label">RESTORE POINT / '+String(s.id).padStart(2,'0')+'</div><div class="dw-detail-name">'+E(s.name)+'</div>'+row('Type',s.type==='ram'?'Full state / TCG':'Disk snapshot')+row('Created',s.date)+row('Size',s.size)+row('Protection',s.protected?'Protected':'Off')+'<p class="dw-note">'+E(s.note)+'</p>':'<div class="dw-empty">Select a restore point.</div>';$('#windowActions [data-dw=restore]').disabled=!s;$('#windowActions [data-dw=delete-snapshot]').disabled=!s||s.protected;}
+function drawNetwork(){const target=$('#networkContent');if(networkTab==='Port forwarding'){target.innerHTML='<div class="dw-card">'+row('Protocol','TCP')+row('Host address','127.0.0.1')+row('Host port','2222')+row('Guest port','22')+'</div><div class="dw-inline" style="margin-top:16px">'+B('forwarding','Edit forwarding rule')+'</div>';return;}target.innerHTML=nics.length?nics.map((n,i)=>'<div class="dw-adapter"><span class="dw-adapter-icon">'+I('network')+'</span><span><strong>'+E(n.id)+' / '+E(n.mode)+'</strong><small>'+E(n.model)+' · '+E(n.mac)+'</small></span>'+B('edit-adapter:'+i,'Configure')+'</div>').join(''):'<div class="dw-empty">No adapters configured.</div>';}
+function adapterEditor(index){const n=nics[index];confirmAction=null;$('#confirmTitle').textContent='Configure '+n.id;$('#confirmDescription').innerHTML='<form id="adapterStudy" data-index="'+index+'"><label class="dw-field"><span>Connection</span><select name="mode" style="width:100%;padding:10px;margin:8px 0 16px">'+['NAT','Isolated LAN','TAP','TCP socket','Multicast'].map(m=>'<option '+(m===n.mode?'selected':'')+'>'+m+'</option>').join('')+'</select></label><label class="dw-field"><span>Model</span><select name="model" style="width:100%;padding:10px;margin-top:8px">'+['e1000e','virtio-net-pci','rtl8139'].map(m=>'<option '+(m===n.model?'selected':'')+'>'+m+'</option>').join('')+'</select></label></form>';$('#confirmAccept').textContent='Apply';$('#confirmAccept').onclick=()=>{const f=$('#adapterStudy');n.mode=f.elements.mode.value;n.model=f.elements.model.value;$('#confirmStudy').close();drawNetwork();};$('#confirmStudy').showModal();}
+function drawConfig(){let body='<form id="configStudy" class="dw-grid">';if(configTab==='Resources')body+=field('Machine name','name',config.name,'text','required maxlength="120"')+'<label class="dw-field"><span>Acceleration</span><select name="accel">'+['Auto','TCG','WHPX'].map(a=>'<option '+(config.accel===a?'selected':'')+'>'+a+'</option>').join('')+'</select></label>'+field('Memory, MB','memory',config.memory,'number','required min="128" max="262144"')+field('Virtual CPUs','cpu',config.cpu,'number','required min="1" max="64"');else if(configTab==='Storage')body+=field('Disk image','disk',config.disk)+field('ISO image','iso',config.iso)+'<div class="dw-card dw-field wide">'+row('Disk format','qcow2')+row('Virtual size','32 GB')+'</div>';else if(configTab==='Display')body+='<label class="dw-field"><span>Video adapter</span><select name="video"><option>virtio</option><option>std</option><option>qxl</option></select></label>'+field('Width','width','1920','number','min="640" max="7680"')+field('Height','height','1080','number','min="480" max="4320"');else body+='<div class="dw-field wide"><span>System icon</span><div class="dw-radio-group">'+['Auto','Ubuntu','Kali','Generic'].map((a,i)=>B('appearance:'+a,a,i===0?'on':'','aria-pressed="'+(i===0)+'"')).join('')+'</div></div><div class="dw-card dw-field wide" style="text-align:center;padding:35px">'+I('monitor')+'<span class="dw-meta"> SYSTEM EMBLEM</span></div>';$('#configContent').innerHTML=body+'</form>';}
+function drawWizard(){const f=$('#wizardForm');if(wizardStep===0)f.innerHTML='<div class="dw-grid">'+field('Machine name','name',wizard.name,'text','required maxlength="120"')+field('ISO filename','iso',wizard.iso,'text','placeholder="Choose an image"')+'</div>';else if(wizardStep===1)f.innerHTML='<div class="dw-grid">'+field('Memory, MB','ram',wizard.ram,'number','required min="128" max="262144"')+field('Virtual CPUs','cpu',wizard.cpu,'number','required min="1" max="64"')+field('Disk size, GB','disk',wizard.disk,'number','required min="1" max="2048"')+'</div>';else f.innerHTML='<div class="dw-card">'+row('Name',wizard.name)+row('ISO',wizard.iso||'Not attached')+row('Memory',wizard.ram+' MB')+row('Processor',wizard.cpu+' vCPU')+row('Disk size',wizard.disk+' GB')+'</div>';}
+function ask(title,description,action){$('#confirmTitle').textContent=title;$('#confirmDescription').textContent=description;$('#confirmAccept').textContent='Confirm';$('#confirmAccept').onclick=()=>{$('#confirmStudy').close();action();};$('#confirmStudy').showModal();}
+function runOperation(){operationStage=0;const names=['Validate configuration','Reserve disk images','Write restore point','Verify result'];function update(){const done=operationStage>=4;$('#operationWord').innerHTML=done?'SAV<span>ED</span>':'SAV<span>ING</span>';$('#progress').style.setProperty('--progress',Math.min(100,operationStage*25)+'%');$('#progressText').textContent=done?'COMPLETE / DEMO RESULT':('STEP '+(operationStage+1)+' OF 4');$('#operationSteps').innerHTML=names.map((name,i)=>'<div class="'+(i===operationStage?'current':'')+'"><b>'+(i<operationStage?'✓':String(i+1).padStart(2,'0'))+'</b>'+name+'</div>').join('');$('#operationClose').disabled=!done;$('#windowActions [data-dw=cancel-operation]').disabled=done;if(done)clearInterval(operationTimer);}update();operationTimer=setInterval(()=>{if(!$('#windowStudy').open||screen!=='operation'){clearInterval(operationTimer);return;}operationStage++;update();},1000);}
+document.addEventListener('click',event=>{const b=event.target.closest('[data-dw]');if(!b||b.disabled)return;const a=b.dataset.dw;if(a.startsWith('open:')){open(a.slice(5));return;}if(a.startsWith('select-snapshot:')){selected=Number(a.split(':')[1]);drawSnapshots();return;}if(a.startsWith('config-tab:')){const f=$('#configStudy');if(f){for(const key of ['name','memory','cpu','accel','disk','iso'])if(f.elements[key])config[key]=f.elements[key].value;}configTab=a.split(':')[1];render();return;}if(a.startsWith('network-tab:')){networkTab=a.split(':')[1];render();return;}if(a.startsWith('edit-adapter:')){adapterEditor(Number(a.split(':')[1]));return;}if(a.startsWith('toggle-member:')){const f=$('#standStudy');standName=f.elements.name.value;const id=Number(a.split(':')[1]);members=members.includes(id)?members.filter(x=>x!==id):[...members,id];render();return;}if(a.startsWith('appearance:')){b.parentElement.querySelectorAll('button').forEach(x=>{x.classList.toggle('on',x===b);x.setAttribute('aria-pressed',x===b);});return;}if(a.startsWith('service:')){const kind=a.split(':')[1];if(kind==='preferences'){chrome('08','Preferences','Application appearance','SERVICE / LOCAL PREVIEW');$('#windowBody').innerHTML='<div class="dw-grid"><label class="dw-field"><span>Theme</span><select><option>Words in motion / paper</option></select></label><label class="dw-field"><span>Density</span><select><option>Comfortable</option><option>Compact</option></select></label><div class="dw-field wide"><span>Motion</span>'+B('motion','Reduce motion','','aria-pressed="false"')+'</div></div>';$('#windowActions').innerHTML=B('open:service','Back')+B('save-preferences','Apply','primary');}else ask(kind==='updates'?'Up to date':kind==='diagnostics'?'Diagnostics preview':'Configuration copies',kind==='updates'?'This is a design preview. No update service is connected.':kind==='diagnostics'?'QEMU runtime and guest checks are simulated in this HTML study.':'No saved configuration copies in this preview.',()=>{});return;}
+switch(a){case'close':$('#windowStudy').close();break;case'protect-new':{const active=b.getAttribute('aria-pressed')!=='true';b.setAttribute('aria-pressed',active);b.classList.toggle('on',active);break;}case'restore':{const s=snaps.find(x=>x.id===selected);if(s)ask('Restore this point?','Restore “'+s.name+'” in the demo. Real recovery would require a verified plan and compatible machine state.',()=>toast('Restore selected · demonstration only'));break;}case'delete-snapshot':{const s=snaps.find(x=>x.id===selected);if(s&&!s.protected)ask('Delete snapshot?','Remove “'+s.name+'” from this browser-session catalog?',()=>{snaps=snaps.filter(x=>x.id!==s.id);drawSnapshots();});break;}case'add-adapter':{if(nics.length>=8){toast('Preview limit: eight adapters');break;}let i=0;while(nics.some(n=>n.id==='net'+i))i++;nics.push({id:'net'+i,mode:'NAT',model:'e1000e',mac:'52:54:00:12:34:'+String(i+1).padStart(2,'0')});drawNetwork();break;}case'save-network':rollback=null;toast('Network configuration saved in this preview');$('#windowStudy').close();break;case'forwarding':ask('Port forwarding','TCP · 127.0.0.1:2222 → guest:22. This is a static forwarding example; no port will be opened.',()=>toast('Forwarding example applied'));break;case'wizard-back':wizardStep=Math.max(0,wizardStep-1);render();break;case'cancel-operation':clearInterval(operationTimer);$('#operationWord').textContent='CANCELLED';$('#progressText').textContent='DEMO OPERATION CANCELLED';b.disabled=true;$('#operationClose').disabled=false;break;case'motion':{const active=b.getAttribute('aria-pressed')!=='true';b.setAttribute('aria-pressed',active);b.classList.toggle('on',active);$('#windowStudy').style.animation=active?'none':'';break;}case'save-preferences':toast('Preview preferences applied');open('service');break;}});
+$('#windowStudy').addEventListener('submit',e=>{e.preventDefault();const f=e.target;if(!f.reportValidity())return;if(f.id==='snapshotForm'){snaps.push({id:Date.now(),name:f.elements.name.value.trim()||'Untitled snapshot',type:f.elements.type.value,date:new Date().toLocaleString('en-GB'),size:f.elements.type.value==='ram'?'4.2 GB':'2.1 GB',protected:$('#protectNew').getAttribute('aria-pressed')==='true',note:f.elements.note.value});selected=snaps.at(-1).id;open('snapshots');toast('Restore point added to the demo catalog');}else if(f.id==='configStudy'){for(const key of ['name','memory','cpu','accel','disk','iso'])if(f.elements[key])config[key]=f.elements[key].value;if(config.iso)config.iso=String(config.iso).split(/[\\/]/).pop();if(config.disk)config.disk=String(config.disk).split(/[\\/]/).pop();rollback=null;toast('Configuration saved in this preview');$('#windowStudy').close();}else if(f.id==='standStudy'){if(!members.length){$('#standValidation').textContent='Select at least one member.';return;}standName=f.elements.name.value.trim()||standName;rollback=null;toast('Stand membership saved in this preview');$('#windowStudy').close();}else if(f.id==='wizardForm'){for(const key of ['name','iso','ram','cpu','disk'])if(f.elements[key])wizard[key]=f.elements[key].value;if(wizardStep<2){wizardStep++;render();}else{toast('Demo machine created · no files written');$('#windowStudy').close();wizardStep=0;}}else if(f.id==='deleteStudy'){toast('Demo removal confirmed · no files deleted');$('#windowStudy').close();}});
+$('#windowClose').addEventListener('click',()=>$('#windowStudy').close());$('#confirmCancel').addEventListener('click',()=>$('#confirmStudy').close());$('#windowStudy').addEventListener('close',()=>{if(rollback){rollback();rollback=null;}clearInterval(operationTimer);document.querySelectorAll('#dialogLaunchers button').forEach(b=>b.setAttribute('aria-pressed','false'));});
+// Extend the supplied workspace without changing its original state model.
+const app=$('#qemu-options .q-app');if(app)app.addEventListener('click',e=>{const b=e.target.closest('button');if(!b)return;const action=b.dataset.action;if(b.dataset.tab==='Snapshots'||action==='snapshot-start'){e.stopImmediatePropagation();open('snapshots');}else if(action==='add-network'){e.stopImmediatePropagation();open('network');}else if(action==='edit-config'){e.stopImmediatePropagation();open('configuration');}else if(action==='service'){e.stopImmediatePropagation();open('service');}else if(action==='create'){e.stopImmediatePropagation();open(b.textContent.toLowerCase().includes('stand')?'stand':'new-machine');}},true);
+// Put the selector above the existing document, not inside the modal layer.
+const gallery=$('#dialogGallery');document.body.insertBefore(gallery,document.body.firstChild);
+open('snapshots');
+})();
+</script>
+
+</body></html>

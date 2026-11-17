@@ -50,26 +50,25 @@ static class InputStyleTests {
             }
             using(var main=new MainWindow(args[0],null,true,false)){
                 main.Show();main.Demo();Application.DoEvents();
-                var search=Field<FieldInput>(main,"search");Check(!search.Visible,"search is initially collapsed");
-                All(main).OfType<Button>().Single(button=>button.AccessibleName=="Открыть или закрыть поиск").PerformClick();Application.DoEvents();
-                Check(search.Visible,"search button reveals the search field");search.Text="ubuntu-server";Application.DoEvents();
+                var search=Field<FieldInput>(main,"search");Check(search.Visible,"search is available in the library header");
+                search.Text="ubuntu-server";Application.DoEvents();
                 Check(Field<FlowLayoutPanel>(main,"cards").Controls.OfType<LibraryCard>().Count()==1,"search filters the machine library");
-                All(main).OfType<Button>().Single(button=>button.AccessibleName=="Открыть или закрыть поиск").PerformClick();Application.DoEvents();
-                Check(!search.Visible&&search.Text==""&&Field<FlowLayoutPanel>(main,"cards").Controls.OfType<LibraryCard>().Count()==4,"closing search clears the filter and restores the library");
+                search.Text="";Application.DoEvents();
+                Check(search.Visible&&Field<FlowLayoutPanel>(main,"cards").Controls.OfType<LibraryCard>().Count()==4,"clearing the visible search restores the library");
                 var keyboardCard=Field<FlowLayoutPanel>(main,"cards").Controls.OfType<LibraryCard>().Skip(1).First();keyboardCard.Focus();SendMessage(keyboardCard.Handle,0x100,new IntPtr((int)Keys.Enter),IntPtr.Zero);Application.DoEvents();Check(Field<string>(main,"selected")=="ubuntu-server","keyboard activates a machine card");main.OpenPanel("ubuntu-desktop");
                 Check(AreDpiAwarenessContextsEqual(GetThreadDpiAwarenessContext(),new IntPtr(-4)),"Windows Forms process uses PerMonitorV2 instead of bitmap scaling");
                 foreach(string state in new[]{"shutdown","stopped","running","error"}){
                     main.ApplyStates(J.O("ubuntu-desktop",state));Application.DoEvents();
                     Check(main.Visible&&Field<Label>(main,"status").Text==Theme.State(state),"main VM workspace remains visible and updates its state: "+state);
                 }
-                Check(All(main).OfType<Button>().Single(button=>button.Text=="▶ Запустить").Enabled,"restart after an error remains available with a warning");
+                Check(Field<Button>(main,"startButton").Enabled,"restart after an error remains available with a warning");
                 main.ApplyStates(J.O("ubuntu-desktop","stopped"));Application.DoEvents();
-                Check(All(main).OfType<Button>().Single(button=>button.Text=="▶ Запустить").Enabled,"restart becomes available after the stopped state is confirmed");
+                Check(Field<Button>(main,"startButton").Enabled,"restart becomes available after the stopped state is confirmed");
                 Save(main,Path.Combine(args[0],"vm-main-after-stop.png"));main.Close();
             }
             using(var main=new MainWindow(args[0],null,false,false)){
                 main.Show();main.Demo();main.ApplyStates(J.O("ubuntu-desktop","stopped"));Application.DoEvents();
-                var start=All(main).OfType<Button>().Single(button=>button.Text=="▶ Запустить");Check(start.Enabled,"confirmed stopped state permits start");
+                var start=Field<Button>(main,"startButton");Check(start.Enabled,"confirmed stopped state permits start");
                 typeof(MainWindow).GetField("stateReadFailed",BindingFlags.NonPublic|BindingFlags.Instance).SetValue(main,true);
                 typeof(MainWindow).GetMethod("SelectVm",BindingFlags.NonPublic|BindingFlags.Instance).Invoke(main,new object[]{"ubuntu-desktop"});Application.DoEvents();
                 Check(!start.Enabled&&Field<Label>(main,"status").Text.Contains("не подтверждён"),"failed status refresh disables start and marks the previous state unconfirmed");

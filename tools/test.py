@@ -43,7 +43,8 @@ def gui_tests(include_qemu=False,only=None):
     compile_launcher(bootstrap, 'BootstrapTests', [ROOT / 'tests/gui/BootstrapTests.cs', ROOT / 'src/launcher/Setup.cs', ROOT / 'src/launcher/Launcher.cs'])
     subprocess.run([str(bootstrap), str(output), str(output)], timeout=60, creationflags=HIDDEN, check=True)
     print('BootstrapTests: passed')
-    names = ['EditorTests', 'MenuTests', 'SelectorTests', 'InputStyleTests', 'AppearanceTests', 'SupportTests', 'ProfileTests', 'SnapshotUiTests', 'StandsTests','StandsScaleTests','StandsHierarchyTests']
+    names = ['EditorTests', 'MenuTests', 'SelectorTests', 'InputStyleTests', 'AppearanceTests', 'SupportTests', 'ProfileTests', 'SnapshotUiTests', 'StandsTests','StandsScaleTests','StandsHierarchyTests','HtmlWorkspaceTests',
+             'RequestQueueTests','Stage1InteractionTests','Stage2InteractionTests','VirtualLibraryTests','Stage3LifecycleTests','AnimationClockTests','WindowEntranceTests','MotionLifecycleTests','BackdropContinuityTests','DialogResponseTests','InputGlyphTests','EditLayoutTests','StateWordTransitionTests']
     if include_qemu:
         names.append('GuiTests')
         names.append('SnapshotRpcTests')
@@ -57,8 +58,9 @@ def gui_tests(include_qemu=False,only=None):
             iso, sentinel = fixture(root)
             if name == 'SupportTests':
                 args = [str(output), str(root)]
-            elif name in ('AppearanceTests', 'ProfileTests', 'StandsTests','StandsScaleTests','StandsHierarchyTests'):
-                args = [str(root), str(output)]
+            elif name in ('AppearanceTests', 'ProfileTests', 'StandsTests','StandsScaleTests','StandsHierarchyTests','HtmlWorkspaceTests',
+                          'Stage1InteractionTests','Stage2InteractionTests','VirtualLibraryTests','Stage3LifecycleTests','AnimationClockTests','WindowEntranceTests','MotionLifecycleTests','BackdropContinuityTests','DialogResponseTests','InputGlyphTests','EditLayoutTests','StateWordTransitionTests'):
+                args = [str(root), str(output), sys.executable]
             elif name in ('GuiTests','SnapshotRpcTests'):
                 args = [str(output), str(root), sys.executable]
                 if name=='SnapshotRpcTests':
@@ -82,7 +84,7 @@ def gui_tests(include_qemu=False,only=None):
             error_file=output/(name.replace('Tests','').lower()+'-error.txt')
             error_file.unlink(missing_ok=True)
             try:
-                subprocess.run([str(exe), *args], timeout=180 if name in ('GuiTests','SnapshotRpcTests','StandsScaleTests','StandsTests') else 60,
+                subprocess.run([str(exe), *args], timeout=180 if name in ('GuiTests','SnapshotRpcTests','StandsScaleTests','StandsTests','MotionLifecycleTests') else 60,
                                creationflags=HIDDEN, check=True)
             except (subprocess.CalledProcessError, subprocess.TimeoutExpired):
                 trace_file=output/(name.replace('Tests','').lower()+'-progress.txt')

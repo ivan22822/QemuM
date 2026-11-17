@@ -10,8 +10,8 @@ import hashlib
 ROOT = Path(__file__).resolve().parents[1]
 APP = ROOT / 'build' / 'app'
 GUI = ROOT / 'src' / 'gui'
-SOURCES = [GUI / name for name in ('VMManager.cs', 'GuiLaunchSettings.cs', 'PolarTheme.cs',
-    'WorkspaceView.cs', 'EditorControls.cs', 'DistroAppearance.cs', 'SupportWindow.cs', 'SnapshotsUi.cs', 'StandsUi.cs', 'StandNetworkEditor.cs', 'StandDiagramLayout.cs', 'AssemblyInfo.cs')]
+SOURCES = [GUI / name for name in ('VMManager.cs', 'BackendRequests.cs', 'GraphicsResources.cs', 'AnimationClock.cs', 'DialogMotion.cs', 'GuiLaunchSettings.cs', 'PolarTheme.cs',
+    'WorkspaceView.cs', 'VirtualLibrary.cs', 'MotionControls.cs', 'UiTypography.cs', 'ReferenceIcons.cs', 'EditorControls.cs', 'DistroAppearance.cs', 'SupportWindow.cs', 'SnapshotsUi.cs', 'StandsUi.cs', 'StandNetworkEditor.cs', 'StandDiagramLayout.cs', 'AssemblyInfo.cs')]
 REFERENCES = ['/reference:System.Windows.Forms.dll', '/reference:System.Drawing.dll',
               '/reference:System.Web.Extensions.dll']
 HIDDEN = getattr(subprocess, 'CREATE_NO_WINDOW', 0)
@@ -31,6 +31,9 @@ def compile_program(output, main=None, extra=(), icon=None, manifest=None):
     output.parent.mkdir(parents=True, exist_ok=True)
     args = [compiler(), '/nologo', '/platform:x64', '/optimize+', '/target:winexe',
             '/out:' + str(output), *REFERENCES]
+    for weight in (400, 500, 600, 700, 800, 900):
+        font = ROOT / 'assets' / 'fonts' / f'Unbounded-{weight}.ttf'
+        args.append(f'/resource:{font},QemuM.Unbounded.{weight}')
     if main:
         args.append('/main:' + main)
     if icon:
@@ -47,6 +50,7 @@ def copy_runtime(target):
         if path.is_file() and path.suffix in ('.py', '.cmd'):
             shutil.copy2(path, target / path.name)
     shutil.copytree(ROOT / 'assets' / 'visual-assets', target / 'visual-assets', dirs_exist_ok=True)
+    shutil.copy2(ROOT / 'assets' / 'fonts' / 'Unbounded-OFL.txt', target / 'Unbounded-OFL.txt')
     compile_switch(target)
 
 
