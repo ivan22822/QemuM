@@ -85,5 +85,5 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: alpha7-build2-release
-          path: build/release/0.1.0-alpha.7/build.2/
+          name: alpha7-build3-release
+          path: build/release/0.1.0-alpha.7/build.3/

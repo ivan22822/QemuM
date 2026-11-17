@@ -82,7 +82,7 @@ sealed class UpdateWindow : Form {
     readonly Button close=BootstrapUI.Button("Закрыть");
     readonly Label installed=BootstrapUI.Label("Канал Alpha · проверка по запросу",10);
     readonly ComponentProgress progress=new ComponentProgress("Пакет приложения"){Dock=DockStyle.Bottom,Visible=false};
-    Feed feed;string work;bool busy;
+    Feed feed;string work;bool busy,updateInstalled;
     public UpdateWindow(string root,bool autoCheck=true){
         this.root=root;BootstrapUI.Style(this,"Обновления QemuM · Alpha",560);install.Enabled=false;
         var body=new Panel{Dock=DockStyle.Fill,Padding=new Padding(28,24,28,12)};
@@ -91,11 +91,11 @@ sealed class UpdateWindow : Form {
         installed.Dock=DockStyle.Top;installed.AutoSize=false;installed.Height=38;installed.ForeColor=BootstrapUI.Accent;
         body.Controls.Add(status);body.Controls.Add(progress);body.Controls.Add(installed);body.Controls.Add(header);
         Controls.Add(body);Controls.Add(BootstrapUI.Buttons(check,install,close));close.Click+=(sender,args)=>Close();
-        check.Click+=(sender,args)=>Check();install.Click+=(sender,args)=>Install();
+        check.Click+=(sender,args)=>Check();install.Click+=(sender,args)=>{if(updateInstalled)LaunchManager();else Install();};
         if(autoCheck)Shown+=(sender,args)=>Check();FormClosing+=(sender,args)=>{if(busy)args.Cancel=true;};
     }
     async void Check(){
-        if(busy)return;busy=true;check.Enabled=install.Enabled=false;status.Text="Проверяю обновления GitHub…";
+        if(busy)return;busy=true;updateInstalled=false;install.Text="Установить обновление";check.Enabled=install.Enabled=false;status.Text="Проверяю обновления GitHub…";
         try{
             var current=Core.Current(root);
             var local=current==null?null:Core.Read<Package>(Path.Combine(root,"versions",current.current,"package.json"));
@@ -135,10 +135,27 @@ sealed class UpdateWindow : Form {
                 });
             }
             progress.Report("Готово",1,1);
-            status.Text="Установлена "+Core.Display(feed.version,feed.build)+". Открой QemuM через прежний ярлык.";
+            UpdateComplete(feed);
         }catch(IOException error){status.Text="Обновление не установлено.\n\n"+error.Message;}
         catch(Exception error){status.Text="Обновление не установлено: "+error.Message;}
         finally{busy=false;check.Enabled=true;close.Enabled=true;install.Enabled=feed!=null;}
+    }
+    internal void UpdateComplete(Feed updated){
+        updateInstalled=true;install.Text="Запустить менеджер";install.Enabled=true;
+        status.Text="Установлена "+Core.Display(updated.version,updated.build)+". Можно запустить менеджер.";
+        AcceptButton=install;
+    }
+    internal ProcessStartInfo ManagerStartInfo(){
+        Core.NoLinks(root);
+        string launcher=Path.Combine(root,"QemuM.exe");Core.NoLinks(launcher);
+        if(!File.Exists(launcher))throw new IOException("Не найден QemuM.exe в папке установки.");
+        return new ProcessStartInfo(launcher){UseShellExecute=false,CreateNoWindow=true,WorkingDirectory=root};
+    }
+    void LaunchManager(){
+        if(busy||!updateInstalled)return;
+        install.Enabled=false;
+        try{Process.Start(ManagerStartInfo());Close();}
+        catch(Exception error){status.Text="Не удалось запустить менеджер: "+error.Message;install.Enabled=true;}
     }
     FileStream UpdateLock(string name,string message){try{return Core.Lock(root,name);}catch(IOException error){throw new IOException(message,error);}}
 }
